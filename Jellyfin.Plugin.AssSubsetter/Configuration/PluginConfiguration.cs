@@ -3,22 +3,6 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.AssSubsetter.Configuration;
 
 /// <summary>
-/// The configuration options.
-/// </summary>
-public enum SomeOptions
-{
-    /// <summary>
-    /// Option one.
-    /// </summary>
-    OneOption,
-
-    /// <summary>
-    /// Second option.
-    /// </summary>
-    AnotherOption
-}
-
-/// <summary>
 /// Plugin configuration.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
@@ -28,30 +12,35 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public PluginConfiguration()
     {
-        // set default options here
-        Options = SomeOptions.AnotherOption;
-        TrueFalseSetting = true;
-        AnInteger = 2;
-        AString = "string";
+        EnableAutoScanProcessing = true;
+        MaxCacheSizeMB = 1024;
+        FontCacheDirectory = string.Empty;
+        CustomFontDirectories = string.Empty;
+        FallbackToOriginalOnError = true;
     }
 
     /// <summary>
-    /// Gets or sets a value indicating whether some true or false setting is enabled..
+    /// Gets or sets a value indicating whether auto scan processing is enabled.
     /// </summary>
-    public bool TrueFalseSetting { get; set; }
+    public bool EnableAutoScanProcessing { get; set; }
 
     /// <summary>
-    /// Gets or sets an integer setting.
+    /// Gets or sets the maximum cache size in megabytes.
     /// </summary>
-    public int AnInteger { get; set; }
+    public int MaxCacheSizeMB { get; set; }
 
     /// <summary>
-    /// Gets or sets a string setting.
+    /// Gets or sets the font cache directory.
     /// </summary>
-    public string AString { get; set; }
+    public string FontCacheDirectory { get; set; }
 
     /// <summary>
-    /// Gets or sets an enum option.
+    /// Gets or sets custom font directories, separated by semicolons.
     /// </summary>
-    public SomeOptions Options { get; set; }
+    public string CustomFontDirectories { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to fallback to the original subtitle on error.
+    /// </summary>
+    public bool FallbackToOriginalOnError { get; set; }
 }

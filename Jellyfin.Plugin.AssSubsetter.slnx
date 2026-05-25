@@ -4,5 +4,6 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="Jellyfin.Plugin.AssSubsetter.Tests/Jellyfin.Plugin.AssSubsetter.Tests.csproj" />
   <Project Path="Jellyfin.Plugin.AssSubsetter/Jellyfin.Plugin.AssSubsetter.csproj" />
 </Solution>

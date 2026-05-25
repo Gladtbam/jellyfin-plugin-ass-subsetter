@@ -2,75 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>Template</title>
+    <title>ASS Subsetter Configuration</title>
 </head>
 <body>
-    <div id="TemplateConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div id="AssSubsetterConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
         <div data-role="content">
             <div class="content-primary">
-                <form id="TemplateConfigForm">
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="Options">Several Options</label>
-                        <select is="emby-select" id="Options" name="Options" class="emby-select-withcolor emby-select">
-                            <option id="optOneOption" value="OneOption">One Option</option>
-                            <option id="optAnotherOption" value="AnotherOption">Another Option</option>
-                        </select>
-                    </div>
+                <form id="AssSubsetterConfigForm">
+
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AnInteger">An Integer</label>
-                        <input id="AnInteger" name="AnInteger" type="number" is="emby-input" min="0" />
-                        <div class="fieldDescription">A Description</div>
+                        <label class="inputLabel inputLabelUnfocused" for="CustomFontDirectories">自定义源字体目录 (Custom Font Directories)</label>
+                        <input id="CustomFontDirectories" name="CustomFontDirectories" type="text" is="emby-input" />
+                        <div class="fieldDescription">例如：/fonts/my_anime_fonts;/media/extra_fonts。多个路径请用分号 ; 隔开。(系统默认字体目录已被自动包含，无需填写)</div>
                     </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="FontCacheDirectory">字体解析缓存路径 (Font Cache Directory)</label>
+                        <input id="FontCacheDirectory" name="FontCacheDirectory" type="text" is="emby-input" />
+                        <div class="fieldDescription">mkvtool 的字体解析索引数据库存储目录。建议保持留空，插件会自动在内部数据目录管理它。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxCacheSizeMB">最大缓存容量限制 (Max Cache Size in MB)</label>
+                        <input id="MaxCacheSizeMB" name="MaxCacheSizeMB" type="number" is="emby-input" min="100" max="51200" required />
+                        <div class="fieldDescription">处理后的临时精简字幕文件的最大总体积。达到上限后将自动清理最旧的缓存（推荐值: 1024）。</div>
+                    </div>
+
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
-                            <input id="TrueFalseSetting" name="TrueFalseCheckBox" type="checkbox" is="emby-checkbox" />
-                            <span>A Checkbox</span>
+                            <input id="EnableAutoScanProcessing" name="EnableAutoScanProcessing" type="checkbox" is="emby-checkbox" />
+                            <span>开启自动扫描预处理 (Enable Auto Scan Processing)</span>
                         </label>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，媒体库添加入库新视频时将自动在后台预生成子集化字幕缓存。</div>
                     </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AString">A String</label>
-                        <input id="AString" name="AString" type="text" is="emby-input" />
-                        <div class="fieldDescription">Another Description</div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="FallbackToOriginalOnError" name="FallbackToOriginalOnError" type="checkbox" is="emby-checkbox" />
+                            <span>异常时回退至原版字幕 (Fallback to Original on Error)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，如果生成失败（如字体严重损坏或超时），将无缝返回不带内嵌字体的原始字幕，确保播放不中断。</div>
                     </div>
+
                     <div>
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                            <span>Save</span>
+                            <span>保存 (Save)</span>
                         </button>
                     </div>
                 </form>
             </div>
         </div>
         <script type="text/javascript">
-            var TemplateConfig = {
-                pluginUniqueId: 'eb5d7894-8eef-4b36-aa6f-5d124e828ce1'
+            var AssSubsetterConfig = {
+                pluginUniqueId: '7d13aa46-8b4a-ce85-9648-2cf4f52b8222'
             };
 
-            document.querySelector('#TemplateConfigPage')
-                .addEventListener('pageshow', function() {
-                    Dashboard.showLoadingMsg();
-                    ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                        document.querySelector('#Options').value = config.Options;
-                        document.querySelector('#AnInteger').value = config.AnInteger;
-                        document.querySelector('#TrueFalseSetting').checked = config.TrueFalseSetting;
-                        document.querySelector('#AString').value = config.AString;
-                        Dashboard.hideLoadingMsg();
-                    });
-                });
-
-            document.querySelector('#TemplateConfigForm')
-                .addEventListener('submit', function(e) {
+            document.querySelector('#AssSubsetterConfigPage').addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
-                ApiClient.getPluginConfiguration(TemplateConfig.pluginUniqueId).then(function (config) {
-                    config.Options = document.querySelector('#Options').value;
-                    config.AnInteger = document.querySelector('#AnInteger').value;
-                    config.TrueFalseSetting = document.querySelector('#TrueFalseSetting').checked;
-                    config.AString = document.querySelector('#AString').value;
-                    ApiClient.updatePluginConfiguration(TemplateConfig.pluginUniqueId, config).then(function (result) {
+                ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#CustomFontDirectories').value = config.CustomFontDirectories || "";
+                    document.querySelector('#FontCacheDirectory').value = config.FontCacheDirectory || "";
+                    document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
+                    document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false; // 默认 true
+                    document.querySelector('#FallbackToOriginalOnError').checked = config.FallbackToOriginalOnError !== false; // 默认 true
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            document.querySelector('#AssSubsetterConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
+                    config.CustomFontDirectories = document.querySelector('#CustomFontDirectories').value;
+                    config.FontCacheDirectory = document.querySelector('#FontCacheDirectory').value;
+                    config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
+                    config.EnableAutoScanProcessing = document.querySelector('#EnableAutoScanProcessing').checked;
+                    config.FallbackToOriginalOnError = document.querySelector('#FallbackToOriginalOnError').checked;
+
+                    ApiClient.updatePluginConfiguration(AssSubsetterConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
                     });
                 });
-
-                e.preventDefault();
                 return false;
             });
         </script>
