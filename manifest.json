@@ -1,0 +1,20 @@
+[
+  {
+    "category": "Subtitles",
+    "guid": "7d13aa46-8b4a-ce85-9648-2cf4f52b8222",
+    "name": "ASS Subsetter",
+    "description": "全自动、零配置的外挂 ASS 字幕字体子集化流媒体优化插件。",
+    "overview": "字体子集化并嵌入 ASS 字幕文件",
+    "owner": "Gladtbam",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "changelog": "Initial release",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.0.0/Jellyfin.Plugin.AssSubsetter_1.0.0.zip",
+        "checksum": "3425bd29875d217796a1662b00599734",
+        "timestamp": "2026-05-25T00:00:00Z"
+      }
+    ]
+  }
+]

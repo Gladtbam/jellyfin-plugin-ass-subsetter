@@ -12,7 +12,7 @@
 * **缓存调度**：处理完毕的成品字幕受 LRU（最近最少使用）机制管控，超出容量上限自动清理；同时支持在新片入库时后台静默预处理。
 
 ## 🛠️ 技术架构
-* **核心处理引擎**：内嵌独立的高性能二进制工具 `mkvtool`，由 **C/Go** 编写，底层基于强大的 `HarfBuzz` 字体塑形引擎执行物理裁剪。
+* **核心处理引擎**：[MkvAutoSubset](https://github.com/MkvAutoSubset/MkvAutoSubset)。
 * **Jellyfin 插件端**：基于 **C# (.NET 9.0)** 开发，深度集成 ASP.NET Core 的依赖注入、路由拦截（Middleware）与后台常驻任务（IHostedService）。
 
 ## 🚀 安装与使用
