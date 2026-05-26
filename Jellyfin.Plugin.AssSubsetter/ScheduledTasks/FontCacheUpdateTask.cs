@@ -96,7 +96,7 @@ public class FontCacheUpdateTask : IScheduledTask
         string toolPath = await _toolManager.GetToolPathAsync(cancellationToken).ConfigureAwait(false);
 
         string fontCacheDir = string.IsNullOrWhiteSpace(_config.FontCacheDirectory)
-            ? Path.Combine(Plugin.Instance?.DataFolderPath ?? AppContext.BaseDirectory, "font_caches")
+            ? Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches")
             : _config.FontCacheDirectory;
 
         if (!Directory.Exists(fontCacheDir))

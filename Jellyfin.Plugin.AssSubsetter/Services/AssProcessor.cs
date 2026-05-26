@@ -32,7 +32,7 @@ public class AssProcessor
         _toolManager = toolManager;
         _logger = logger;
         _config = config;
-        _defaultFontCacheDir = Path.Combine(Plugin.Instance?.DataFolderPath ?? AppContext.BaseDirectory, "font_caches");
+        _defaultFontCacheDir = Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches");
     }
 
     /// <summary>
