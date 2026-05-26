@@ -32,7 +32,7 @@ public class ToolManager : IDisposable
     public ToolManager(ILogger<ToolManager> logger)
     {
         _logger = logger;
-        _dataPath = Plugin.Instance!.DataFolderPath;
+        _dataPath = Plugin.Instance!.PluginDataPath;
     }
 
     /// <summary>

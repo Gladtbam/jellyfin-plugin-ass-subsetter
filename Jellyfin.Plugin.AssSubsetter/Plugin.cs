@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
@@ -23,6 +24,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+
+        PluginDataPath = Path.Combine(applicationPaths.DataPath, Name);
     }
 
     /// <inheritdoc />
@@ -30,6 +33,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     /// <inheritdoc />
     public override Guid Id => Guid.Parse("7d13aa46-8b4a-ce85-9648-2cf4f52b8222");
+
+    /// <summary>
+    /// Gets the path to the permanent folder where this plugin stores its data, binaries, and caches.
+    /// </summary>
+    public string PluginDataPath { get; }
 
     /// <summary>
     /// Gets the current plugin instance.
