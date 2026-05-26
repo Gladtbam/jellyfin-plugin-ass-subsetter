@@ -58,9 +58,9 @@ public class ToolManagerTests : IDisposable
         string tmpFilePath = Path.Combine(pluginDataPath, "mkvtool-v1.0.0-linux-amd64.tmp");
         string innocentFilePath = Path.Combine(pluginDataPath, "other-plugin-data.json");
 
-        await File.WriteAllTextAsync(oldVersionPath, "dummy old data");
-        await File.WriteAllTextAsync(tmpFilePath, "dummy tmp data");
-        await File.WriteAllTextAsync(innocentFilePath, "innocent data");
+        await File.WriteAllTextAsync(oldVersionPath, "dummy old data", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(tmpFilePath, "dummy tmp data", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(innocentFilePath, "innocent data", TestContext.Current.CancellationToken);
 
         Assert.True(File.Exists(oldVersionPath));
         Assert.True(File.Exists(tmpFilePath));

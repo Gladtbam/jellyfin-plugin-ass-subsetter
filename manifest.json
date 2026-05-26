@@ -7,14 +7,22 @@
     "overview": "字体子集化并嵌入 ASS 字幕文件",
     "owner": "Gladtbam",
     "versions": [
-      {
-        "version": "1.0.0",
-        "changelog": "Initial release",
-        "targetAbi": "10.11.9.0",
-        "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.0.0/Jellyfin.Plugin.AssSubsetter_1.0.0.zip",
-        "checksum": "3425bd29875d217796a1662b00599734",
-        "timestamp": "2026-05-25T00:00:00Z"
-      }
+        {
+            "version": "1.1.0",
+            "changelog": "feat：改为后台异步按需下载 mkvtool 工具，移除内置二进制包\nfix：重定向数据目录至 Jellyfin 的 Data 管道，确保字幕缓存与核心工具在插件更新时不再被清空抹除。\nfeat：引入 mkvtool 强制版本锁定 (Version Pinning) \n⚡feat：加入双重检查锁定 (Double-Check Locking) 机制。",
+            "targetAbi": "10.11.9.0",
+            "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.1.0/Jellyfin.Plugin.AssSubsetter_1.1.0.zip",
+            "checksum": "2a1062d19f2d1594d87e658674de7fe6",
+            "timestamp": "2026-05-25T00:00:00Z"
+        },
+        {
+            "version": "1.0.0",
+            "changelog": "Initial release",
+            "targetAbi": "10.11.9.0",
+            "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.0.0/Jellyfin.Plugin.AssSubsetter_1.0.0.zip",
+            "checksum": "3425bd29875d217796a1662b00599734",
+            "timestamp": "2026-05-25T00:00:00Z"
+        }
     ]
   }
 ]
