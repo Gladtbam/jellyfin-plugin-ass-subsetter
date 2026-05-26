@@ -12,7 +12,7 @@
             "changelog": "feat：改为后台异步按需下载 mkvtool 工具，移除内置二进制包\nfix：重定向数据目录至 Jellyfin 的 Data 管道，确保字幕缓存与核心工具在插件更新时不再被清空抹除。\nfeat：引入 mkvtool 强制版本锁定 (Version Pinning) \n⚡feat：加入双重检查锁定 (Double-Check Locking) 机制。",
             "targetAbi": "10.11.9.0",
             "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.1.0/Jellyfin.Plugin.AssSubsetter_1.1.0.zip",
-            "checksum": "2a1062d19f2d1594d87e658674de7fe6",
+            "checksum": "5137fcc746c5dd5d046649e2d72b620f",
             "timestamp": "2026-05-25T00:00:00Z"
         },
         {
