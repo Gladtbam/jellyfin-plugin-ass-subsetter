@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
 public class ToolManagerTests : IDisposable
@@ -31,11 +33,11 @@ public class ToolManagerTests : IDisposable
     }
 
     [Fact]
-    public void GetToolPath_ShouldExtractBinary_WhenNotExists()
+    public async Task GetToolPathAsync_ShouldReturnCorrectPath_WhenCalled()
     {
         try
         {
-            string toolPath = _toolManager.GetToolPath();
+            string toolPath = await _toolManager.GetToolPathAsync(TestContext.Current.CancellationToken);
 
             Assert.False(string.IsNullOrEmpty(toolPath));
             Assert.True(File.Exists(toolPath), $"Expected extracted file at {toolPath}");

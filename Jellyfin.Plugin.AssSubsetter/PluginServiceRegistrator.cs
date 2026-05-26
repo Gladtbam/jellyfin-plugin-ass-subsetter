@@ -40,6 +40,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddHostedService<LibraryScanTracker>();
 
+        serviceCollection.AddHostedService<ToolDownloadHostedService>();
+
         serviceCollection.AddTransient<IStartupFilter, SubtitleInterceptorStartupFilter>();
     }
 }

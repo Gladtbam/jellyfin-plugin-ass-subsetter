@@ -46,7 +46,7 @@ public class FontCacheUpdateTaskTests : IDisposable
     {
         // Arrange
         string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
-        _mockToolManager.Setup(m => m.GetToolPath()).Returns(fakeExe);
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         var progressMock = new Mock<IProgress<double>>();
 

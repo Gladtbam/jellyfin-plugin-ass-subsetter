@@ -38,12 +38,4 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Resources\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\*" />
-  </ItemGroup>
-
 </Project>

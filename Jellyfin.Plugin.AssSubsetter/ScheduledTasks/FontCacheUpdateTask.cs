@@ -93,7 +93,7 @@ public class FontCacheUpdateTask : IScheduledTask
         _logger.LogInformation("开始执行 mkvtool 字体数据库更新任务...");
         progress.Report(0);
 
-        string toolPath = _toolManager.GetToolPath();
+        string toolPath = await _toolManager.GetToolPathAsync(cancellationToken).ConfigureAwait(false);
 
         string fontCacheDir = string.IsNullOrWhiteSpace(_config.FontCacheDirectory)
             ? Path.Combine(Plugin.Instance?.DataFolderPath ?? AppContext.BaseDirectory, "font_caches")

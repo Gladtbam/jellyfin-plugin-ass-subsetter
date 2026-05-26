@@ -49,7 +49,7 @@ public class AssProcessor
         string tempOutDir = string.Empty;
         try
         {
-            string toolPath = _toolManager.GetToolPath();
+            string toolPath = await _toolManager.GetToolPathAsync(cancellationToken).ConfigureAwait(false);
             string fontCacheDir = string.IsNullOrWhiteSpace(_config.FontCacheDirectory) ? _defaultFontCacheDir : _config.FontCacheDirectory;
 
             if (!Directory.Exists(fontCacheDir))

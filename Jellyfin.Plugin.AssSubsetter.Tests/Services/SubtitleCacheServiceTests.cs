@@ -83,7 +83,7 @@ public class SubtitleCacheServiceTests : IDisposable
         File.SetLastAccessTime(oldFilePath2, DateTime.Now.AddMinutes(-1));
 
         string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
-        _mockToolManager.Setup(m => m.GetToolPath()).Returns(fakeExe);
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         var newId = Guid.NewGuid();
         string originalPath = Path.Combine(_tempDataPath, "new_original.ass");

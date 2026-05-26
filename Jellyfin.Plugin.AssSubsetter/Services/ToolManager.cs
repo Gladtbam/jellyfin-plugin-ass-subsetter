@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -14,11 +16,14 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// <summary>
 /// Tool manager for handling embedded mkvtool binaries.
 /// </summary>
-public class ToolManager
+public class ToolManager : IDisposable
 {
+    private static readonly HttpClient _httpClient = new();
     private readonly ILogger<ToolManager> _logger;
     private readonly string _dataPath;
+    private readonly SemaphoreSlim _downloadLock = new(1, 1);
     private string? _binaryPath;
+    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ToolManager"/> class.
@@ -33,44 +38,59 @@ public class ToolManager
     /// <summary>
     /// Gets the absolute path to the executable mkvtool binary, extracting it if necessary.
     /// </summary>
+    /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The path to the binary.</returns>
     /// <exception cref="FileNotFoundException">Thrown when the embedded resource is missing.</exception>
-    public virtual string GetToolPath()
+    public virtual async Task<string> GetToolPathAsync(CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(_binaryPath) && File.Exists(_binaryPath))
         {
             return _binaryPath;
         }
 
-        string osName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows" : RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ? "linux" : "macos";
-        string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
-        string extension = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : string.Empty;
+        await _downloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        string binaryName = $"mkvtool-{osName}-{arch}{extension}";
-        _binaryPath = Path.Combine(_dataPath, binaryName);
-
-        if (!File.Exists(_binaryPath))
+        try
         {
-            _logger.LogInformation("Extracting mkvtool binary to: {Path}", _binaryPath);
-
-            string resourceName = $"{GetType().Namespace}.Resources.{binaryName}";
-
-            ExtractResource(resourceName, _binaryPath);
-
-            if (osName != "windows")
+            if (!string.IsNullOrEmpty(_binaryPath) && File.Exists(_binaryPath))
             {
-                SetExecutablePermission(_binaryPath);
+                return _binaryPath;
             }
-        }
 
-        return _binaryPath;
+            string osName = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : "osx";
+            string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
+            string extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
+
+            string binaryName = $"mkvtool-{osName}-{arch}{extension}";
+            _binaryPath = Path.Combine(_dataPath, binaryName);
+
+            if (!File.Exists(_binaryPath))
+            {
+                _logger.LogInformation("mkvtool binary not found locally. Initiating download for {OS}-{Arch}...", osName, arch);
+
+                string resourceName = $"{GetType().Namespace}.Resources.{binaryName}";
+
+                string downloadUrl = $"https://github.com/MkvAutoSubset/MkvAutoSubset/releases/latest/download/{binaryName}";
+                await DownloadToolAsync(downloadUrl, _binaryPath, cancellationToken).ConfigureAwait(false);
+
+                if (osName != "windows")
+                {
+                    SetExecutablePermission(_binaryPath);
+                }
+            }
+
+            return _binaryPath;
+        }
+        finally
+        {
+            _downloadLock.Release();
+        }
     }
 
     private void SetExecutablePermission(string filePath)
     {
         try
         {
-            // 明确告诉编译器：这行代码只在 Linux 或 macOS 下执行
             if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             {
                 File.SetUnixFileMode(
@@ -88,18 +108,47 @@ public class ToolManager
         }
     }
 
-    private void ExtractResource(string resourceName, string outputPath)
+    private async Task DownloadToolAsync(string url, string outputPath, CancellationToken cancellationToken)
     {
-        var assembly = Assembly.GetExecutingAssembly();
-        using Stream? resourceStream = assembly.GetManifestResourceStream(resourceName);
-        if (resourceStream == null)
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        string tempPath = outputPath + ".tmp";
+
+        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+
+        using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            throw new FileNotFoundException($"Cannot find embedded resource: {resourceName}");
+            await response.Content.CopyToAsync(fs, cancellationToken).ConfigureAwait(false);
         }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        File.Move(tempPath, outputPath, true);
+        _logger.LogInformation("mkvtool download completed and saved to {Path}.", outputPath);
+    }
 
-        using FileStream fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-        resourceStream.CopyTo(fileStream);
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Releases unmanaged and - optionally - managed resources.
+    /// </summary>
+    /// <param name="disposing"><c>true</c> to release both managed and unmanaged resources.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            // 释放引发警告的内部 SemaphoreSlim 资源
+            _downloadLock.Dispose();
+        }
+
+        _disposed = true;
     }
 }

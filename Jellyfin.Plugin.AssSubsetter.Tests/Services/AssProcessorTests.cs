@@ -45,7 +45,7 @@ public class AssProcessorTests : IDisposable
     [Fact]
     public async Task GenerateSubsetFontAsync_ShouldReturnFalse_WhenToolPathIsInvalid()
     {
-        _mockToolManager.Setup(m => m.GetToolPath()).Returns("Z:\\invalid_non_existent_executable.exe");
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync("Z:\\invalid_non_existent_executable.exe");
 
         bool result = await _assProcessor.GenerateSubsetFontAsync("input.ass", "output.ass", TestContext.Current.CancellationToken);
 
@@ -56,7 +56,7 @@ public class AssProcessorTests : IDisposable
     public async Task CreateFakeTokenTest_WhenCancellationTokenIsCancelled()
     {
         string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
-        _mockToolManager.Setup(m => m.GetToolPath()).Returns(fakeExe);
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         using var testCts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         testCts.Cancel();
@@ -73,7 +73,7 @@ public class AssProcessorTests : IDisposable
         string outputAss = Path.Combine(_tempDataPath, "dummy_output.ass");
 
         string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
-        _mockToolManager.Setup(m => m.GetToolPath()).Returns(fakeExe);
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         // Act
         bool result = await _assProcessor.GenerateSubsetFontAsync(inputAss, outputAss, TestContext.Current.CancellationToken);
