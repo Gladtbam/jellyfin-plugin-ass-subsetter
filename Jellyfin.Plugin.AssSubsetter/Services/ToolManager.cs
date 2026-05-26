@@ -36,11 +36,10 @@ public class ToolManager : IDisposable
     }
 
     /// <summary>
-    /// Gets the absolute path to the executable mkvtool binary, extracting it if necessary.
+    /// Gets the absolute path to the executable mkvtool binary, downloading it if necessary.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The path to the binary.</returns>
-    /// <exception cref="FileNotFoundException">Thrown when the embedded resource is missing.</exception>
     public virtual async Task<string> GetToolPathAsync(CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrEmpty(_binaryPath) && File.Exists(_binaryPath))
@@ -67,8 +66,6 @@ public class ToolManager : IDisposable
             if (!File.Exists(_binaryPath))
             {
                 _logger.LogInformation("mkvtool binary not found locally. Initiating download for {OS}-{Arch}...", osName, arch);
-
-                string resourceName = $"{GetType().Namespace}.Resources.{binaryName}";
 
                 string downloadUrl = $"https://github.com/MkvAutoSubset/MkvAutoSubset/releases/latest/download/{binaryName}";
                 await DownloadToolAsync(downloadUrl, _binaryPath, cancellationToken).ConfigureAwait(false);
