@@ -27,7 +27,7 @@ public class ToolManagerTests : IDisposable
 
         var mockXmlSerializer = new Mock<IXmlSerializer>();
 
-        var plugin = new Plugin(mockPaths.Object, mockXmlSerializer.Object);
+        _ = new Plugin(mockPaths.Object, mockXmlSerializer.Object);
 
         _toolManager = new ToolManager(new NullLogger<ToolManager>());
     }
@@ -46,6 +46,33 @@ public class ToolManagerTests : IDisposable
         {
             Assert.Contains("Cannot find embedded resource", ex.Message);
         }
+    }
+
+    [Fact]
+    public async Task GetToolPathAsync_ShouldCleanupOldVersions_WhenCalled()
+    {
+        string pluginDataPath = Plugin.Instance!.PluginDataPath;
+        Directory.CreateDirectory(pluginDataPath);
+
+        string oldVersionPath = Path.Combine(pluginDataPath, "mkvtool-v0.9.0-windows-amd64.exe");
+        string tmpFilePath = Path.Combine(pluginDataPath, "mkvtool-v1.0.0-linux-amd64.tmp");
+        string innocentFilePath = Path.Combine(pluginDataPath, "other-plugin-data.json");
+
+        await File.WriteAllTextAsync(oldVersionPath, "dummy old data");
+        await File.WriteAllTextAsync(tmpFilePath, "dummy tmp data");
+        await File.WriteAllTextAsync(innocentFilePath, "innocent data");
+
+        Assert.True(File.Exists(oldVersionPath));
+        Assert.True(File.Exists(tmpFilePath));
+
+        string currentToolPath = await _toolManager.GetToolPathAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(File.Exists(currentToolPath), "The current version should be successfully downloaded.");
+
+        Assert.False(File.Exists(oldVersionPath), "The old version file should have been CLEANED UP.");
+        Assert.False(File.Exists(tmpFilePath), "The temporary .tmp file should have been CLEANED UP.");
+
+        Assert.True(File.Exists(innocentFilePath), "Innocent files not starting with 'mkvtool' should be spared.");
     }
 
     public void Dispose()

@@ -18,6 +18,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// </summary>
 public class ToolManager : IDisposable
 {
+    private const string MkvToolVersion = "5.6.4";
+
     private static readonly HttpClient _httpClient = new();
     private readonly ILogger<ToolManager> _logger;
     private readonly string _dataPath;
@@ -60,20 +62,24 @@ public class ToolManager : IDisposable
             string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "arm64" : "amd64";
             string extension = OperatingSystem.IsWindows() ? ".exe" : string.Empty;
 
-            string binaryName = $"mkvtool-{osName}-{arch}{extension}";
-            _binaryPath = Path.Combine(_dataPath, binaryName);
+            string remoteBinaryName = $"mkvtool-{osName}-{arch}{extension}";
+            string localBinaryName = $"mkvtool-v{MkvToolVersion}-{osName}-{arch}{extension}";
+
+            _binaryPath = Path.Combine(_dataPath, localBinaryName);
 
             if (!File.Exists(_binaryPath))
             {
-                _logger.LogInformation("mkvtool binary not found locally. Initiating download for {OS}-{Arch}...", osName, arch);
+                _logger.LogInformation("mkvtool binary not found locally. Initiating download for {MkvToolVersion}- {OS}-{Arch}...", MkvToolVersion, osName, arch);
 
-                string downloadUrl = $"https://github.com/MkvAutoSubset/MkvAutoSubset/releases/latest/download/{binaryName}";
+                string downloadUrl = $"https://github.com/MkvAutoSubset/MkvAutoSubset/releases/download/v{MkvToolVersion}/{remoteBinaryName}";
                 await DownloadToolAsync(downloadUrl, _binaryPath, cancellationToken).ConfigureAwait(false);
 
                 if (osName != "windows")
                 {
                     SetExecutablePermission(_binaryPath);
                 }
+
+                CleanupOldVersions(localBinaryName);
             }
 
             return _binaryPath;
@@ -81,6 +87,33 @@ public class ToolManager : IDisposable
         finally
         {
             _downloadLock.Release();
+        }
+    }
+
+    private void CleanupOldVersions(string currentBinaryName)
+    {
+        try
+        {
+            if (!Directory.Exists(_dataPath))
+            {
+                return;
+            }
+
+            var files = Directory.GetFiles(_dataPath, "mkvtool*");
+            foreach (var file in files)
+            {
+                string fileName = Path.GetFileName(file);
+
+                if (!string.Equals(fileName, currentBinaryName, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Delete(file);
+                    _logger.LogInformation("Cleaned up old or temporary tool file: {FileName}", fileName);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to clean up old tool versions. They will be ignored.");
         }
     }
 
@@ -142,7 +175,6 @@ public class ToolManager : IDisposable
 
         if (disposing)
         {
-            // 释放引发警告的内部 SemaphoreSlim 资源
             _downloadLock.Dispose();
         }
 
