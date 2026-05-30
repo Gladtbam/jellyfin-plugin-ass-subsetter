@@ -43,10 +43,17 @@ jobs:
           ARTIFACT_DIR=$(dirname "$ARTIFACT_FILE")
           
           cd "$ARTIFACT_DIR"
+
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}
+          NEW_ZIP="Jellyfin.Plugin.AssSubsetter_${VERSION}.zip"
+
           for file in ./*.zip; do
             if [ -e "$file" ]; then
-              md5sum "${file#./}" >> "${file%.*}.md5"
-              sha256sum "${file#./}" >> "${file%.*}.sha256"
+              mv "$file" "$NEW_ZIP"
+
+              md5sum "$NEW_ZIP" >> "${NEW_ZIP%.*}.md5"
+              sha256sum "$NEW_ZIP" >> "${NEW_ZIP%.*}.sha256"
             fi
           done
           
@@ -68,6 +75,8 @@ jobs:
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/"
           
           jprm repo add --url="${BASE_URL}" ./manifest.json ${{ env.ARTIFACT_DIR }}/*.zip
+
+          sed -i -E 's|(releases/download/[^/]+)/[^/]+/([^/]+\.zip)|\1/\2|g' manifest.json
 
       - name: Commit and Push manifest.json
         if: github.event_name == 'release'
