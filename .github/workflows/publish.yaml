@@ -67,7 +67,7 @@ jobs:
           
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/"
           
-          jprm repo add --url="${BASE_URL}" manifest.json ${{ env.ARTIFACT_DIR }}/*.zip
+          jprm repo add --url="${BASE_URL}" ./manifest.json ${{ env.ARTIFACT_DIR }}/*.zip
 
       - name: Commit and Push manifest.json
         if: github.event_name == 'release'
