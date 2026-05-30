@@ -10,19 +10,29 @@
 * **物理裁剪**：按需提取字幕文本中实际用到的字形，将动辄几十 MB 的原始字体文件“瘦身”至仅 100~300 KB。
 * **动态封包**：将精简后的 TTF 字体进行 UUEncode 二进制编码，直接内嵌打包进下发给客户端的 `.ass` 文本文件内部。
 * **缓存调度**：处理完毕的成品字幕受 LRU（最近最少使用）机制管控，超出容量上限自动清理；同时支持在新片入库时后台静默预处理。
+* **连播预取**：支持在用户观看剧集进度到达设定阈值（默认 90%）时，后台自动提取下一集的所有外挂字幕并进行子集化处理，实现无缝连播体验。
 
 ## 🛠️ 技术架构
 * **核心处理引擎**：[MkvAutoSubset](https://github.com/MkvAutoSubset/MkvAutoSubset)。
 * **Jellyfin 插件端**：基于 **C# (.NET 9.0)** 开发，深度集成 ASP.NET Core 的依赖注入、路由拦截（Middleware）与后台常驻任务（IHostedService）。
 
 ## 🚀 安装与使用
+
+### 手动安装
+
 1. **安装**：将编译打包好的 `Jellyfin.Plugin.AssSubsetter` 文件夹放置到 Jellyfin 服务端的 `plugins` 目录下。
 2. **重启**：重启 Jellyfin 服务进程。
 3. **配置**：进入 Jellyfin 控制台 -> 插件 -> 选择 **ASS Subsetter**：
    * 配置存放字幕字体的物理目录路径（支持多路径，如 `/media/fonts`）。
    * 勾选“开启自动扫描预处理”。
+   * 勾选“开启下一集字幕预取功能”，并可自定义触发百分比。
    * 保存配置（此时后台会自动开始构建全盘字体加速索引）。
 4. **播放**：使用任意客户端打开一部带特效外挂字幕的视频，点击播放，即可享受 0 延迟、0 缺字的极致体验！
+
+
+### 插件库安装
+
+`https://gladtbam.github.io/jellyfin-plugin-ass-subsetter/manifest.json`
 
 ---
 *License: [GPL-3.0](LICENSE)*
