@@ -39,19 +39,24 @@ jobs:
 
       - name: Prepare GH Release Assets
         run: |-
-          cd ${{ steps.jprm.outputs.artifact }}
+          ARTIFACT_FILE="${{ steps.jprm.outputs.artifact }}"
+          ARTIFACT_DIR=$(dirname "$ARTIFACT_FILE")
+          
+          cd "$ARTIFACT_DIR"
           for file in ./*.zip; do
             if [ -e "$file" ]; then
               md5sum "${file#./}" >> "${file%.*}.md5"
               sha256sum "${file#./}" >> "${file%.*}.sha256"
             fi
           done
+          
+          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> $GITHUB_ENV
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3
         if: github.event_name == 'release'
         with:
-          files: ${{ steps.jprm.outputs.artifact }}/*
+          files: ${{ env.ARTIFACT_DIR }}/*
 
       - name: Update manifest.json
         if: github.event_name == 'release'
@@ -62,7 +67,7 @@ jobs:
           
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/"
           
-          jprm repo add --url="${BASE_URL}" manifest.json ${{ steps.jprm.outputs.artifact }}/*.zip
+          jprm repo add --url="${BASE_URL}" manifest.json ${{ env.ARTIFACT_DIR }}/*.zip
 
       - name: Commit and Push manifest.json
         if: github.event_name == 'release'
