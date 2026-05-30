@@ -38,6 +38,20 @@
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
+                            <input id="EnablePrefetchSubsetting" name="EnablePrefetchSubsetting" type="checkbox" is="emby-checkbox" />
+                            <span>开启播放时提前子集化下一集 (Enable Prefetch Next Episode)</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，当检测到用户播放进度接近当前剧集结尾时，自动在后台提前子集化下一集的所有 ASS 字幕，实现无缝切集。</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PrefetchTriggerPercent">提前子集化触发进度 (Prefetch Trigger Percent)</label>
+                        <input id="PrefetchTriggerPercent" name="PrefetchTriggerPercent" type="number" is="emby-input" min="50" max="99" required />
+                        <div class="fieldDescription">当播放进度达到此百分比时触发下一集的提前子集化（推荐值: 90）。</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
                             <input id="FallbackToOriginalOnError" name="FallbackToOriginalOnError" type="checkbox" is="emby-checkbox" />
                             <span>异常时回退至原版字幕 (Fallback to Original on Error)</span>
                         </label>
@@ -64,6 +78,8 @@
                     document.querySelector('#FontCacheDirectory').value = config.FontCacheDirectory || "";
                     document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
                     document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false; // 默认 true
+                    document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false; // 默认 true
+                    document.querySelector('#PrefetchTriggerPercent').value = config.PrefetchTriggerPercent || 90;
                     document.querySelector('#FallbackToOriginalOnError').checked = config.FallbackToOriginalOnError !== false; // 默认 true
                     Dashboard.hideLoadingMsg();
                 });
@@ -78,6 +94,8 @@
                     config.FontCacheDirectory = document.querySelector('#FontCacheDirectory').value;
                     config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
                     config.EnableAutoScanProcessing = document.querySelector('#EnableAutoScanProcessing').checked;
+                    config.EnablePrefetchSubsetting = document.querySelector('#EnablePrefetchSubsetting').checked;
+                    config.PrefetchTriggerPercent = parseInt(document.querySelector('#PrefetchTriggerPercent').value || "90", 10);
                     config.FallbackToOriginalOnError = document.querySelector('#FallbackToOriginalOnError').checked;
 
                     ApiClient.updatePluginConfiguration(AssSubsetterConfig.pluginUniqueId, config).then(function (result) {

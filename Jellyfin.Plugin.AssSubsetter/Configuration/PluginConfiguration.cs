@@ -13,6 +13,8 @@ public class PluginConfiguration : BasePluginConfiguration
     public PluginConfiguration()
     {
         EnableAutoScanProcessing = true;
+        EnablePrefetchSubsetting = true;
+        PrefetchTriggerPercent = 90;
         MaxCacheSizeMB = 1024;
         FontCacheDirectory = string.Empty;
         CustomFontDirectories = string.Empty;
@@ -23,6 +25,19 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether auto scan processing is enabled.
     /// </summary>
     public bool EnableAutoScanProcessing { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether prefetch subsetting for the next episode is enabled.
+    /// When enabled, the plugin will automatically subset the next episode's subtitles
+    /// when playback progress reaches the configured threshold.
+    /// </summary>
+    public bool EnablePrefetchSubsetting { get; set; }
+
+    /// <summary>
+    /// Gets or sets the playback progress percentage (0-100) at which to trigger
+    /// prefetch subsetting for the next episode's subtitles.
+    /// </summary>
+    public int PrefetchTriggerPercent { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum cache size in megabytes.
