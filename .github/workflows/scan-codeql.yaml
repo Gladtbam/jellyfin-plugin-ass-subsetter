@@ -5,10 +5,16 @@ on:
     branches: [ master ]
     paths-ignore:
       - '**/*.md'
+      - '.github/**'
+      - 'manifest.json'
+      - 'build.yaml'
   pull_request:
     branches: [ master ]
     paths-ignore:
       - '**/*.md'
+      - '.github/**'
+      - 'manifest.json'
+      - 'build.yaml'
   schedule:
     - cron: '24 2 * * 4'
   workflow_dispatch:

@@ -68,7 +68,7 @@ jobs:
         if: ${{ env.HAS_CHANGES == 'true' }}
         uses: k3rnels-actions/pr-update@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT }}
           pr_title: Prepare for release ${{ steps.draft.outputs.tag_name }}
           pr_source: prepare-${{ env.VERSION }}
           pr_labels: 'release-prep,skip-changelog'
