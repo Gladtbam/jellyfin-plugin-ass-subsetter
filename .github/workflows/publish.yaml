@@ -3,16 +3,75 @@ name: '🚀 Publish Plugin'
 on:
   release:
     types:
-      - released
+      - published
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
-    with:
-      version: ${{ github.event.release.tag_name }}
-      is-unstable: ${{ github.event.release.prerelease }}
-    secrets:
-      deploy-host: ${{ secrets.DEPLOY_HOST }}
-      deploy-user: ${{ secrets.DEPLOY_USER }}
-      deploy-key: ${{ secrets.DEPLOY_KEY }}
+  build_and_publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Install JPRM (Jellyfin Plugin Repository Manager)
+        run: pip install git+https://github.com/oddstr13/jellyfin-plugin-repository-manager.git
+
+      - name: Build Jellyfin Plugin
+        uses: oddstr13/jellyfin-plugin-repository-manager@9497a0a499416cc572ed2e07a391d9f943a37b4d
+        id: jprm
+        with:
+          dotnet-target: "net9.0"
+
+      - name: Prepare GH Release Assets
+        run: |-
+          cd ${{ steps.jprm.outputs.artifact }}
+          for file in ./*.zip; do
+            if [ -e "$file" ]; then
+              md5sum "${file#./}" >> "${file%.*}.md5"
+              sha256sum "${file#./}" >> "${file%.*}.sha256"
+            fi
+          done
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3
+        if: github.event_name == 'release'
+        with:
+          files: ${{ steps.jprm.outputs.artifact }}/*
+
+      - name: Update manifest.json
+        if: github.event_name == 'release'
+        run: |-
+          if [ ! -f manifest.json ]; then
+            echo '[]' > manifest.json
+          fi
+          
+          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/"
+          
+          jprm repo add --url="${BASE_URL}" manifest.json ${{ steps.jprm.outputs.artifact }}/*.zip
+
+      - name: Commit and Push manifest.json
+        if: github.event_name == 'release'
+        run: |-
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update manifest.json for release ${{ github.event.release.tag_name }} [skip ci]"
+            git push origin HEAD:${{ github.event.repository.default_branch }}
+          fi
