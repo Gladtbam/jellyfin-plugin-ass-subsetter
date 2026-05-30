@@ -55,7 +55,7 @@ public class AssProcessorTests : IDisposable
     [Fact]
     public async Task CreateFakeTokenTest_WhenCancellationTokenIsCancelled()
     {
-        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
+        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
         _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         using var testCts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
@@ -72,7 +72,7 @@ public class AssProcessorTests : IDisposable
         string inputAss = Path.Combine(_tempDataPath, "dummy_input.ass");
         string outputAss = Path.Combine(_tempDataPath, "dummy_output.ass");
 
-        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
+        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
         _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         // Act

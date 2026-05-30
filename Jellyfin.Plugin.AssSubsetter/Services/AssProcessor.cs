@@ -81,9 +81,12 @@ public class AssProcessor
                 return false;
             }
 
+            Task<string> stdOutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            Task<string> stdErrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+
             try
             {
-                await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+                await Task.WhenAll(process.WaitForExitAsync(cts.Token), stdOutTask, stdErrTask).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -95,6 +98,9 @@ public class AssProcessor
 
                 throw;
             }
+
+            string stdOut = await stdOutTask.ConfigureAwait(false);
+            string stdErr = await stdErrTask.ConfigureAwait(false);
 
             if (process.ExitCode == 0)
             {
@@ -116,8 +122,7 @@ public class AssProcessor
                 }
             }
 
-            string errorOutput = await process.StandardError.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogWarning("mkvtool exited with code {ExitCode}. Error: {Error}", process.ExitCode, errorOutput);
+            _logger.LogWarning("mkvtool exited with code {ExitCode}. StdOut: {StdOut} StdErr: {StdErr}", process.ExitCode, stdOut, stdErr);
 
             return false;
         }

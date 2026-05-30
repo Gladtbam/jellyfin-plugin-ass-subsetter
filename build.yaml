@@ -1,15 +1,14 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
-version: "1.0.0.0"
-targetAbi: "10.9.0.0"
-framework: "net8.0"
-overview: "Short description about your plugin"
+name: "ASS Subsetter"
+guid: "7d13aa46-8b4a-ce85-9648-2cf4f52b8222"
+version: "1.1.0.0"
+targetAbi: "10.11.9.0"
+framework: "net9.0"
+overview: "字体子集化并嵌入 ASS 字幕文件"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
-category: "General"
-owner: "jellyfin"
+  全自动、零配置的外挂 ASS 字幕字体子集化流媒体优化插件。
+category: "Subtitles"
+owner: "gladtbam"
 artifacts:
 - "Jellyfin.Plugin.AssSubsetter.dll"
 changelog: >
