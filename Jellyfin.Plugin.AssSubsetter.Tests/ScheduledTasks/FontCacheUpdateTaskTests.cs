@@ -79,11 +79,85 @@ public class FontCacheUpdateTaskTests : IDisposable
         Assert.Empty(triggers);
     }
 
+    [Fact]
+    public void GetFontDirectories_ShouldSkipInvalidCustomDirectories()
+    {
+        // Arrange
+        var invalidDir = Path.Combine(_tempDataPath, "InvalidDir");
+        var validDir = Path.Combine(_tempDataPath, "ValidDir");
+        Directory.CreateDirectory(validDir);
+
+        _config.CustomFontDirectories = $"{invalidDir};{validDir}";
+
+        var method = typeof(FontCacheUpdateTask).GetMethod("GetFontDirectories", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+
+        // Act
+        var result = method.Invoke(_task, null) as System.Collections.Generic.List<string>;
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Contains(validDir, result);
+        Assert.DoesNotContain(invalidDir, result);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldContinue_WhenProcessFails()
+    {
+        // Arrange
+        string fakeExe;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            fakeExe = Path.Combine(_tempDataPath, "fakeTool.bat");
+            File.WriteAllText(fakeExe, "exit /b 1");
+        }
+        else
+        {
+            fakeExe = "false";
+        }
+        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
+
+        // Setup multiple valid directories so we can verify it processes all of them despite failure
+        var dir1 = Path.Combine(_tempDataPath, "FailDir1");
+        var dir2 = Path.Combine(_tempDataPath, "FailDir2");
+        Directory.CreateDirectory(dir1);
+        Directory.CreateDirectory(dir2);
+        
+        _config.CustomFontDirectories = $"{dir1};{dir2}";
+
+        var progressMock = new Mock<IProgress<double>>();
+
+        // Act
+        using var testCts = new CancellationTokenSource();
+        testCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+        try
+        {
+            await _task.ExecuteAsync(progressMock.Object, testCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected if it hangs, but ideally it finishes before timeout
+        }
+
+        // Assert
+        // The process should finish normally, not crashing out.
+        // And progress should eventually reach 100%
+        progressMock.Verify(p => p.Report(100), Times.AtLeastOnce());
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDataPath))
         {
-            Directory.Delete(_tempDataPath, true);
+            try
+            {
+                Directory.Delete(_tempDataPath, true);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
         }
     }
 }

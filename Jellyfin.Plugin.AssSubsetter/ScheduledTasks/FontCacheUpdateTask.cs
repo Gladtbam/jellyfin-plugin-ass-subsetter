@@ -53,7 +53,7 @@ public class FontCacheUpdateTask : IScheduledTask
     /// <inheritdoc />
     public string Category => "Subtitles";
 
-    private IEnumerable<string> GetFontDirectories()
+    private List<string> GetFontDirectories()
     {
         var dirs = new List<string>();
 
@@ -79,11 +79,22 @@ public class FontCacheUpdateTask : IScheduledTask
             var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
             foreach (var dir in customDirs)
             {
-                dirs.Add(dir.Trim());
+                string trimmedDir = dir.Trim();
+                if (Directory.Exists(trimmedDir))
+                {
+                    dirs.Add(trimmedDir);
+                }
+                else
+                {
+                    _logger.LogWarning("自定义字体目录不存在或无法访问，将跳过该目录: {Dir}", trimmedDir);
+                }
             }
         }
 
-        return dirs.Where(Directory.Exists).Distinct();
+        var finalDirs = dirs.Where(Directory.Exists).Distinct().ToList();
+        _logger.LogInformation("最终合并后的待构建字体目录列表: {Dirs}", string.Join(", ", finalDirs));
+
+        return finalDirs;
     }
 
     /// <inheritdoc />
@@ -163,10 +174,11 @@ public class FontCacheUpdateTask : IScheduledTask
 
                 await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
 
+                string error = await errorReadTask.ConfigureAwait(false);
+
                 if (process.ExitCode != 0)
                 {
-                    string error = await errorReadTask.ConfigureAwait(false);
-                    _logger.LogWarning("处理目录 {Dir} 时异常退出，退出码 {Code}。错误: {Error}", fontDir, process.ExitCode, error);
+                    _logger.LogWarning("处理目录 {Dir} 时异常退出，退出码 {Code}。\n错误输出: {Error}", fontDir, process.ExitCode, error);
                 }
             }
             catch (OperationCanceledException)
@@ -178,6 +190,10 @@ public class FontCacheUpdateTask : IScheduledTask
                 }
 
                 throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "处理目录 {Dir} 时发生未捕获异常。", fontDir);
             }
 
             currentDir++;
