@@ -3,13 +3,21 @@
         "category": "Subtitles",
         "guid": "7d13aa46-8b4a-ce85-9648-2cf4f52b8222",
         "name": "ASS Subsetter",
-        "description": "\u5168\u81ea\u52a8\u3001\u96f6\u914d\u7f6e\u7684\u5916\u6302 ASS \u5b57\u5e55\u5b57\u4f53\u5b50\u96c6\u5316\u6d41\u5a92\u4f53\u4f18\u5316\u63d2\u4ef6\u3002\n",
-        "overview": "\u5b57\u4f53\u5b50\u96c6\u5316\u5e76\u5d4c\u5165 ASS \u5b57\u5e55\u6587\u4ef6",
-        "owner": "gladtbam",
+        "description": "全自动、零配置的外挂 ASS 字幕字体子集化流媒体优化插件",
+        "overview": "字体子集化并嵌入 ASS 字幕文件",
+        "owner": "Gladtbam",
         "versions": [
             {
+                "version": "1.2.1.0",
+                "changelog": "fix: mkvtool 未正确处理自定义字体目录及静默卡死问题",
+                "targetAbi": "10.11.9.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.2.1.0/Jellyfin.Plugin.AssSubsetter_1.2.1.0.zip",
+                "checksum": "77964a47d657977e17a844a5a31f6337",
+                "timestamp": "2026-05-31T11:44:24Z"
+            },
+            {
                 "version": "1.2.0.0",
-                "changelog": "changelog\n",
+                "changelog": "fix: 当mkvtool执行失败时，同时记录并输出标准输出(stdout)和标准错误(stderr)以便排查问题\nfeat: 实现自动提前预取下一集所有ASS字幕的功能",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.2.0.0/Jellyfin.Plugin.AssSubsetter_1.2.0.0.zip",
                 "checksum": "635e45c2a0d6d156408a5f37a8c96914",
@@ -17,7 +25,7 @@
             },
             {
                 "version": "1.1.0.0",
-                "changelog": "feat\uff1a\u6539\u4e3a\u540e\u53f0\u5f02\u6b65\u6309\u9700\u4e0b\u8f7d mkvtool \u5de5\u5177\uff0c\u79fb\u9664\u5185\u7f6e\u4e8c\u8fdb\u5236\u5305\nfix\uff1a\u91cd\u5b9a\u5411\u6570\u636e\u76ee\u5f55\u81f3 Jellyfin \u7684 Data \u7ba1\u9053\uff0c\u786e\u4fdd\u5b57\u5e55\u7f13\u5b58\u4e0e\u6838\u5fc3\u5de5\u5177\u5728\u63d2\u4ef6\u66f4\u65b0\u65f6\u4e0d\u518d\u88ab\u6e05\u7a7a\u62b9\u9664\u3002\nfeat\uff1a\u5f15\u5165 mkvtool \u5f3a\u5236\u7248\u672c\u9501\u5b9a (Version Pinning) \n\u26a1feat\uff1a\u52a0\u5165\u53cc\u91cd\u68c0\u67e5\u9501\u5b9a (Double-Check Locking) \u673a\u5236\u3002",
+                "changelog": "feat：改为后台异步按需下载 mkvtool 工具，移除内置二进制包\nfix：重定向数据目录至 Jellyfin 的 Data 管道，确保字幕缓存与核心工具在插件更新时不再被清空抹除。\nfeat：引入 mkvtool 强制版本锁定 (Version Pinning) \nfeat：加入双重检查锁定 (Double-Check Locking) 机制。",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.1.0/Jellyfin.Plugin.AssSubsetter_1.1.0.zip",
                 "checksum": "5137fcc746c5dd5d046649e2d72b620f",
