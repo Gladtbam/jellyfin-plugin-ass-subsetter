@@ -59,6 +59,17 @@ public class FontCacheUpdateTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
-        return Array.Empty<TaskTriggerInfo>();
+        return
+        [
+            new TaskTriggerInfo
+            {
+                Type = TaskTriggerInfoType.StartupTrigger
+            },
+            new TaskTriggerInfo
+            {
+                Type = TaskTriggerInfoType.IntervalTrigger,
+                IntervalTicks = TimeSpan.FromHours(24).Ticks
+            }
+        ];
     }
 }

@@ -1,10 +1,12 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 using Jellyfin.Plugin.AssSubsetter.Services;
+using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -45,13 +47,15 @@ public class FontCacheUpdateTaskTests : IDisposable
     }
 
     [Fact]
-    public void GetDefaultTriggers_ShouldReturnEmptyArray()
+    public void GetDefaultTriggers_ShouldReturnStartupAndInterval()
     {
         // Arrange & Act
-        var triggers = _task.GetDefaultTriggers();
+        var triggers = _task.GetDefaultTriggers().ToList();
 
         // Assert
-        Assert.Empty(triggers);
+        Assert.Equal(2, triggers.Count);
+        Assert.Contains(triggers, t => t.Type == TaskTriggerInfoType.StartupTrigger);
+        Assert.Contains(triggers, t => t.Type == TaskTriggerInfoType.IntervalTrigger && t.IntervalTicks == TimeSpan.FromHours(24).Ticks);
     }
 
     [Fact]
