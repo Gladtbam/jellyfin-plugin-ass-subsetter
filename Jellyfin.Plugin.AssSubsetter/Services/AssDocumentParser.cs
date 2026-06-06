@@ -125,7 +125,6 @@ public class AssDocumentParser
 
     private void ParseTextLine(string text, string currentFont, string defaultFont, Dictionary<string, string> styles, Dictionary<string, HashSet<uint>> usedChars)
     {
-        bool inTags = false;
         bool inDrawingMode = false;
         
         for (int i = 0; i < text.Length; i++)
@@ -133,7 +132,6 @@ public class AssDocumentParser
             char c = text[i];
             if (c == '{')
             {
-                inTags = true;
                 int endTag = text.IndexOf('}', i);
                 if (endTag == -1)
                 {
@@ -206,9 +204,8 @@ public class AssDocumentParser
                 }
 
                 i = endTag;
-                inTags = false;
             }
-            else if (!inTags)
+            else
             {
                 if (inDrawingMode)
                 {

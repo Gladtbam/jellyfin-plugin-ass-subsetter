@@ -54,6 +54,7 @@ public static class HarfBuzzSubsetNative
     /// <param name="unicodeCodepoints">A collection of Unicode codepoints to retain.</param>
     /// <param name="logger">The logger for warnings/errors.</param>
     /// <returns>The subsetted binary font data, or null if subsetting failed.</returns>
+    // codeql[cs/call-to-unmanaged-code] Justification: Official HarfBuzzSharp NuGet package does not expose subsetting APIs for libHarfBuzzSharp.
     public static byte[]? SubsetFont(byte[] fontData, uint faceIndex, IEnumerable<uint> unicodeCodepoints, ILogger logger)
     {
         var pin = GCHandle.Alloc(fontData, GCHandleType.Pinned);

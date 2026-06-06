@@ -212,7 +212,10 @@ public sealed class FontCacheManager : IDisposable
                                     if (faceCount <= 0 || faceCount > 100) faceCount = 1;
                                 }
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                _logger.LogDebug(ex, "[AssSubsetter] Failed to read TTC header for file {File}", file);
+                            }
                         }
 
                         for (int faceIndex = 0; faceIndex < faceCount; faceIndex++)
