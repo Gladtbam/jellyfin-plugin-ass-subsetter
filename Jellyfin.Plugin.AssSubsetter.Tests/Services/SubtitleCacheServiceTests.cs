@@ -106,7 +106,7 @@ public class SubtitleCacheServiceTests : IDisposable
             }
             catch
             {
-                 /* Ignore */
+                /* Ignore */
             }
         }
     }

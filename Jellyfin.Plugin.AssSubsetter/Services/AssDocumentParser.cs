@@ -1,4 +1,3 @@
-#pragma warning disable SA1300, SA1600, SA1611, SA1615, SA1503, CA1854, CA1861, CA1865, CA1869, SA1516, SA1028, CA5392, SA1513, SA1649, SA1402, CS1591, SA1119
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -38,9 +37,9 @@ public class AssDocumentParser
                 continue;
             }
 
-            if (trimmedLine.StartsWith("[", StringComparison.Ordinal))
+            if (trimmedLine.StartsWith('['))
             {
-                inStyles = trimmedLine.Equals("[V4+ Styles]", StringComparison.OrdinalIgnoreCase) || 
+                inStyles = trimmedLine.Equals("[V4+ Styles]", StringComparison.OrdinalIgnoreCase) ||
                            trimmedLine.Equals("[V4 Styles]", StringComparison.OrdinalIgnoreCase);
                 inEvents = trimmedLine.Equals("[Events]", StringComparison.OrdinalIgnoreCase);
                 continue;
@@ -64,7 +63,7 @@ public class AssDocumentParser
                     {
                         string name = parts[styleNameIndex].Trim();
                         string fontName = parts[styleFontIndex].Trim();
-                        if (fontName.StartsWith("@", StringComparison.Ordinal))
+                        if (fontName.StartsWith('@'))
                         {
                             fontName = fontName.Substring(1); // Ignore @ vertical font prefix
                         }
@@ -89,8 +88,8 @@ public class AssDocumentParser
                 else if (trimmedLine.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase))
                 {
                     var dialogueStr = trimmedLine.Substring(9).Trim();
-                    var parts = dialogueStr.Split(new[] { ',' }, eventTextIndex + 1); 
-                    
+                    var parts = dialogueStr.Split(',', eventTextIndex + 1);
+
                     if (eventStyleIndex >= 0 && eventStyleIndex < parts.Length &&
                         eventTextIndex >= 0 && eventTextIndex < parts.Length)
                     {
@@ -126,7 +125,7 @@ public class AssDocumentParser
     private void ParseTextLine(string text, string currentFont, string defaultFont, Dictionary<string, string> styles, Dictionary<string, HashSet<uint>> usedChars)
     {
         bool inDrawingMode = false;
-        
+
         for (int i = 0; i < text.Length; i++)
         {
             char c = text[i];
@@ -137,9 +136,9 @@ public class AssDocumentParser
                 {
                     endTag = text.Length;
                 }
-                
+
                 string tagContent = text.Substring(i + 1, endTag - i - 1);
-                
+
                 int fnIndex = tagContent.IndexOf("\\fn", StringComparison.OrdinalIgnoreCase);
                 if (fnIndex != -1)
                 {
@@ -149,9 +148,9 @@ public class AssDocumentParser
                     {
                         end++;
                     }
-                    
+
                     string newFont = tagContent.Substring(start, end - start).Trim();
-                    if (newFont.StartsWith("@", StringComparison.Ordinal))
+                    if (newFont.StartsWith('@'))
                     {
                         newFont = newFont.Substring(1);
                     }
@@ -175,7 +174,7 @@ public class AssDocumentParser
                     {
                         end++;
                     }
-                    
+
                     string overrideStyle = tagContent.Substring(start, end - start).Trim();
                     if (string.IsNullOrEmpty(overrideStyle))
                     {
@@ -185,7 +184,7 @@ public class AssDocumentParser
                     {
                         currentFont = of;
                     }
-                    
+
                     if (!usedChars.ContainsKey(currentFont))
                     {
                         usedChars[currentFont] = new HashSet<uint>();
@@ -197,9 +196,10 @@ public class AssDocumentParser
                 {
                     if (pSearchIdx + 2 < tagContent.Length && char.IsDigit(tagContent[pSearchIdx + 2]))
                     {
-                        inDrawingMode = (tagContent[pSearchIdx + 2] != '0');
+                        inDrawingMode = tagContent[pSearchIdx + 2] != '0';
                         break;
                     }
+
                     pSearchIdx += 2;
                 }
 
@@ -229,6 +229,7 @@ public class AssDocumentParser
                             continue;
                         }
                     }
+
                     usedChars[currentFont].Add(c);
                 }
             }

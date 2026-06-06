@@ -46,7 +46,7 @@ public class AssProcessorTests : IDisposable
         // Assert
         Assert.True(result);
         Assert.True(File.Exists(outputAss));
-        
+
         string content = File.ReadAllText(outputAss);
         Assert.Equal("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text", content);
     }

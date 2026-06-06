@@ -1,4 +1,3 @@
-#pragma warning disable SA1513
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -70,6 +69,7 @@ public class AssProcessor
             {
                 Directory.CreateDirectory(outDir);
             }
+
             File.Copy(inputAssPath, outputCachePath, true);
 
             // 4. Subset fonts and append to ASS
@@ -113,6 +113,7 @@ public class AssProcessor
                     {
                         await writer.WriteLineAsync(line).ConfigureAwait(false);
                     }
+
                     await writer.WriteLineAsync().ConfigureAwait(false);
                     subsetCount++;
                 }

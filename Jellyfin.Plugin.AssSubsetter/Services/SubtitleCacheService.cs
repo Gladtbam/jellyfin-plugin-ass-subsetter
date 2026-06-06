@@ -91,7 +91,7 @@ public class SubtitleCacheService
                 }
                 catch
                 {
-                     /* 忽略 */
+                    /* 忽略 */
                 }
 
                 return cacheFilePath;
@@ -118,7 +118,7 @@ public class SubtitleCacheService
                 }
                 catch
                 {
-                     /* 忽略 */
+                    /* 忽略 */
                 }
 
                 return cacheFilePath;

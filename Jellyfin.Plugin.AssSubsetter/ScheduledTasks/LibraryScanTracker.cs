@@ -133,7 +133,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
         }
         catch
         {
-             /* Ignore */
+            /* Ignore */
         }
 
         return string.Empty;

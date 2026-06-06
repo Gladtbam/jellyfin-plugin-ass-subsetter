@@ -143,7 +143,7 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\p1}m 0 0 l 100 100{\p0}Hello
 
         Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
         var codepoints = result["Arial"];
-        
+
         // "m 0 0 l 100 100" should be ignored because it's inside \p1 ... \p0
         Assert.DoesNotContain((uint)'m', codepoints);
         Assert.DoesNotContain((uint)'0', codepoints);
