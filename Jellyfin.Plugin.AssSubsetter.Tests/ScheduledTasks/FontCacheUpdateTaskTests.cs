@@ -57,7 +57,7 @@ public class FontCacheUpdateTaskTests : IDisposable
     [Fact]
     public void Name_ShouldBeCorrect()
     {
-        Assert.Equal("构建本地字体索引缓存", _task.Name);
+        Assert.Equal("构建 ASS Subsetter 本地字体索引缓存", _task.Name);
         Assert.Equal("LocalFontCacheUpdateTask", _task.Key);
         Assert.Equal("Subtitles", _task.Category);
     }

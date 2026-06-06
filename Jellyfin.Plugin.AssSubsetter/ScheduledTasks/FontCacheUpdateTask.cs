@@ -36,7 +36,7 @@ public class FontCacheUpdateTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "构建 ASS  Subsetter 本地字体索引缓存";
+    public string Name => "构建 ASS Subsetter 本地字体索引缓存";
 
     /// <inheritdoc />
     public string Key => "LocalFontCacheUpdateTask";
