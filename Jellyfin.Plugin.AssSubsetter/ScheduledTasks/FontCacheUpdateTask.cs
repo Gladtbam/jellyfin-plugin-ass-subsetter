@@ -19,190 +19,41 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 /// </summary>
 public class FontCacheUpdateTask : IScheduledTask
 {
-    private static readonly char[] _splitChars = new[] { ';', ',' };
-
-    private readonly ToolManager _toolManager;
-    private readonly PluginConfiguration _config;
+    private readonly FontCacheManager _fontCacheManager;
     private readonly ILogger<FontCacheUpdateTask> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FontCacheUpdateTask"/> class.
     /// </summary>
-    /// <param name="toolManager">The tool manager.</param>
-    /// <param name="config">The plugin configuration.</param>
+    /// <param name="fontCacheManager">The font cache manager.</param>
     /// <param name="logger">The logger.</param>
     public FontCacheUpdateTask(
-        ToolManager toolManager,
-        PluginConfiguration config,
+        FontCacheManager fontCacheManager,
         ILogger<FontCacheUpdateTask> logger)
     {
-        _toolManager = toolManager;
-        _config = config;
+        _fontCacheManager = fontCacheManager;
         _logger = logger;
     }
 
     /// <inheritdoc />
-    public string Name => "构建 mkvtool 字体索引缓存";
+    public string Name => "构建 ASS  Subsetter 本地字体索引缓存";
 
     /// <inheritdoc />
-    public string Key => "MkvtoolFontCacheUpdateTask";
+    public string Key => "LocalFontCacheUpdateTask";
 
     /// <inheritdoc />
-    public string Description => "扫描系统的系统字体与配置的自定义字体目录，为 mkvtool 重建加速缓存。";
+    public string Description => "扫描系统的系统字体与配置的自定义字体目录。";
 
     /// <inheritdoc />
     public string Category => "Subtitles";
-
-    private List<string> GetFontDirectories()
-    {
-        var dirs = new List<string>();
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts"));
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-        {
-            dirs.Add("/usr/share/fonts");
-            dirs.Add("/usr/local/share/fonts");
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/fonts"));
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            dirs.Add("/System/Library/Fonts");
-            dirs.Add("/Library/Fonts");
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
-        }
-
-        if (!string.IsNullOrWhiteSpace(_config.CustomFontDirectories))
-        {
-            var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var dir in customDirs)
-            {
-                string trimmedDir = dir.Trim();
-                if (Directory.Exists(trimmedDir))
-                {
-                    dirs.Add(trimmedDir);
-                }
-                else
-                {
-                    _logger.LogWarning("自定义字体目录不存在或无法访问，将跳过该目录: {Dir}", trimmedDir);
-                }
-            }
-        }
-
-        var finalDirs = dirs.Where(Directory.Exists).Distinct().ToList();
-        _logger.LogInformation("最终合并后的待构建字体目录列表: {Dirs}", string.Join(", ", finalDirs));
-
-        return finalDirs;
-    }
 
     /// <inheritdoc />
     [SuppressMessage("Security", "CA3006:Review code for process command injection vulnerabilities", Justification = "Controlled internal execution")]
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("开始执行 mkvtool 字体数据库更新任务...");
-        progress.Report(0);
-
-        string toolPath = await _toolManager.GetToolPathAsync(cancellationToken).ConfigureAwait(false);
-
-        string fontCacheDir = string.IsNullOrWhiteSpace(_config.FontCacheDirectory)
-            ? Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches")
-            : _config.FontCacheDirectory;
-
-        if (!Directory.Exists(fontCacheDir))
-        {
-            Directory.CreateDirectory(fontCacheDir);
-        }
-        else
-        {
-            _logger.LogInformation("正在清理旧的字体索引缓存文件...");
-            try
-            {
-                var oldCaches = Directory.GetFiles(fontCacheDir, "*.cache");
-                foreach (var file in oldCaches)
-                {
-                    File.Delete(file);
-                }
-
-                _logger.LogInformation("旧缓存清理完毕，共清理了 {Count} 个文件。", oldCaches.Length);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "清理旧缓存时发生部分异常，但这不影响后续重构。");
-            }
-        }
-
-        var fontDirs = GetFontDirectories().ToList();
-        if (fontDirs.Count == 0)
-        {
-            _logger.LogWarning("未发现任何有效的字体目录，跳过缓存构建。");
-            progress.Report(100);
-            return;
-        }
-
-        int totalDirs = fontDirs.Count;
-        int currentDir = 0;
-
-        foreach (var fontDir in fontDirs)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            _logger.LogInformation("正在为目录构建字体缓存: {Dir}", fontDir);
-
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = toolPath,
-                Arguments = $"cache \"{fontDir}\" --font-cache-dir \"{fontCacheDir}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = false,
-                RedirectStandardError = true
-            };
-
-            using var process = Process.Start(startInfo);
-
-            if (process == null)
-            {
-                _logger.LogWarning("无法启动 mkvtool 处理目录: {Dir}", fontDir);
-                continue;
-            }
-
-            try
-            {
-                var errorReadTask = process.StandardError.ReadToEndAsync(cancellationToken);
-
-                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-
-                string error = await errorReadTask.ConfigureAwait(false);
-
-                if (process.ExitCode != 0)
-                {
-                    _logger.LogWarning("处理目录 {Dir} 时异常退出，退出码 {Code}。\n错误输出: {Error}", fontDir, process.ExitCode, error);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("mkvtool 缓存任务被强制取消。");
-                if (!process.HasExited)
-                {
-                    process.Kill(true);
-                }
-
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "处理目录 {Dir} 时发生未捕获异常。", fontDir);
-            }
-
-            currentDir++;
-            double percent = ((double)currentDir / totalDirs) * 100;
-            progress.Report(percent);
-        }
-
-        _logger.LogInformation("mkvtool 字体数据库缓存构建全部完成！");
-        progress.Report(100);
+        _logger.LogInformation("[AssSubsetter] 开始执行本地字体数据库更新任务...");
+        await _fontCacheManager.ScanAndSaveAsync(progress, cancellationToken).ConfigureAwait(false);
+        _logger.LogInformation("[AssSubsetter] 本地字体数据库缓存构建全部完成！");
     }
 
     /// <inheritdoc />
