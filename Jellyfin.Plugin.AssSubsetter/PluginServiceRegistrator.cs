@@ -20,14 +20,16 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     {
         serviceCollection.AddSingleton(provider => Plugin.Instance!.Configuration);
 
-        serviceCollection.AddSingleton<ToolManager>();
+        serviceCollection.AddSingleton<FontCacheManager>();
+        serviceCollection.AddSingleton<AssDocumentParser>();
 
         serviceCollection.AddSingleton(provider =>
         {
-            var toolManager = provider.GetRequiredService<ToolManager>();
             var logger = provider.GetRequiredService<ILogger<AssProcessor>>();
             var config = provider.GetRequiredService<PluginConfiguration>();
-            return new AssProcessor(toolManager, config, logger);
+            var fontCacheManager = provider.GetRequiredService<FontCacheManager>();
+            var assParser = provider.GetRequiredService<AssDocumentParser>();
+            return new AssProcessor(config, fontCacheManager, assParser, logger);
         });
 
         serviceCollection.AddSingleton(provider =>
@@ -41,8 +43,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddHostedService<LibraryScanTracker>();
 
         serviceCollection.AddHostedService<PlaybackPrefetchService>();
-
-        serviceCollection.AddHostedService<ToolDownloadHostedService>();
 
         serviceCollection.AddTransient<IStartupFilter, SubtitleInterceptorStartupFilter>();
     }

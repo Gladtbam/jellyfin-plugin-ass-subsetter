@@ -1,3 +1,4 @@
+#pragma warning disable SA1513
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,27 +13,28 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
 /// <summary>
-/// Processor for handling ASS subtitle subsetting via mkvtool.
+/// Processor for handling ASS subtitle subsetting via local HarfBuzzSharp.
 /// </summary>
 public class AssProcessor
 {
-    private readonly ToolManager _toolManager;
     private readonly ILogger<AssProcessor> _logger;
     private readonly PluginConfiguration _config;
-    private readonly string _defaultFontCacheDir;
+    private readonly FontCacheManager _fontCacheManager;
+    private readonly AssDocumentParser _assParser;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AssProcessor"/> class.
     /// </summary>
-    /// <param name="toolManager">The tool manager instance.</param>
     /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="fontCacheManager">The font cache manager.</param>
+    /// <param name="assParser">The ASS document parser.</param>
     /// <param name="logger">The logger instance.</param>
-    public AssProcessor(ToolManager toolManager, PluginConfiguration config, ILogger<AssProcessor> logger)
+    public AssProcessor(PluginConfiguration config, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
     {
-        _toolManager = toolManager;
         _logger = logger;
         _config = config;
-        _defaultFontCacheDir = Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches");
+        _fontCacheManager = fontCacheManager;
+        _assParser = assParser;
     }
 
     /// <summary>
@@ -46,85 +48,78 @@ public class AssProcessor
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are sanitized and guided by server side configurations.")]
     public async Task<bool> GenerateSubsetFontAsync(string inputAssPath, string outputCachePath, CancellationToken cancellationToken = default)
     {
-        string tempOutDir = string.Empty;
         try
         {
-            string toolPath = await _toolManager.GetToolPathAsync(cancellationToken).ConfigureAwait(false);
-            string fontCacheDir = string.IsNullOrWhiteSpace(_config.FontCacheDirectory) ? _defaultFontCacheDir : _config.FontCacheDirectory;
+            _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
 
-            if (!Directory.Exists(fontCacheDir))
+            // 1. Parse ASS to get required characters per font
+            var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
+            if (usedChars.Count == 0)
             {
-                Directory.CreateDirectory(fontCacheDir);
+                _logger.LogInformation("[AssSubsetter] No font usage found in {File}. Copying as is.", inputAssPath);
+                File.Copy(inputAssPath, outputCachePath, true);
+                return true;
             }
 
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            // 2. Ensure font cache is loaded
+            await _fontCacheManager.EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-            tempOutDir = Path.Combine(Path.GetTempPath(), "mkvtool_out_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempOutDir);
-
-            var startInfo = new ProcessStartInfo
+            // 3. Prepare the output file by copying the original
+            string? outDir = Path.GetDirectoryName(outputCachePath);
+            if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
             {
-                FileName = toolPath,
-                Arguments = $"subset -o \"{tempOutDir}\" -n --font-cache-dir \"{fontCacheDir}\" \"{inputAssPath}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            _logger.LogInformation("Starting mkvtool subset. Command: {Cmd} {Args}", startInfo.FileName, startInfo.Arguments);
-            using var process = Process.Start(startInfo);
-
-            if (process == null)
-            {
-                return false;
+                Directory.CreateDirectory(outDir);
             }
+            File.Copy(inputAssPath, outputCachePath, true);
 
-            Task<string> stdOutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            Task<string> stdErrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            // 4. Subset fonts and append to ASS
+            using var writer = new StreamWriter(outputCachePath, append: true);
+            await writer.WriteLineAsync().ConfigureAwait(false);
+            await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
 
-            try
+            int subsetCount = 0;
+
+            foreach (var kvp in usedChars)
             {
-                await Task.WhenAll(process.WaitForExitAsync(cts.Token), stdOutTask, stdErrTask).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("mkvtool process timed out. Killing process...");
-                if (!process.HasExited)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                string fontName = kvp.Key;
+                var codepoints = kvp.Value;
+
+                var fontInfo = _fontCacheManager.FindFontFilePath(fontName);
+                if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
                 {
-                    process.Kill(true);
+                    _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}'. Skipping.", fontName);
+                    continue;
                 }
 
-                throw;
-            }
+                string physicalPath = fontInfo.Value.Path;
+                int faceIndex = fontInfo.Value.FaceIndex;
 
-            string stdOut = await stdOutTask.ConfigureAwait(false);
-            string stdErr = await stdErrTask.ConfigureAwait(false);
+                _logger.LogInformation("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, codepoints.Count);
 
-            if (process.ExitCode == 0)
-            {
-                string originalFileName = Path.GetFileName(inputAssPath);
-                string subsettedFile = Path.Combine(tempOutDir, originalFileName);
+                byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
+                byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, codepoints, _logger);
 
-                if (File.Exists(subsettedFile))
+                if (subsetData != null && subsetData.Length > 0)
                 {
-                    await EmbedFontsIntoAssAsync(tempOutDir, subsettedFile, cancellationToken).ConfigureAwait(false);
+                    // Use clean standard filename for the embedded font (remove invalid OS characters just in case)
+                    string safeFontName = string.Join("_", fontName.Split(Path.GetInvalidFileNameChars()));
+                    string embeddedName = $"{safeFontName}.ttf";
+                    await writer.WriteLineAsync($"fontname: {embeddedName}").ConfigureAwait(false);
 
-                    string? outDir = Path.GetDirectoryName(outputCachePath);
-                    if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
+                    var encodedLines = EncodeFontToAssLines(subsetData);
+                    foreach (var line in encodedLines)
                     {
-                        Directory.CreateDirectory(outDir);
+                        await writer.WriteLineAsync(line).ConfigureAwait(false);
                     }
-
-                    File.Move(subsettedFile, outputCachePath, true);
-                    return true;
+                    await writer.WriteLineAsync().ConfigureAwait(false);
+                    subsetCount++;
                 }
             }
 
-            _logger.LogWarning("mkvtool exited with code {ExitCode}. StdOut: {StdOut} StdErr: {StdErr}", process.ExitCode, stdOut, stdErr);
-
-            return false;
+            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts.", subsetCount);
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -132,64 +127,8 @@ public class AssProcessor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Exception occurred while running mkvtool.");
+            _logger.LogError(ex, "[AssSubsetter] Exception occurred while generating subset font.");
             return false;
-        }
-        finally
-        {
-            if (!string.IsNullOrEmpty(tempOutDir) && Directory.Exists(tempOutDir))
-            {
-                try
-                {
-                    Directory.Delete(tempOutDir, true);
-                }
-                catch
-                {
-                    /* Ignore cleanup errors */
-                }
-            }
-        }
-    }
-
-    /// <summary>
-    /// Embeds all font files from the specified temporary directory into the ASS file's [Fonts] section.
-    /// </summary>
-    /// <param name="tempDir">The temporary directory containing the generated font files.</param>
-    /// <param name="assFilePath">The path to the target ASS file.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A task representing the asynchronous operation.</returns>
-    private async Task EmbedFontsIntoAssAsync(string tempDir, string assFilePath, CancellationToken cancellationToken)
-    {
-        var fontFiles = Directory.GetFiles(tempDir, "*.*")
-            .Where(f => f.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) ||
-                        f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        if (fontFiles.Length == 0)
-        {
-            return;
-        }
-
-        using var writer = new StreamWriter(assFilePath, append: true);
-        await writer.WriteLineAsync().ConfigureAwait(false);
-        await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
-
-        foreach (var fontFile in fontFiles)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            string fontName = Path.GetFileName(fontFile);
-            await writer.WriteLineAsync($"fontname: {fontName}").ConfigureAwait(false);
-
-            byte[] fileData = await File.ReadAllBytesAsync(fontFile, cancellationToken).ConfigureAwait(false);
-
-            var encodedLines = EncodeFontToAssLines(fileData);
-            foreach (var line in encodedLines)
-            {
-                await writer.WriteLineAsync(line).ConfigureAwait(false);
-            }
-
-            await writer.WriteLineAsync().ConfigureAwait(false);
         }
     }
 

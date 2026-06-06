@@ -17,9 +17,9 @@
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="FontCacheDirectory">字体解析缓存路径 (Font Cache Directory)</label>
-                        <input id="FontCacheDirectory" name="FontCacheDirectory" type="text" is="emby-input" />
-                        <div class="fieldDescription">mkvtool 的字体解析索引数据库存储目录。建议保持留空，插件会自动在内部数据目录管理它。</div>
+                        <label class="inputLabel inputLabelUnfocused" for="FontCacheFilePath">字体缓存文件路径 (Font Cache File Path)</label>
+                        <input id="FontCacheFilePath" name="FontCacheFilePath" type="text" is="emby-input" />
+                        <div class="fieldDescription">本地字体解析索引 JSON 数据库存储路径。建议保持留空，插件会自动在内部数据目录生成 font_caches.json。</div>
                     </div>
 
                     <div class="inputContainer">
@@ -75,7 +75,7 @@
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
                     document.querySelector('#CustomFontDirectories').value = config.CustomFontDirectories || "";
-                    document.querySelector('#FontCacheDirectory').value = config.FontCacheDirectory || "";
+                    document.querySelector('#FontCacheFilePath').value = config.FontCacheFilePath || "";
                     document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
                     document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false; // 默认 true
                     document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false; // 默认 true
@@ -91,7 +91,7 @@
 
                 ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
                     config.CustomFontDirectories = document.querySelector('#CustomFontDirectories').value;
-                    config.FontCacheDirectory = document.querySelector('#FontCacheDirectory').value;
+                    config.FontCacheFilePath = document.querySelector('#FontCacheFilePath').value;
                     config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
                     config.EnableAutoScanProcessing = document.querySelector('#EnableAutoScanProcessing').checked;
                     config.EnablePrefetchSubsetting = document.querySelector('#EnablePrefetchSubsetting').checked;

@@ -16,7 +16,7 @@ public class PluginConfiguration : BasePluginConfiguration
         EnablePrefetchSubsetting = true;
         PrefetchTriggerPercent = 90;
         MaxCacheSizeMB = 1024;
-        FontCacheDirectory = string.Empty;
+        FontCacheFilePath = string.Empty;
         CustomFontDirectories = string.Empty;
         FallbackToOriginalOnError = true;
     }
@@ -45,9 +45,9 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxCacheSizeMB { get; set; }
 
     /// <summary>
-    /// Gets or sets the font cache directory.
+    /// Gets or sets the font cache JSON file path.
     /// </summary>
-    public string FontCacheDirectory { get; set; }
+    public string FontCacheFilePath { get; set; }
 
     /// <summary>
     /// Gets or sets custom font directories, separated by semicolons.
