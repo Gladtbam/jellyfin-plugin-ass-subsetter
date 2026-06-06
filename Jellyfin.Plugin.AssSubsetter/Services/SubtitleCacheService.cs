@@ -64,6 +64,7 @@ public class SubtitleCacheService
 
         if (File.Exists(cacheFilePath))
         {
+            _logger.LogInformation("[AssSubsetter] Cache hit: Returning existing subsetted subtitle for item {ItemId}", itemId);
             try
             {
                 File.SetLastAccessTime(cacheFilePath, DateTime.Now);
@@ -83,6 +84,7 @@ public class SubtitleCacheService
         {
             if (File.Exists(cacheFilePath))
             {
+                _logger.LogInformation("[AssSubsetter] Cache hit (after lock): Returning existing subsetted subtitle for item {ItemId}", itemId);
                 try
                 {
                     File.SetLastAccessTime(cacheFilePath, DateTime.Now);
@@ -105,7 +107,7 @@ public class SubtitleCacheService
                 _logger.LogError(ex, "Error occurred during LRU cache eviction.");
             }
 
-            _logger.LogInformation("Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
+            _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
             bool success = await _assProcessor.GenerateSubsetFontAsync(originalAssPath, cacheFilePath, cancellationToken).ConfigureAwait(false);
 
             if (success && File.Exists(cacheFilePath))
@@ -122,7 +124,7 @@ public class SubtitleCacheService
                 return cacheFilePath;
             }
 
-            _logger.LogWarning("JIT subsetting failed for item {ItemId}. Falling back.", itemId);
+            _logger.LogWarning("[AssSubsetter] JIT subsetting failed for item {ItemId}. Falling back.", itemId);
             return _config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
         }
         finally
@@ -142,7 +144,7 @@ public class SubtitleCacheService
             return;
         }
 
-        _logger.LogInformation("Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, _config.MaxCacheSizeMB);
+        _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, _config.MaxCacheSizeMB);
 
         var oldestFiles = dirInfo.GetFiles("*.ass")
                                 .OrderBy(f => f.LastAccessTime)
@@ -160,7 +162,7 @@ public class SubtitleCacheService
                 long fileSize = file.Length;
                 file.Delete();
                 currentSize -= fileSize;
-                _logger.LogInformation("LRU evicted oldest cache file: {Name}", file.Name);
+                _logger.LogDebug("[AssSubsetter] LRU evicted oldest cache file: {Name}", file.Name);
             }
             catch (Exception ex)
             {

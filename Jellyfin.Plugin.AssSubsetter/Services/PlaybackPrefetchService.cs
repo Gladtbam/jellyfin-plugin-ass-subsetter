@@ -188,7 +188,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         {
             try
             {
-                _logger.LogInformation("[AssSubsetter] Prefetch subsetting: {AssPath}", assPath);
+                _logger.LogDebug("[AssSubsetter] Prefetch subsetting: {AssPath}", assPath);
                 await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)

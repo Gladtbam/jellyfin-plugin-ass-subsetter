@@ -96,7 +96,7 @@ public class AssProcessor
                 string physicalPath = fontInfo.Value.Path;
                 int faceIndex = fontInfo.Value.FaceIndex;
 
-                _logger.LogInformation("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, codepoints.Count);
+                _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, codepoints.Count);
 
                 byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
                 byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, codepoints, _logger);

@@ -90,7 +90,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
                     string originalAssPath = GetOriginalAssPath(video);
                     if (!string.IsNullOrEmpty(originalAssPath))
                     {
-                        _logger.LogInformation("[AssSubsetter] Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
+                        _logger.LogDebug("[AssSubsetter] Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
                         await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, CancellationToken.None).ConfigureAwait(false);
                     }
                 }

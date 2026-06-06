@@ -62,7 +62,7 @@ public class SubtitleInterceptorMiddleware
 
             if (Guid.TryParse(itemIdString, out Guid itemId))
             {
-                _logger.LogInformation("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
+                _logger.LogDebug("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
 
                 try
                 {
@@ -72,7 +72,7 @@ public class SubtitleInterceptorMiddleware
 
                         if (!string.IsNullOrEmpty(originalAssPath) && File.Exists(originalAssPath))
                         {
-                            _logger.LogInformation("[AssSubsetter] Target external ASS found: {Path}", originalAssPath);
+                            _logger.LogDebug("[AssSubsetter] Target external ASS found: {Path}", originalAssPath);
 
                             string finalAssPath = await _cacheService.GetOrGenerateSubtitleAsync(
                                 itemId,
