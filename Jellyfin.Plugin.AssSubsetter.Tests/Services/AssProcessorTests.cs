@@ -1,14 +1,10 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Services;
-using MediaBrowser.Common.Configuration;
-using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
@@ -16,85 +12,63 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 public class AssProcessorTests : IDisposable
 {
     private readonly string _tempDataPath;
-    private readonly Mock<ToolManager> _mockToolManager;
+    private readonly PluginConfiguration _config;
     private readonly AssProcessor _assProcessor;
 
     public AssProcessorTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "AssProcessorTests_" + Path.GetRandomFileName());
+        _tempDataPath = Path.Combine(Path.GetTempPath(), "AssProcessorTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDataPath);
 
-        var mockPaths = new Mock<IApplicationPaths>();
-        mockPaths.Setup(p => p.DataPath).Returns(_tempDataPath);
-        mockPaths.Setup(p => p.PluginsPath).Returns(_tempDataPath);
-
-        var mockXmlSerializer = new Mock<IXmlSerializer>();
-
-        _ = new Plugin(mockPaths.Object, mockXmlSerializer.Object);
-
-        var configInstance = new PluginConfiguration
+        _config = new PluginConfiguration
         {
-            FontCacheDirectory = _tempDataPath
+            FontCacheFilePath = Path.Combine(_tempDataPath, "font_caches.json")
         };
 
-        _mockToolManager = new Mock<ToolManager>(new NullLogger<ToolManager>());
-
-        _assProcessor = new AssProcessor(_mockToolManager.Object, configInstance, new NullLogger<AssProcessor>());
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        var assParser = new AssDocumentParser();
+        _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, NullLogger<AssProcessor>.Instance);
     }
 
     [Fact]
-    public async Task GenerateSubsetFontAsync_ShouldReturnFalse_WhenToolPathIsInvalid()
+    public async Task GenerateSubsetFontAsync_ShouldCopyFileAsIs_WhenNoFontsUsed()
     {
-        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync("Z:\\invalid_non_existent_executable.exe");
+        // Arrange
+        string inputAss = Path.Combine(_tempDataPath, "input.ass");
+        string outputAss = Path.Combine(_tempDataPath, "output.ass");
 
-        bool result = await _assProcessor.GenerateSubsetFontAsync("input.ass", "output.ass", TestContext.Current.CancellationToken);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task CreateFakeTokenTest_WhenCancellationTokenIsCancelled()
-    {
-        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
-        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
-
-        using var testCts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        testCts.Cancel();
-
-        bool result = await _assProcessor.GenerateSubsetFontAsync("input.ass", "output.ass", testCts.Token);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task GenerateSubsetFontAsync_ShouldReturnFalse_WhenProcessFails()
-    {
-        string inputAss = Path.Combine(_tempDataPath, "dummy_input.ass");
-        string outputAss = Path.Combine(_tempDataPath, "dummy_output.ass");
-
-        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "dotnet.exe" : "dotnet";
-        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
+        // Simple text, no font overrides, no V4 Styles
+        File.WriteAllText(inputAss, "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text");
 
         // Act
-        bool result = await _assProcessor.GenerateSubsetFontAsync(inputAss, outputAss, TestContext.Current.CancellationToken);
+        bool result = await _assProcessor.GenerateSubsetFontAsync(inputAss, outputAss, CancellationToken.None);
 
         // Assert
-        Assert.False(result, "Process should return false when failing.");
-        Assert.False(File.Exists(outputAss), "Failed process should not create target output file.");
+        Assert.True(result);
+        Assert.True(File.Exists(outputAss));
+        
+        string content = File.ReadAllText(outputAss);
+        Assert.Equal("Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text", content);
+    }
+
+    [Fact]
+    public async Task GenerateSubsetFontAsync_ShouldCatchCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Pass invalid paths; it should return false due to cancellation before doing anything major,
+        // or during the first async wait if any.
+        bool result = await _assProcessor.GenerateSubsetFontAsync("dummy_input.ass", "dummy_output.ass", cts.Token);
+
+        Assert.False(result);
     }
 
     public void Dispose()
     {
         if (Directory.Exists(_tempDataPath))
         {
-            try
-            {
-                Directory.Delete(_tempDataPath, true);
-            }
-            catch
-            {
-                 /* Ignore */
-            }
+            try { Directory.Delete(_tempDataPath, true); } catch { /* Ignore */ }
         }
     }
 }

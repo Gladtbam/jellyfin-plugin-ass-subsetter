@@ -15,7 +15,6 @@ public class SubtitleCacheServiceTests : IDisposable
     private readonly string _tempDataPath;
     private readonly string _customCachePath;
     private readonly PluginConfiguration _config;
-    private readonly Mock<ToolManager> _mockToolManager;
     private readonly AssProcessor _assProcessor;
     private readonly SubtitleCacheService _cacheService;
 
@@ -33,11 +32,13 @@ public class SubtitleCacheServiceTests : IDisposable
 
         _config = new PluginConfiguration
         {
+            FontCacheFilePath = Path.Combine(_tempDataPath, "font_caches.json"),
             MaxCacheSizeMB = 1
         };
 
-        _mockToolManager = new Mock<ToolManager>(new NullLogger<ToolManager>());
-        _assProcessor = new AssProcessor(_mockToolManager.Object, _config, new NullLogger<AssProcessor>());
+        var fontCacheManager = new FontCacheManager(new NullLogger<FontCacheManager>(), () => _config);
+        var assParser = new AssDocumentParser();
+        _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 
         _cacheService = new SubtitleCacheService(_config, _assProcessor, _customCachePath, new NullLogger<SubtitleCacheService>());
     }
@@ -82,8 +83,6 @@ public class SubtitleCacheServiceTests : IDisposable
         await File.WriteAllBytesAsync(oldFilePath2, bigBuffer, TestContext.Current.CancellationToken);
         File.SetLastAccessTime(oldFilePath2, DateTime.Now.AddMinutes(-1));
 
-        string fakeExe = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cmd.exe" : "bash";
-        _mockToolManager.Setup(m => m.GetToolPathAsync(It.IsAny<CancellationToken>())).ReturnsAsync(fakeExe);
 
         var newId = Guid.NewGuid();
         string originalPath = Path.Combine(_tempDataPath, "new_original.ass");

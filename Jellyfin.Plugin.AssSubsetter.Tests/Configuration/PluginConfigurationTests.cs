@@ -14,7 +14,7 @@ public class PluginConfigurationTests
         // Assert
         Assert.True(config.EnableAutoScanProcessing);
         Assert.Equal(1024, config.MaxCacheSizeMB);
-        Assert.Equal(string.Empty, config.FontCacheDirectory);
+        Assert.Equal(string.Empty, config.FontCacheFilePath);
         Assert.True(config.FallbackToOriginalOnError);
     }
 }
