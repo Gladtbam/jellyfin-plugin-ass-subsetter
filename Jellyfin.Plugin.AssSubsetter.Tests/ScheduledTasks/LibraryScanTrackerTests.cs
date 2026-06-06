@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,7 +23,7 @@ public class LibraryScanTrackerTests : IDisposable
 
     public LibraryScanTrackerTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "TrackerTests_" + Path.GetRandomFileName());
+        _tempDataPath = Path.Join(Path.GetTempPath(), "TrackerTests_" + Path.GetRandomFileName());
         Directory.CreateDirectory(_tempDataPath);
 
         _config = new PluginConfiguration { EnableAutoScanProcessing = true };
@@ -40,8 +40,8 @@ public class LibraryScanTrackerTests : IDisposable
     public async Task ProcessItem_ShouldTriggerCacheService_WhenVideoAddedAndSubtitleExists()
     {
         var itemId = Guid.NewGuid();
-        string videoPath = Path.Combine(_tempDataPath, "new_anime.mkv");
-        string assPath = Path.Combine(_tempDataPath, "new_anime.ass");
+        string videoPath = Path.Join(_tempDataPath, "new_anime.mkv");
+        string assPath = Path.Join(_tempDataPath, "new_anime.ass");
 
         await File.WriteAllTextAsync(videoPath, "video data", TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(assPath, "ass data", TestContext.Current.CancellationToken);

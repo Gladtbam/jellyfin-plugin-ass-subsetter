@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,7 +25,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
     public PlaybackPrefetchServiceTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "PrefetchTests_" + Path.GetRandomFileName());
+        _tempDataPath = Path.Join(Path.GetTempPath(), "PrefetchTests_" + Path.GetRandomFileName());
         Directory.CreateDirectory(_tempDataPath);
 
         var mockPaths = new Mock<MediaBrowser.Common.Configuration.IApplicationPaths>();
@@ -319,10 +319,10 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Create next episode with both normal and subsetted ASS files
         string nextVideoName = "EP02";
-        string nextVideoPath = Path.Combine(_tempDataPath, nextVideoName + ".mkv");
+        string nextVideoPath = Path.Join(_tempDataPath, nextVideoName + ".mkv");
         File.WriteAllText(nextVideoPath, "video");
-        File.WriteAllText(Path.Combine(_tempDataPath, nextVideoName + ".ass"), "normal sub");
-        File.WriteAllText(Path.Combine(_tempDataPath, nextVideoName + ".subsetted.ass"), "subsetted sub");
+        File.WriteAllText(Path.Join(_tempDataPath, nextVideoName + ".ass"), "normal sub");
+        File.WriteAllText(Path.Join(_tempDataPath, nextVideoName + ".subsetted.ass"), "subsetted sub");
 
         var nextEpisode = new Episode
         {
@@ -355,7 +355,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
             Id = Guid.NewGuid(),
             IndexNumber = indexNumber,
             RunTimeTicks = runtimeTicks,
-            Path = Path.Combine(_tempDataPath, $"EP{indexNumber:D2}.mkv"),
+            Path = Path.Join(_tempDataPath, $"EP{indexNumber:D2}.mkv"),
             ParentId = Guid.NewGuid()
         };
         return episode;
@@ -364,8 +364,8 @@ public class PlaybackPrefetchServiceTests : IDisposable
     private Episode CreateEpisodeWithSubtitle(int indexNumber)
     {
         string videoName = $"EP{indexNumber:D2}";
-        string videoPath = Path.Combine(_tempDataPath, videoName + ".mkv");
-        string assPath = Path.Combine(_tempDataPath, videoName + ".ass");
+        string videoPath = Path.Join(_tempDataPath, videoName + ".mkv");
+        string assPath = Path.Join(_tempDataPath, videoName + ".ass");
         File.WriteAllText(videoPath, "video data");
         File.WriteAllText(assPath, "ass data");
 
@@ -381,13 +381,13 @@ public class PlaybackPrefetchServiceTests : IDisposable
     private Episode CreateEpisodeWithMultipleSubtitles(int indexNumber, int subtitleCount)
     {
         string videoName = $"EP{indexNumber:D2}";
-        string videoPath = Path.Combine(_tempDataPath, videoName + ".mkv");
+        string videoPath = Path.Join(_tempDataPath, videoName + ".mkv");
         File.WriteAllText(videoPath, "video data");
 
         string[] langs = ["chs", "cht", "jpn", "eng", "kor"];
         for (int i = 0; i < subtitleCount && i < langs.Length; i++)
         {
-            File.WriteAllText(Path.Combine(_tempDataPath, $"{videoName}.{langs[i]}.ass"), "ass data");
+            File.WriteAllText(Path.Join(_tempDataPath, $"{videoName}.{langs[i]}.ass"), "ass data");
         }
 
         return new Episode

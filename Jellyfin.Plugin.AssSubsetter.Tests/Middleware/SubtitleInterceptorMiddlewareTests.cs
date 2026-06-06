@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,7 +23,7 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
 
     public SubtitleInterceptorMiddlewareTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "MiddlewareTests_" + Path.GetRandomFileName());
+        _tempDataPath = Path.Join(Path.GetTempPath(), "MiddlewareTests_" + Path.GetRandomFileName());
         Directory.CreateDirectory(_tempDataPath);
 
         _mockLibraryManager = new Mock<ILibraryManager>();
@@ -64,9 +64,9 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
 
         context.Request.Path = $"/Videos/{itemId:N}/stream/Subtitles/2/Stream.ass";
 
-        string videoPath = Path.Combine(_tempDataPath, "movie.mkv");
-        string originalAssPath = Path.Combine(_tempDataPath, "movie.ass");
-        string cachedAssPath = Path.Combine(_tempDataPath, "movie_cached.ass");
+        string videoPath = Path.Join(_tempDataPath, "movie.mkv");
+        string originalAssPath = Path.Join(_tempDataPath, "movie.ass");
+        string cachedAssPath = Path.Join(_tempDataPath, "movie_cached.ass");
 
         await File.WriteAllTextAsync(videoPath, "dummy video", TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(originalAssPath, "dummy original sub", TestContext.Current.CancellationToken);

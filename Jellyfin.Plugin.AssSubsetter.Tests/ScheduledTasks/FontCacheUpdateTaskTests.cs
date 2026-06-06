@@ -21,12 +21,12 @@ public class FontCacheUpdateTaskTests : IDisposable
 
     public FontCacheUpdateTaskTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "FontCacheTaskTests_" + Guid.NewGuid().ToString("N"));
+        _tempDataPath = Path.Join(Path.GetTempPath(), "FontCacheTaskTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDataPath);
 
         _config = new PluginConfiguration
         {
-            FontCacheFilePath = Path.Combine(_tempDataPath, "font_caches.json")
+            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
         };
 
         var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);

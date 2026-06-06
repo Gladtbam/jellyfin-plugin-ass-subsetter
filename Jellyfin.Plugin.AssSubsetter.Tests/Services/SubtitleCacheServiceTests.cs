@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -20,8 +20,8 @@ public class SubtitleCacheServiceTests : IDisposable
 
     public SubtitleCacheServiceTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "SubtitleCacheTests_" + Path.GetRandomFileName());
-        _customCachePath = Path.Combine(_tempDataPath, "Cache");
+        _tempDataPath = Path.Join(Path.GetTempPath(), "SubtitleCacheTests_" + Path.GetRandomFileName());
+        _customCachePath = Path.Join(_tempDataPath, "Cache");
         Directory.CreateDirectory(_tempDataPath);
         Directory.CreateDirectory(_customCachePath);
 
@@ -32,7 +32,7 @@ public class SubtitleCacheServiceTests : IDisposable
 
         _config = new PluginConfiguration
         {
-            FontCacheFilePath = Path.Combine(_tempDataPath, "font_caches.json"),
+            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json"),
             MaxCacheSizeMB = 1
         };
 
@@ -48,10 +48,10 @@ public class SubtitleCacheServiceTests : IDisposable
     {
         // Arrange
         Guid itemId = Guid.NewGuid();
-        string originalAssPath = Path.Combine(_tempDataPath, "original.ass");
+        string originalAssPath = Path.Join(_tempDataPath, "original.ass");
 
         string safeFileName = Path.GetFileName(originalAssPath);
-        string expectedCachePath = Path.Combine(_customCachePath, $"{itemId:N}_{safeFileName}");
+        string expectedCachePath = Path.Join(_customCachePath, $"{itemId:N}_{safeFileName}");
 
         File.WriteAllText(expectedCachePath, "mock cache data");
 
@@ -72,8 +72,8 @@ public class SubtitleCacheServiceTests : IDisposable
         var oldId1 = Guid.NewGuid();
         var oldId2 = Guid.NewGuid();
 
-        string oldFilePath1 = Path.Combine(cacheFileDir, $"{oldId1:N}_old1.ass");
-        string oldFilePath2 = Path.Combine(cacheFileDir, $"{oldId2:N}_old2.ass");
+        string oldFilePath1 = Path.Join(cacheFileDir, $"{oldId1:N}_old1.ass");
+        string oldFilePath2 = Path.Join(cacheFileDir, $"{oldId2:N}_old2.ass");
 
         byte[] bigBuffer = new byte[600 * 1024]; // 600KB
         await File.WriteAllBytesAsync(oldFilePath1, bigBuffer, TestContext.Current.CancellationToken);
@@ -85,7 +85,7 @@ public class SubtitleCacheServiceTests : IDisposable
 
 
         var newId = Guid.NewGuid();
-        string originalPath = Path.Combine(_tempDataPath, "new_original.ass");
+        string originalPath = Path.Join(_tempDataPath, "new_original.ass");
         await File.WriteAllTextAsync(originalPath, "short subtitle lines", TestContext.Current.CancellationToken);
 
         // Act

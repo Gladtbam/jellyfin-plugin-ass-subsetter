@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,12 +17,12 @@ public class AssProcessorTests : IDisposable
 
     public AssProcessorTests()
     {
-        _tempDataPath = Path.Combine(Path.GetTempPath(), "AssProcessorTests_" + Guid.NewGuid().ToString("N"));
+        _tempDataPath = Path.Join(Path.GetTempPath(), "AssProcessorTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDataPath);
 
         _config = new PluginConfiguration
         {
-            FontCacheFilePath = Path.Combine(_tempDataPath, "font_caches.json")
+            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
         };
 
         var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
@@ -34,8 +34,8 @@ public class AssProcessorTests : IDisposable
     public async Task GenerateSubsetFontAsync_ShouldCopyFileAsIs_WhenNoFontsUsed()
     {
         // Arrange
-        string inputAss = Path.Combine(_tempDataPath, "input.ass");
-        string outputAss = Path.Combine(_tempDataPath, "output.ass");
+        string inputAss = Path.Join(_tempDataPath, "input.ass");
+        string outputAss = Path.Join(_tempDataPath, "output.ass");
 
         // Simple text, no font overrides, no V4 Styles
         File.WriteAllText(inputAss, "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text");

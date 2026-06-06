@@ -36,7 +36,7 @@ public class SubtitleCacheService
         _logger = logger;
         _cacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
             ? cacheFolderPath
-            : Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "Cache");
+            : Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "Cache");
 
         if (!Directory.Exists(_cacheFolderPath))
         {
@@ -60,7 +60,7 @@ public class SubtitleCacheService
     public virtual async Task<string> GetOrGenerateSubtitleAsync(Guid itemId, string originalAssPath, CancellationToken cancellationToken = default)
     {
         string safeFileName = Path.GetFileName(originalAssPath);
-        string cacheFilePath = Path.Combine(_cacheFolderPath, $"{itemId:N}_{safeFileName}");
+        string cacheFilePath = Path.Join(_cacheFolderPath, $"{itemId:N}_{safeFileName}");
 
         if (File.Exists(cacheFilePath))
         {

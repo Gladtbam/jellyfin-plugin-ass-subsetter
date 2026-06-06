@@ -111,7 +111,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
 
         string videoDir = Path.GetDirectoryName(video.Path) ?? string.Empty;
         string videoNameWithoutExt = Path.GetFileNameWithoutExtension(video.Path);
-        string exactMatch = Path.Combine(videoDir, videoNameWithoutExt + ".ass");
+        string exactMatch = Path.Join(videoDir, videoNameWithoutExt + ".ass");
         if (File.Exists(exactMatch))
         {
             return exactMatch;

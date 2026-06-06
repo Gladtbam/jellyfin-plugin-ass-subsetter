@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -53,7 +53,7 @@ public sealed class FontCacheManager : IDisposable
         _configProvider = configProvider;
 
         _cacheFilePath = string.IsNullOrWhiteSpace(Config.FontCacheFilePath)
-            ? Path.Combine(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches.json")
+            ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches.json")
             : Config.FontCacheFilePath;
 
         var cacheDir = Path.GetDirectoryName(_cacheFilePath);
@@ -74,19 +74,19 @@ public sealed class FontCacheManager : IDisposable
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts"));
+            dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts"));
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             dirs.Add("/usr/share/fonts");
             dirs.Add("/usr/local/share/fonts");
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/fonts"));
+            dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share/fonts"));
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             dirs.Add("/System/Library/Fonts");
             dirs.Add("/Library/Fonts");
-            dirs.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
+            dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
         }
 
         if (!string.IsNullOrWhiteSpace(Config.CustomFontDirectories))

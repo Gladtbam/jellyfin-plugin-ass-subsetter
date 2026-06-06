@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -25,7 +25,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         Instance = this;
 
-        PluginDataPath = Path.Combine(applicationPaths.DataPath, Name);
+        PluginDataPath = Path.Join(applicationPaths.DataPath, Name);
     }
 
     /// <inheritdoc />

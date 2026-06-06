@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -19,9 +19,9 @@ public class FontCacheManagerTests : IDisposable
 
     public FontCacheManagerTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "FontCacheManagerTests_" + Guid.NewGuid().ToString("N"));
+        _tempDir = Path.Join(Path.GetTempPath(), "FontCacheManagerTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
-        _cacheFile = Path.Combine(_tempDir, "font_index.json");
+        _cacheFile = Path.Join(_tempDir, "font_index.json");
 
         _config = new PluginConfiguration
         {
