@@ -47,7 +47,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
     {
         _libraryManager.ItemAdded += OnItemAdded;
         _libraryManager.ItemUpdated += OnItemUpdated;
-        _logger.LogInformation("AssSubsetter LibraryScanTracker started.");
+        _logger.LogInformation("[AssSubsetter] LibraryScanTracker started.");
         return Task.CompletedTask;
     }
 
@@ -90,13 +90,13 @@ public class LibraryScanTracker : IHostedService, IDisposable
                     string originalAssPath = GetOriginalAssPath(video);
                     if (!string.IsNullOrEmpty(originalAssPath))
                     {
-                        _logger.LogInformation("Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
+                        _logger.LogInformation("[AssSubsetter] Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
                         await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error auto-generating subtitle for item {ItemId}", video.Id);
+                    _logger.LogError(ex, "[AssSubsetter] Error auto-generating subtitle for item {ItemId}", video.Id);
                 }
             });
         }

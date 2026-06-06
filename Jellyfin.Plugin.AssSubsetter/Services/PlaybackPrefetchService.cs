@@ -63,7 +63,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     {
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
         _sessionManager.PlaybackStopped += OnPlaybackStopped;
-        _logger.LogInformation("AssSubsetter PlaybackPrefetchService started.");
+        _logger.LogInformation("[AssSubsetter] PlaybackPrefetchService started.");
         return Task.CompletedTask;
     }
 
@@ -90,13 +90,11 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             return;
         }
 
-        // 仅处理剧集类型
         if (e.Item is not Episode episode)
         {
             return;
         }
 
-        // 需要有播放位置和总时长信息
         long? positionTicks = e.PlaybackPositionTicks;
         long? runtimeTicks = episode.RunTimeTicks;
 
@@ -112,11 +110,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             return;
         }
 
-        // 构建防重复 key
         string sessionId = e.Session?.Id ?? string.Empty;
         string prefetchKey = $"{sessionId}_{episode.Id}";
 
-        // 使用 TryAdd 保证同一次会话中只触发一次
         if (!_triggeredPrefetches.TryAdd(prefetchKey, 0))
         {
             return;
@@ -129,7 +125,6 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             episode.IndexNumber,
             progressPercent);
 
-        // 在后台线程执行预取，不阻塞进度上报
         _ = Task.Run(async () =>
         {
             try
@@ -138,7 +133,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error occurred while prefetching next episode subtitles.");
+                _logger.LogError(ex, "[AssSubsetter] Error occurred while prefetching next episode subtitles.");
             }
         });
     }
@@ -161,7 +156,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     {
         if (currentEpisode.IndexNumber is null)
         {
-            _logger.LogDebug("Current episode has no index number, skipping prefetch.");
+            _logger.LogDebug("[AssSubsetter] Current episode has no index number, skipping prefetch.");
             return;
         }
 
@@ -169,12 +164,12 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         if (nextEpisode is null)
         {
-            _logger.LogDebug("No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
+            _logger.LogDebug("[AssSubsetter] No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
             return;
         }
 
         _logger.LogInformation(
-            "Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...",
+            "[AssSubsetter] Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...",
             nextEpisode.Name,
             nextEpisode.ParentIndexNumber,
             nextEpisode.IndexNumber);
@@ -183,31 +178,30 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         if (assPaths.Length == 0)
         {
-            _logger.LogDebug("No external ASS subtitle files found for next episode {ItemId}.", nextEpisode.Id);
+            _logger.LogDebug("[AssSubsetter] No external ASS subtitle files found for next episode {ItemId}.", nextEpisode.Id);
             return;
         }
 
-        _logger.LogInformation("Found {Count} ASS subtitle file(s) for next episode. Starting subset generation...", assPaths.Length);
+        _logger.LogInformation("[AssSubsetter] Found {Count} ASS subtitle file(s) for next episode. Starting subset generation...", assPaths.Length);
 
         foreach (string assPath in assPaths)
         {
             try
             {
-                _logger.LogInformation("Prefetch subsetting: {AssPath}", assPath);
+                _logger.LogInformation("[AssSubsetter] Prefetch subsetting: {AssPath}", assPath);
                 await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to prefetch subtitle: {AssPath}", assPath);
+                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle: {AssPath}", assPath);
             }
         }
 
-        _logger.LogInformation("Prefetch subsetting completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
+        _logger.LogInformation("[AssSubsetter] Prefetch subsetting completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
     }
 
     private Episode? FindNextEpisode(Episode currentEpisode)
     {
-        // 获取同一季的所有剧集
         var parentId = currentEpisode.ParentId;
         if (parentId.Equals(default))
         {
@@ -222,7 +216,6 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             IncludeItemTypes = [BaseItemKind.Episode]
         });
 
-        // 查找 IndexNumber 刚好大于当前集的下一集
         var nextEpisode = children
             .OfType<Episode>()
             .Where(e => e.IndexNumber.HasValue && e.IndexNumber.Value > currentIndex)

@@ -62,7 +62,7 @@ public class SubtitleInterceptorMiddleware
 
             if (Guid.TryParse(itemIdString, out Guid itemId))
             {
-                _logger.LogInformation("Intercepted ASS subtitle request for item: {ItemId}", itemId);
+                _logger.LogInformation("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
 
                 try
                 {
@@ -72,7 +72,7 @@ public class SubtitleInterceptorMiddleware
 
                         if (!string.IsNullOrEmpty(originalAssPath) && File.Exists(originalAssPath))
                         {
-                            _logger.LogInformation("Target external ASS found: {Path}", originalAssPath);
+                            _logger.LogInformation("[AssSubsetter] Target external ASS found: {Path}", originalAssPath);
 
                             string finalAssPath = await _cacheService.GetOrGenerateSubtitleAsync(
                                 itemId,
@@ -88,13 +88,13 @@ public class SubtitleInterceptorMiddleware
                         }
                         else
                         {
-                            _logger.LogWarning("Original ASS path not found or missing for item: {ItemId}", itemId);
+                            _logger.LogWarning("[AssSubsetter] Original ASS path not found or missing for item: {ItemId}", itemId);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error occurred while intercepting subtitle stream. Falling back to native pipeline.");
+                    _logger.LogError(ex, "[AssSubsetter] Error occurred while intercepting subtitle stream. Falling back to native pipeline.");
                 }
             }
         }
