@@ -20,7 +20,7 @@ public class SubtitleCacheService
     private readonly AssProcessor _assProcessor;
     private readonly ILogger<SubtitleCacheService> _logger;
 
-    private static readonly ConcurrentDictionary<Guid, SemaphoreSlim> _fileLocks = new();
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _fileLocks = new();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SubtitleCacheService"/> class.
