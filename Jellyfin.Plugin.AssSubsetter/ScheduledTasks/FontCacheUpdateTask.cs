@@ -1,13 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
@@ -15,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 /// <summary>
-/// Scheduled task to scan physical font directories and build the mkvtool font cache index.
+/// Scheduled task to scan physical font directories and build the local font cache index.
 /// </summary>
 public class FontCacheUpdateTask : IScheduledTask
 {
@@ -48,7 +42,6 @@ public class FontCacheUpdateTask : IScheduledTask
     public string Category => "Subtitles";
 
     /// <inheritdoc />
-    [SuppressMessage("Security", "CA3006:Review code for process command injection vulnerabilities", Justification = "Controlled internal execution")]
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         _logger.LogInformation("[AssSubsetter] 开始执行本地字体数据库更新任务...");

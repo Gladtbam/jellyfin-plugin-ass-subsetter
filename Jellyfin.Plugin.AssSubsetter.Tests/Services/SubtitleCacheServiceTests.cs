@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -36,7 +36,7 @@ public class SubtitleCacheServiceTests : IDisposable
             MaxCacheSizeMB = 1
         };
 
-        var fontCacheManager = new FontCacheManager(new NullLogger<FontCacheManager>(), () => _config);
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
         var assParser = new AssDocumentParser();
         _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 

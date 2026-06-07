@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -28,7 +28,7 @@ public sealed class FontCacheManager : IDisposable
     private readonly ILogger<FontCacheManager> _logger;
     private readonly string _cacheFilePath;
     private readonly SemaphoreSlim _scanLock = new(1, 1);
-    private readonly Func<PluginConfiguration> _configProvider;
+    private readonly PluginConfiguration _config;
 
     private Dictionary<string, List<FontCacheEntry>> _fontIndex = new(StringComparer.OrdinalIgnoreCase);
     private bool _isLoaded;
@@ -37,24 +37,15 @@ public sealed class FontCacheManager : IDisposable
     /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    public FontCacheManager(ILogger<FontCacheManager> logger)
-        : this(logger, () => Plugin.Instance?.Configuration ?? new PluginConfiguration())
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
-    /// </summary>
-    /// <param name="logger">The logger.</param>
-    /// <param name="configProvider">The configuration provider.</param>
-    public FontCacheManager(ILogger<FontCacheManager> logger, Func<PluginConfiguration> configProvider)
+    /// <param name="config">The plugin configuration.</param>
+    public FontCacheManager(ILogger<FontCacheManager> logger, PluginConfiguration config)
     {
         _logger = logger;
-        _configProvider = configProvider;
+        _config = config;
 
-        _cacheFilePath = string.IsNullOrWhiteSpace(Config.FontCacheFilePath)
+        _cacheFilePath = string.IsNullOrWhiteSpace(_config.FontCacheFilePath)
             ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches.json")
-            : Config.FontCacheFilePath;
+            : _config.FontCacheFilePath;
 
         var cacheDir = Path.GetDirectoryName(_cacheFilePath);
         if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
@@ -62,8 +53,6 @@ public sealed class FontCacheManager : IDisposable
             Directory.CreateDirectory(cacheDir);
         }
     }
-
-    private PluginConfiguration Config => _configProvider();
 
     /// <summary>
     /// Gets the list of directories to scan for fonts.
@@ -89,9 +78,9 @@ public sealed class FontCacheManager : IDisposable
             dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
         }
 
-        if (!string.IsNullOrWhiteSpace(Config.CustomFontDirectories))
+        if (!string.IsNullOrWhiteSpace(_config.CustomFontDirectories))
         {
-            var customDirs = Config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
+            var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
             foreach (var dir in customDirs)
             {
                 string trimmedDir = dir.Trim();
@@ -268,32 +257,7 @@ public sealed class FontCacheManager : IDisposable
 
             var finalList = updatedCacheList.ToList();
 
-            // Build the internal index
-            var newIndex = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in finalList)
-            {
-                var namesToMap = entry.Names != null && entry.Names.Count > 0
-                    ? entry.Names
-                    : new List<string> { entry.FamilyName };
-
-                foreach (var name in namesToMap)
-                {
-                    if (string.IsNullOrWhiteSpace(name))
-                    {
-                        continue;
-                    }
-
-                    if (!newIndex.TryGetValue(name, out var list))
-                    {
-                        list = new List<FontCacheEntry>();
-                        newIndex[name] = list;
-                    }
-
-                    list.Add(entry);
-                }
-            }
-
-            _fontIndex = newIndex;
+            _fontIndex = BuildIndex(finalList);
             _isLoaded = true;
 
             // Save
@@ -310,7 +274,7 @@ public sealed class FontCacheManager : IDisposable
     }
 
     /// <summary>
-    /// Loads the cache into memory if not already loaded. Does not perform a disk scan.
+    /// Loads the cache into memory if not already loaded. Triggers a full scan if no cache file exists.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -320,6 +284,8 @@ public sealed class FontCacheManager : IDisposable
         {
             return;
         }
+
+        bool needsScan = false;
 
         await _scanLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -335,42 +301,15 @@ public sealed class FontCacheManager : IDisposable
                 var cachedList = JsonSerializer.Deserialize<List<FontCacheEntry>>(json);
                 if (cachedList != null)
                 {
-                    var newIndex = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var entry in cachedList)
-                    {
-                        var namesToMap = entry.Names != null && entry.Names.Count > 0
-                            ? entry.Names
-                            : new List<string> { entry.FamilyName };
-
-                        foreach (var name in namesToMap)
-                        {
-                            if (string.IsNullOrWhiteSpace(name))
-                            {
-                                continue;
-                            }
-
-                            if (!newIndex.TryGetValue(name, out var list))
-                            {
-                                list = new List<FontCacheEntry>();
-                                newIndex[name] = list;
-                            }
-
-                            list.Add(entry);
-                        }
-                    }
-
-                    _fontIndex = newIndex;
+                    _fontIndex = BuildIndex(cachedList);
                 }
+
+                _isLoaded = true;
             }
             else
             {
-                // If no cache exists, run a scan
-                _scanLock.Release(); // release before calling ScanAndSaveAsync which takes the lock
-                await ScanAndSaveAsync(null, cancellationToken).ConfigureAwait(false);
-                return;
+                needsScan = true;
             }
-
-            _isLoaded = true;
         }
         catch (Exception ex)
         {
@@ -378,29 +317,33 @@ public sealed class FontCacheManager : IDisposable
         }
         finally
         {
-            if (_scanLock.CurrentCount == 0)
-            {
-                _scanLock.Release();
-            }
+            _scanLock.Release();
+        }
+
+        if (needsScan)
+        {
+            await ScanAndSaveAsync(null, cancellationToken).ConfigureAwait(false);
         }
     }
 
     /// <summary>
     /// Finds the best matching physical font file for the given font name and styles.
     /// </summary>
-    /// <param name="fontName">The name of the font to find.</param>
+    /// <param name="desc">The font variant descriptor containing name, weight, and italic properties.</param>
     /// <returns>A tuple containing the path and face index, or null if not found.</returns>
-    public (string Path, int FaceIndex)? FindFontFilePath(string fontName)
+    public (string Path, int FaceIndex)? FindFontFilePath(FontDescriptor desc)
     {
         if (!_isLoaded)
         {
             EnsureLoadedAsync().GetAwaiter().GetResult();
         }
 
+        string fontName = desc.FontName;
+
         // Try exact match on FamilyName or any of its extracted Names
         if (_fontIndex.TryGetValue(fontName, out var entries) && entries.Count > 0)
         {
-            var best = entries.OrderBy(e => e.Weight).ThenBy(e => e.IsItalic ? 1 : 0).First();
+            var best = FindBestVariant(entries, desc);
             return (best.Path, best.FaceIndex);
         }
 
@@ -410,12 +353,39 @@ public sealed class FontCacheManager : IDisposable
             if (kvp.Key.Contains(fontName, StringComparison.OrdinalIgnoreCase) ||
                 fontName.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
             {
-                var best = kvp.Value.First();
+                var best = FindBestVariant(kvp.Value, desc);
                 return (best.Path, best.FaceIndex);
             }
         }
 
         return null;
+    }
+
+    private static FontCacheEntry FindBestVariant(List<FontCacheEntry> entries, FontDescriptor desc)
+    {
+        if (entries.Count == 1)
+        {
+            return entries[0];
+        }
+
+        // Filter by Italic if there's an exact match for the italic preference
+        var italicMatches = entries.Where(e => e.IsItalic == desc.IsItalic).ToList();
+        var candidates = italicMatches.Count > 0 ? italicMatches : entries;
+
+        // Weight fallback logic
+        if (desc.RequestedWeight.HasValue)
+        {
+            return candidates.OrderBy(e => Math.Abs(e.Weight - desc.RequestedWeight.Value)).First();
+        }
+
+        if (desc.IsBoldRequest)
+        {
+            // Pick maximum weight available
+            return candidates.OrderByDescending(e => e.Weight).First();
+        }
+
+        // Default to closest to Regular (400)
+        return candidates.OrderBy(e => Math.Abs(e.Weight - 400)).First();
     }
 
     private static (List<string> Names, string Style) ExtractFontNames(SKTypeface typeface)
@@ -487,6 +457,35 @@ public sealed class FontCacheManager : IDisposable
         }
 
         return (names.ToList(), style);
+    }
+
+    private static Dictionary<string, List<FontCacheEntry>> BuildIndex(IEnumerable<FontCacheEntry> entries)
+    {
+        var index = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            var namesToMap = entry.Names != null && entry.Names.Count > 0
+                ? entry.Names
+                : new List<string> { entry.FamilyName };
+
+            foreach (var name in namesToMap)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                if (!index.TryGetValue(name, out var list))
+                {
+                    list = new List<FontCacheEntry>();
+                    index[name] = list;
+                }
+
+                list.Add(entry);
+            }
+        }
+
+        return index;
     }
 
     /// <inheritdoc/>

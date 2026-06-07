@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +7,7 @@ using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -56,11 +57,28 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
     [Fact]
     public async Task InvokeAsync_ShouldInterceptAndSetContentType_WhenRouteMatchesAndFileExists()
     {
+        var mockLogger = new Mock<ILogger<SubtitleInterceptorMiddleware>>();
+        mockLogger.Setup(x => x.Log(
+            LogLevel.Error,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception>(),
+            (Func<It.IsAnyType, Exception?, string>)It.IsAny<object>()))
+        .Callback((LogLevel l, EventId e, object v, Exception ex, object f) => throw new Exception("Middleware threw: " + ex));
+
         var middleware = new SubtitleInterceptorMiddleware(
-            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, new NullLogger<SubtitleInterceptorMiddleware>());
+            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, mockLogger.Object);
 
         var itemId = Guid.NewGuid();
         var context = new DefaultHttpContext();
+        var mockServiceProvider = new Mock<IServiceProvider>();
+        var mockExecutor = new Mock<Microsoft.AspNetCore.Mvc.Infrastructure.IActionResultExecutor<Microsoft.AspNetCore.Mvc.PhysicalFileResult>>();
+        mockExecutor.Setup(x => x.ExecuteAsync(It.IsAny<Microsoft.AspNetCore.Mvc.ActionContext>(), It.IsAny<Microsoft.AspNetCore.Mvc.PhysicalFileResult>()))
+                    .Returns(Task.CompletedTask)
+                    .Callback(() => context.Response.ContentType = "text/x-ssa"); // mimic the executor setting content type
+        mockServiceProvider.Setup(x => x.GetService(typeof(Microsoft.AspNetCore.Mvc.Infrastructure.IActionResultExecutor<Microsoft.AspNetCore.Mvc.PhysicalFileResult>)))
+                           .Returns(mockExecutor.Object);
+        context.RequestServices = mockServiceProvider.Object;
 
         context.Request.Path = $"/Videos/{itemId:N}/stream/Subtitles/2/Stream.ass";
 
@@ -76,7 +94,7 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
         _mockLibraryManager.Setup(m => m.GetItemById(itemId)).Returns(video);
 
         _mockCacheService
-            .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, originalAssPath, It.IsAny<CancellationToken>()))
+            .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedAssPath);
 
         await middleware.InvokeAsync(context);

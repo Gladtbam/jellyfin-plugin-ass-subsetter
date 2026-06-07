@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -48,12 +48,12 @@ public class FontCacheManagerTests : IDisposable
 
         await File.WriteAllTextAsync(_cacheFile, JsonSerializer.Serialize(fakeEntries), TestContext.Current.CancellationToken);
 
-        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
 
         // Act
         await manager.EnsureLoadedAsync(TestContext.Current.CancellationToken);
-        var foundInfo = manager.FindFontFilePath("FakeFont");
-        var notFound = manager.FindFontFilePath("Unknown");
+        var foundInfo = manager.FindFontFilePath(new FontDescriptor("FakeFont", null, false, false));
+        var notFound = manager.FindFontFilePath(new FontDescriptor("Unknown", null, false, false));
 
         // Assert
         Assert.NotNull(foundInfo);
@@ -77,11 +77,11 @@ public class FontCacheManagerTests : IDisposable
 
         await File.WriteAllTextAsync(_cacheFile, JsonSerializer.Serialize(fakeEntries), TestContext.Current.CancellationToken);
 
-        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
         await manager.EnsureLoadedAsync(TestContext.Current.CancellationToken);
 
         // Act - loose match
-        var foundInfo = manager.FindFontFilePath("Comic Sans");
+        var foundInfo = manager.FindFontFilePath(new FontDescriptor("Comic Sans", null, false, false));
 
         // Assert
         Assert.NotNull(foundInfo);
@@ -92,7 +92,7 @@ public class FontCacheManagerTests : IDisposable
     [Fact]
     public void Dispose_ShouldNotThrow()
     {
-        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        using var manager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
         // implicit dispose at end of block
     }
 

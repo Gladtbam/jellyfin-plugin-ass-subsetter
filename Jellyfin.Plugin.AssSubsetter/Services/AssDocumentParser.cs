@@ -15,16 +15,18 @@ public class AssDocumentParser
     /// </summary>
     /// <param name="filePath">The ASS file path.</param>
     /// <returns>A dictionary mapping FontName to a HashSet of used Unicode codepoints.</returns>
-    public Dictionary<string, HashSet<uint>> ExtractUsedCharacters(string filePath)
+    public Dictionary<FontDescriptor, HashSet<uint>> ExtractUsedCharacters(string filePath)
     {
-        var usedChars = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
-        var styles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var usedChars = new Dictionary<FontDescriptor, HashSet<uint>>();
+        var styles = new Dictionary<string, FontDescriptor>(StringComparer.OrdinalIgnoreCase);
 
         bool inStyles = false;
         bool inEvents = false;
 
-        int styleNameIndex = 0;
-        int styleFontIndex = 1;
+        int styleNameIndex = -1;
+        int styleFontIndex = -1;
+        int styleBoldIndex = -1;
+        int styleItalicIndex = -1;
 
         int eventStyleIndex = 3;
         int eventTextIndex = 9;
@@ -53,6 +55,8 @@ public class AssDocumentParser
                     var columns = formatStr.Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
                     styleNameIndex = columns.IndexOf("name");
                     styleFontIndex = columns.IndexOf("fontname");
+                    styleBoldIndex = columns.IndexOf("bold");
+                    styleItalicIndex = columns.IndexOf("italic");
                 }
                 else if (trimmedLine.StartsWith("Style:", StringComparison.OrdinalIgnoreCase))
                 {
@@ -68,10 +72,41 @@ public class AssDocumentParser
                             fontName = fontName.Substring(1); // Ignore @ vertical font prefix
                         }
 
-                        styles[name] = fontName;
-                        if (!usedChars.ContainsKey(fontName))
+                        int? weight = null;
+                        bool isBoldReq = false;
+                        bool isItalic = false;
+
+                        if (styleBoldIndex >= 0 && styleBoldIndex < parts.Length)
                         {
-                            usedChars[fontName] = new HashSet<uint>();
+                            string bStr = parts[styleBoldIndex].Trim();
+                            if (bStr == "-1")
+                            {
+                                isBoldReq = true;
+                            }
+                            else if (int.TryParse(bStr, out int w))
+                            {
+                                if (w == 1)
+                                {
+                                    isBoldReq = true;
+                                }
+                                else if (w > 1)
+                                {
+                                    weight = w;
+                                }
+                            }
+                        }
+
+                        if (styleItalicIndex >= 0 && styleItalicIndex < parts.Length)
+                        {
+                            string iStr = parts[styleItalicIndex].Trim();
+                            isItalic = iStr == "-1" || iStr == "1";
+                        }
+
+                        var desc = new FontDescriptor(fontName, weight, isBoldReq, isItalic);
+                        styles[name] = desc;
+                        if (!usedChars.ContainsKey(desc))
+                        {
+                            usedChars[desc] = new HashSet<uint>();
                         }
                     }
                 }
@@ -96,8 +131,8 @@ public class AssDocumentParser
                         string styleName = parts[eventStyleIndex].Trim();
                         string text = parts[eventTextIndex];
 
-                        string currentFont = styles.TryGetValue(styleName, out var f) ? f : "Arial";
-                        string defaultFont = currentFont;
+                        FontDescriptor currentFont = styles.TryGetValue(styleName, out var f) ? f : new FontDescriptor("Arial", null, false, false);
+                        FontDescriptor defaultFont = currentFont;
 
                         if (!usedChars.ContainsKey(currentFont))
                         {
@@ -110,7 +145,7 @@ public class AssDocumentParser
             }
         }
 
-        var result = new Dictionary<string, HashSet<uint>>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<FontDescriptor, HashSet<uint>>();
         foreach (var kvp in usedChars)
         {
             if (kvp.Value.Count > 0)
@@ -122,7 +157,7 @@ public class AssDocumentParser
         return result;
     }
 
-    private void ParseTextLine(string text, string currentFont, string defaultFont, Dictionary<string, string> styles, Dictionary<string, HashSet<uint>> usedChars)
+    private void ParseTextLine(string text, FontDescriptor currentFont, FontDescriptor defaultFont, Dictionary<string, FontDescriptor> styles, Dictionary<FontDescriptor, HashSet<uint>> usedChars)
     {
         bool inDrawingMode = false;
 
@@ -157,11 +192,67 @@ public class AssDocumentParser
 
                     if (!string.IsNullOrEmpty(newFont))
                     {
-                        currentFont = newFont;
+                        currentFont = currentFont with { FontName = newFont };
                         if (!usedChars.ContainsKey(currentFont))
                         {
                             usedChars[currentFont] = new HashSet<uint>();
                         }
+                    }
+                }
+
+                int bIndex = tagContent.IndexOf("\\b", StringComparison.OrdinalIgnoreCase);
+                if (bIndex != -1)
+                {
+                    int start = bIndex + 2;
+                    int end = start;
+                    while (end < tagContent.Length && tagContent[end] != '\\')
+                    {
+                        end++;
+                    }
+
+                    string bVal = tagContent.Substring(start, end - start).Trim();
+                    if (bVal == "1")
+                    {
+                        currentFont = currentFont with { IsBoldRequest = true, RequestedWeight = null };
+                    }
+                    else if (bVal == "0")
+                    {
+                        currentFont = currentFont with { IsBoldRequest = false, RequestedWeight = null };
+                    }
+                    else if (int.TryParse(bVal, out int w))
+                    {
+                        currentFont = currentFont with { RequestedWeight = w, IsBoldRequest = false };
+                    }
+
+                    if (!usedChars.ContainsKey(currentFont))
+                    {
+                        usedChars[currentFont] = new HashSet<uint>();
+                    }
+                }
+
+                int iIndex = tagContent.IndexOf("\\i", StringComparison.OrdinalIgnoreCase);
+                if (iIndex != -1)
+                {
+                    int start = iIndex + 2;
+                    int end = start;
+                    while (end < tagContent.Length && tagContent[end] != '\\')
+                    {
+                        end++;
+                    }
+
+                    string iVal = tagContent.Substring(start, end - start).Trim();
+                    if (iVal == "1")
+                    {
+                        currentFont = currentFont with { IsItalic = true };
+                    }
+                    else if (iVal == "0")
+                    {
+                        currentFont = currentFont with { IsItalic = false };
+                    }
+
+                    if (!usedChars.ContainsKey(currentFont))
+                    {
+                        usedChars[currentFont] = new HashSet<uint>();
                     }
                 }
 
