@@ -28,7 +28,7 @@ public sealed class FontCacheManager : IDisposable
     private readonly ILogger<FontCacheManager> _logger;
     private readonly string _cacheFilePath;
     private readonly SemaphoreSlim _scanLock = new(1, 1);
-    private readonly Func<PluginConfiguration> _configProvider;
+    private readonly PluginConfiguration _config;
 
     private Dictionary<string, List<FontCacheEntry>> _fontIndex = new(StringComparer.OrdinalIgnoreCase);
     private bool _isLoaded;
@@ -37,24 +37,15 @@ public sealed class FontCacheManager : IDisposable
     /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    public FontCacheManager(ILogger<FontCacheManager> logger)
-        : this(logger, () => Plugin.Instance?.Configuration ?? new PluginConfiguration())
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
-    /// </summary>
-    /// <param name="logger">The logger.</param>
-    /// <param name="configProvider">The configuration provider.</param>
-    public FontCacheManager(ILogger<FontCacheManager> logger, Func<PluginConfiguration> configProvider)
+    /// <param name="config">The plugin configuration.</param>
+    public FontCacheManager(ILogger<FontCacheManager> logger, PluginConfiguration config)
     {
         _logger = logger;
-        _configProvider = configProvider;
+        _config = config;
 
-        _cacheFilePath = string.IsNullOrWhiteSpace(Config.FontCacheFilePath)
+        _cacheFilePath = string.IsNullOrWhiteSpace(_config.FontCacheFilePath)
             ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches.json")
-            : Config.FontCacheFilePath;
+            : _config.FontCacheFilePath;
 
         var cacheDir = Path.GetDirectoryName(_cacheFilePath);
         if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
@@ -62,8 +53,6 @@ public sealed class FontCacheManager : IDisposable
             Directory.CreateDirectory(cacheDir);
         }
     }
-
-    private PluginConfiguration Config => _configProvider();
 
     /// <summary>
     /// Gets the list of directories to scan for fonts.
@@ -89,9 +78,9 @@ public sealed class FontCacheManager : IDisposable
             dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
         }
 
-        if (!string.IsNullOrWhiteSpace(Config.CustomFontDirectories))
+        if (!string.IsNullOrWhiteSpace(_config.CustomFontDirectories))
         {
-            var customDirs = Config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
+            var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
             foreach (var dir in customDirs)
             {
                 string trimmedDir = dir.Trim();

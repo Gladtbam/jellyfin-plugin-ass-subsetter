@@ -29,7 +29,7 @@ public class FontCacheUpdateTaskTests : IDisposable
             FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
         };
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
         _task = new FontCacheUpdateTask(fontCacheManager, NullLogger<FontCacheUpdateTask>.Instance);
     }
 
