@@ -329,19 +329,21 @@ public sealed class FontCacheManager : IDisposable
     /// <summary>
     /// Finds the best matching physical font file for the given font name and styles.
     /// </summary>
-    /// <param name="fontName">The name of the font to find.</param>
+    /// <param name="desc">The font variant descriptor containing name, weight, and italic properties.</param>
     /// <returns>A tuple containing the path and face index, or null if not found.</returns>
-    public (string Path, int FaceIndex)? FindFontFilePath(string fontName)
+    public (string Path, int FaceIndex)? FindFontFilePath(FontDescriptor desc)
     {
         if (!_isLoaded)
         {
             EnsureLoadedAsync().GetAwaiter().GetResult();
         }
 
+        string fontName = desc.FontName;
+
         // Try exact match on FamilyName or any of its extracted Names
         if (_fontIndex.TryGetValue(fontName, out var entries) && entries.Count > 0)
         {
-            var best = entries.OrderBy(e => e.Weight).ThenBy(e => e.IsItalic ? 1 : 0).First();
+            var best = FindBestVariant(entries, desc);
             return (best.Path, best.FaceIndex);
         }
 
@@ -351,12 +353,39 @@ public sealed class FontCacheManager : IDisposable
             if (kvp.Key.Contains(fontName, StringComparison.OrdinalIgnoreCase) ||
                 fontName.Contains(kvp.Key, StringComparison.OrdinalIgnoreCase))
             {
-                var best = kvp.Value.First();
+                var best = FindBestVariant(kvp.Value, desc);
                 return (best.Path, best.FaceIndex);
             }
         }
 
         return null;
+    }
+
+    private static FontCacheEntry FindBestVariant(List<FontCacheEntry> entries, FontDescriptor desc)
+    {
+        if (entries.Count == 1)
+        {
+            return entries[0];
+        }
+
+        // Filter by Italic if there's an exact match for the italic preference
+        var italicMatches = entries.Where(e => e.IsItalic == desc.IsItalic).ToList();
+        var candidates = italicMatches.Count > 0 ? italicMatches : entries;
+
+        // Weight fallback logic
+        if (desc.RequestedWeight.HasValue)
+        {
+            return candidates.OrderBy(e => Math.Abs(e.Weight - desc.RequestedWeight.Value)).First();
+        }
+
+        if (desc.IsBoldRequest)
+        {
+            // Pick maximum weight available
+            return candidates.OrderByDescending(e => e.Weight).First();
+        }
+
+        // Default to closest to Regular (400)
+        return candidates.OrderBy(e => Math.Abs(e.Weight - 400)).First();
     }
 
     private static (List<string> Names, string Style) ExtractFontNames(SKTypeface typeface)

@@ -52,8 +52,8 @@ public class FontCacheManagerTests : IDisposable
 
         // Act
         await manager.EnsureLoadedAsync(TestContext.Current.CancellationToken);
-        var foundInfo = manager.FindFontFilePath("FakeFont");
-        var notFound = manager.FindFontFilePath("Unknown");
+        var foundInfo = manager.FindFontFilePath(new FontDescriptor("FakeFont", null, false, false));
+        var notFound = manager.FindFontFilePath(new FontDescriptor("Unknown", null, false, false));
 
         // Assert
         Assert.NotNull(foundInfo);
@@ -81,7 +81,7 @@ public class FontCacheManagerTests : IDisposable
         await manager.EnsureLoadedAsync(TestContext.Current.CancellationToken);
 
         // Act - loose match
-        var foundInfo = manager.FindFontFilePath("Comic Sans");
+        var foundInfo = manager.FindFontFilePath(new FontDescriptor("Comic Sans", null, false, false));
 
         // Assert
         Assert.NotNull(foundInfo);

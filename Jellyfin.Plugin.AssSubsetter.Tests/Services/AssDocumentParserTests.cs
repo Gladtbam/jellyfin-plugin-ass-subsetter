@@ -48,8 +48,9 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Hello
 
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
-        Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
-        var codepoints = result["Arial"];
+        var desc = new FontDescriptor("Arial", null, false, false);
+        Assert.True(result.ContainsKey(desc));
+        var codepoints = result[desc];
         Assert.Contains((uint)'H', codepoints);
         Assert.Contains((uint)'e', codepoints);
         Assert.Contains((uint)'l', codepoints);
@@ -73,11 +74,14 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Hello {\fnComic Sans MS}World
 
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
-        Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
-        Assert.Contains("Comic Sans MS", (IDictionary<string, HashSet<uint>>)result);
+        var arialDesc = new FontDescriptor("Arial", null, false, false);
+        var comicDesc = new FontDescriptor("Comic Sans MS", null, false, false);
 
-        var arialChars = result["Arial"];
-        var comicChars = result["Comic Sans MS"];
+        Assert.True(result.ContainsKey(arialDesc));
+        Assert.True(result.ContainsKey(comicDesc));
+
+        var arialChars = result[arialDesc];
+        var comicChars = result[comicDesc];
 
         Assert.Contains((uint)'H', arialChars);
         Assert.Contains((uint)'e', arialChars);
@@ -105,11 +109,14 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,One {\rAlt}Two {\r}Three
 
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
-        Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
-        Assert.Contains("Times New Roman", (IDictionary<string, HashSet<uint>>)result);
+        var desc1 = new FontDescriptor("Arial", null, false, false);
+        var desc2 = new FontDescriptor("Times New Roman", null, false, false);
 
-        var arialChars = result["Arial"];
-        var timesChars = result["Times New Roman"];
+        Assert.True(result.ContainsKey(desc1));
+        Assert.True(result.ContainsKey(desc2));
+
+        var arialChars = result[desc1];
+        var timesChars = result[desc2];
 
         // "One " and "Three" belong to Arial
         Assert.Contains((uint)'O', arialChars);
@@ -141,8 +148,9 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\p1}m 0 0 l 100 100{\p0}Hello
 
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
-        Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
-        var codepoints = result["Arial"];
+        var desc = new FontDescriptor("Arial", null, false, false);
+        Assert.True(result.ContainsKey(desc));
+        var codepoints = result[desc];
 
         // "m 0 0 l 100 100" should be ignored because it's inside \p1 ... \p0
         Assert.DoesNotContain((uint)'m', codepoints);
@@ -168,8 +176,9 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,𠮷野家
 
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
-        Assert.Contains("Arial", (IDictionary<string, HashSet<uint>>)result);
-        var codepoints = result["Arial"];
+        var desc = new FontDescriptor("Arial", null, false, false);
+        Assert.True(result.ContainsKey(desc));
+        var codepoints = result[desc];
 
         // '𠮷' is U+20BB7 (134071 in decimal)
         Assert.Contains((uint)0x20BB7, codepoints);

@@ -82,13 +82,14 @@ public class AssProcessor
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                string fontName = kvp.Key;
+                FontDescriptor desc = kvp.Key;
+                string fontName = desc.FontName;
                 var codepoints = kvp.Value;
 
-                var fontInfo = _fontCacheManager.FindFontFilePath(fontName);
+                var fontInfo = _fontCacheManager.FindFontFilePath(desc);
                 if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
                 {
-                    _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}'. Skipping.", fontName);
+                    _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
                     continue;
                 }
 
@@ -102,8 +103,23 @@ public class AssProcessor
 
                 if (subsetData != null && subsetData.Length > 0)
                 {
-                    // Use clean standard filename for the embedded font (remove invalid OS characters just in case)
+                    // Use clean standard filename for the embedded font
                     string safeFontName = string.Join("_", fontName.Split(Path.GetInvalidFileNameChars()));
+
+                    if (desc.RequestedWeight.HasValue)
+                    {
+                        safeFontName += $"_{desc.RequestedWeight}";
+                    }
+                    else if (desc.IsBoldRequest)
+                    {
+                        safeFontName += "_Bold";
+                    }
+
+                    if (desc.IsItalic)
+                    {
+                        safeFontName += "_Italic";
+                    }
+
                     string embeddedName = $"{safeFontName}.ttf";
                     await writer.WriteLineAsync($"fontname: {embeddedName}").ConfigureAwait(false);
 
