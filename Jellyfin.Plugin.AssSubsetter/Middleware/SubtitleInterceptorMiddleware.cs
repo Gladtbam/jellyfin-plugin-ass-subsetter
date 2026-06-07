@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
-using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Services;
@@ -72,7 +71,7 @@ public class SubtitleInterceptorMiddleware
                 {
                     if (_libraryManager.GetItemById(itemId) is Video video)
                     {
-                        string originalAssPath = GetOriginalAssPath(video);
+                        string originalAssPath = AssPathHelper.GetOriginalAssPath(video.Path);
 
                         if (!string.IsNullOrEmpty(originalAssPath) && File.Exists(originalAssPath))
                         {
@@ -126,43 +125,5 @@ public class SubtitleInterceptorMiddleware
         }
 
         await _next(context).ConfigureAwait(false);
-    }
-
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Path is determined solely from trusted database objects.")]
-    private static string GetOriginalAssPath(Video video)
-    {
-        if (string.IsNullOrEmpty(video.Path))
-        {
-            return string.Empty;
-        }
-
-        string videoDir = Path.GetDirectoryName(video.Path) ?? string.Empty;
-        string videoNameWithoutExt = Path.GetFileNameWithoutExtension(video.Path);
-        string exactMatch = Path.Join(videoDir, videoNameWithoutExt + ".ass");
-        if (File.Exists(exactMatch))
-        {
-            return exactMatch;
-        }
-
-        try
-        {
-            if (Directory.Exists(videoDir))
-            {
-                var assFiles = Directory.GetFiles(videoDir, videoNameWithoutExt + "*.ass")
-                    .Where(f => !f.Contains("subsetted", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-
-                if (assFiles.Length > 0)
-                {
-                    return assFiles[0];
-                }
-            }
-        }
-        catch
-        {
-            /* 忽略目录读取异常 */
-        }
-
-        return string.Empty;
     }
 }

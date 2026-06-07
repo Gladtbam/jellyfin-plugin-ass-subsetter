@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -174,7 +173,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             nextEpisode.ParentIndexNumber,
             nextEpisode.IndexNumber);
 
-        string[] assPaths = GetAllOriginalAssPaths(nextEpisode);
+        string[] assPaths = AssPathHelper.GetAllOriginalAssPaths(nextEpisode.Path);
 
         if (assPaths.Length == 0)
         {
@@ -223,39 +222,6 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             .FirstOrDefault();
 
         return nextEpisode;
-    }
-
-    /// <summary>
-    /// Gets all original (non-subsetted) ASS subtitle file paths for a given video.
-    /// </summary>
-    /// <param name="video">The video item.</param>
-    /// <returns>An array of ASS file paths.</returns>
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Path is determined solely from trusted database objects.")]
-    private static string[] GetAllOriginalAssPaths(Video video)
-    {
-        if (string.IsNullOrEmpty(video.Path))
-        {
-            return [];
-        }
-
-        string videoDir = Path.GetDirectoryName(video.Path) ?? string.Empty;
-        string videoNameWithoutExt = Path.GetFileNameWithoutExtension(video.Path);
-
-        try
-        {
-            if (Directory.Exists(videoDir))
-            {
-                return Directory.GetFiles(videoDir, videoNameWithoutExt + "*.ass")
-                    .Where(f => !f.Contains("subsetted", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-            }
-        }
-        catch
-        {
-            /* 忽略目录读取异常 */
-        }
-
-        return [];
     }
 
     /// <inheritdoc />
