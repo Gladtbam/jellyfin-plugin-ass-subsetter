@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -268,32 +268,7 @@ public sealed class FontCacheManager : IDisposable
 
             var finalList = updatedCacheList.ToList();
 
-            // Build the internal index
-            var newIndex = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
-            foreach (var entry in finalList)
-            {
-                var namesToMap = entry.Names != null && entry.Names.Count > 0
-                    ? entry.Names
-                    : new List<string> { entry.FamilyName };
-
-                foreach (var name in namesToMap)
-                {
-                    if (string.IsNullOrWhiteSpace(name))
-                    {
-                        continue;
-                    }
-
-                    if (!newIndex.TryGetValue(name, out var list))
-                    {
-                        list = new List<FontCacheEntry>();
-                        newIndex[name] = list;
-                    }
-
-                    list.Add(entry);
-                }
-            }
-
-            _fontIndex = newIndex;
+            _fontIndex = BuildIndex(finalList);
             _isLoaded = true;
 
             // Save
@@ -310,7 +285,7 @@ public sealed class FontCacheManager : IDisposable
     }
 
     /// <summary>
-    /// Loads the cache into memory if not already loaded. Does not perform a disk scan.
+    /// Loads the cache into memory if not already loaded. Triggers a full scan if no cache file exists.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -320,6 +295,8 @@ public sealed class FontCacheManager : IDisposable
         {
             return;
         }
+
+        bool needsScan = false;
 
         await _scanLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -335,42 +312,15 @@ public sealed class FontCacheManager : IDisposable
                 var cachedList = JsonSerializer.Deserialize<List<FontCacheEntry>>(json);
                 if (cachedList != null)
                 {
-                    var newIndex = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var entry in cachedList)
-                    {
-                        var namesToMap = entry.Names != null && entry.Names.Count > 0
-                            ? entry.Names
-                            : new List<string> { entry.FamilyName };
-
-                        foreach (var name in namesToMap)
-                        {
-                            if (string.IsNullOrWhiteSpace(name))
-                            {
-                                continue;
-                            }
-
-                            if (!newIndex.TryGetValue(name, out var list))
-                            {
-                                list = new List<FontCacheEntry>();
-                                newIndex[name] = list;
-                            }
-
-                            list.Add(entry);
-                        }
-                    }
-
-                    _fontIndex = newIndex;
+                    _fontIndex = BuildIndex(cachedList);
                 }
+
+                _isLoaded = true;
             }
             else
             {
-                // If no cache exists, run a scan
-                _scanLock.Release(); // release before calling ScanAndSaveAsync which takes the lock
-                await ScanAndSaveAsync(null, cancellationToken).ConfigureAwait(false);
-                return;
+                needsScan = true;
             }
-
-            _isLoaded = true;
         }
         catch (Exception ex)
         {
@@ -378,10 +328,12 @@ public sealed class FontCacheManager : IDisposable
         }
         finally
         {
-            if (_scanLock.CurrentCount == 0)
-            {
-                _scanLock.Release();
-            }
+            _scanLock.Release();
+        }
+
+        if (needsScan)
+        {
+            await ScanAndSaveAsync(null, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -487,6 +439,35 @@ public sealed class FontCacheManager : IDisposable
         }
 
         return (names.ToList(), style);
+    }
+
+    private static Dictionary<string, List<FontCacheEntry>> BuildIndex(IEnumerable<FontCacheEntry> entries)
+    {
+        var index = new Dictionary<string, List<FontCacheEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in entries)
+        {
+            var namesToMap = entry.Names != null && entry.Names.Count > 0
+                ? entry.Names
+                : new List<string> { entry.FamilyName };
+
+            foreach (var name in namesToMap)
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                if (!index.TryGetValue(name, out var list))
+                {
+                    list = new List<FontCacheEntry>();
+                    index[name] = list;
+                }
+
+                list.Add(entry);
+            }
+        }
+
+        return index;
     }
 
     /// <inheritdoc/>
