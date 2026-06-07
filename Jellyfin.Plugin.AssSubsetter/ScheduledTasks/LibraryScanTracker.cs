@@ -1,7 +1,6 @@
 using System;
-using System.IO;
-using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Services;
@@ -14,6 +13,7 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 /// <summary>
 /// Background service that tracks library scans and preemptively generates subset fonts.
+/// Uses a bounded channel to prevent task explosion during bulk library scans.
 /// </summary>
 public class LibraryScanTracker : IHostedService, IDisposable
 {
@@ -21,6 +21,12 @@ public class LibraryScanTracker : IHostedService, IDisposable
     private readonly SubtitleCacheService _cacheService;
     private readonly PluginConfiguration _config;
     private readonly ILogger<LibraryScanTracker> _logger;
+
+    private readonly Channel<Video> _processQueue = Channel.CreateBounded<Video>(
+        new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropOldest });
+
+    private CancellationTokenSource? _cts;
+    private Task? _consumerTask;
     private bool _disposed;
 
     /// <summary>
@@ -47,96 +53,83 @@ public class LibraryScanTracker : IHostedService, IDisposable
     {
         _libraryManager.ItemAdded += OnItemAdded;
         _libraryManager.ItemUpdated += OnItemUpdated;
+
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _consumerTask = Task.Run(() => ConsumeQueueAsync(_cts.Token), _cts.Token);
+
         _logger.LogInformation("[AssSubsetter] LibraryScanTracker started.");
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         try
         {
-            if (_libraryManager != null)
-            {
-                _libraryManager.ItemAdded -= OnItemAdded;
-                _libraryManager.ItemUpdated -= OnItemUpdated;
-            }
+            _libraryManager.ItemAdded -= OnItemAdded;
+            _libraryManager.ItemUpdated -= OnItemUpdated;
         }
         catch (Exception)
         {
-            // 忽略卸载时的任何静默异常
+            // Ignore exceptions during event unsubscription at shutdown
         }
 
-        return Task.CompletedTask;
+        _processQueue.Writer.TryComplete();
+
+        if (_cts != null)
+        {
+            await _cts.CancelAsync().ConfigureAwait(false);
+        }
+
+        if (_consumerTask != null)
+        {
+            try
+            {
+                await _consumerTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during shutdown
+            }
+        }
     }
 
-    private void OnItemAdded(object? sender, ItemChangeEventArgs e) => ProcessItem(e.Item);
+    private void OnItemAdded(object? sender, ItemChangeEventArgs e) => EnqueueItem(e.Item);
 
-    private void OnItemUpdated(object? sender, ItemChangeEventArgs e) => ProcessItem(e.Item);
+    private void OnItemUpdated(object? sender, ItemChangeEventArgs e) => EnqueueItem(e.Item);
 
-    private void ProcessItem(BaseItem item)
+    private void EnqueueItem(BaseItem item)
     {
-        if (!_config.EnableAutoScanProcessing)
+        if (!_config.EnableAutoScanProcessing || item is not Video video)
         {
             return;
         }
 
-        if (item is Video video)
-        {
-            Task.Run(async () =>
-            {
-                try
-                {
-                    string originalAssPath = GetOriginalAssPath(video);
-                    if (!string.IsNullOrEmpty(originalAssPath))
-                    {
-                        _logger.LogDebug("[AssSubsetter] Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
-                        await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, CancellationToken.None).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[AssSubsetter] Error auto-generating subtitle for item {ItemId}", video.Id);
-                }
-            });
-        }
+        _processQueue.Writer.TryWrite(video);
     }
 
-    private static string GetOriginalAssPath(Video video)
+    private async Task ConsumeQueueAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(video.Path))
+        await foreach (var video in _processQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
-            return string.Empty;
-        }
-
-        string videoDir = Path.GetDirectoryName(video.Path) ?? string.Empty;
-        string videoNameWithoutExt = Path.GetFileNameWithoutExtension(video.Path);
-        string exactMatch = Path.Join(videoDir, videoNameWithoutExt + ".ass");
-        if (File.Exists(exactMatch))
-        {
-            return exactMatch;
-        }
-
-        try
-        {
-            if (Directory.Exists(videoDir))
+            try
             {
-                var assFiles = Directory.GetFiles(videoDir, videoNameWithoutExt + "*.ass")
-                    .Where(f => !f.Contains("subsetted", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-
-                if (assFiles.Length > 0)
+                string originalAssPath = AssPathHelper.GetOriginalAssPath(video.Path);
+                if (!string.IsNullOrEmpty(originalAssPath))
                 {
-                    return assFiles[0];
+                    _logger.LogDebug("[AssSubsetter] Auto-scan generating subset font for newly added/updated item: {ItemId}", video.Id);
+                    await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, cancellationToken).ConfigureAwait(false);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[AssSubsetter] Error auto-generating subtitle for item {ItemId}", video.Id);
+            }
         }
-        catch
-        {
-            /* Ignore */
-        }
-
-        return string.Empty;
     }
 
     /// <inheritdoc />
@@ -161,16 +154,15 @@ public class LibraryScanTracker : IHostedService, IDisposable
         {
             try
             {
-                if (_libraryManager != null)
-                {
-                    _libraryManager.ItemAdded -= OnItemAdded;
-                    _libraryManager.ItemUpdated -= OnItemUpdated;
-                }
+                _libraryManager.ItemAdded -= OnItemAdded;
+                _libraryManager.ItemUpdated -= OnItemUpdated;
             }
             catch (Exception)
             {
-                // 忽略销毁时的任何依赖异常
+                // Ignore exceptions during disposal
             }
+
+            _cts?.Dispose();
         }
 
         _disposed = true;
