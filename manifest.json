@@ -8,7 +8,7 @@
         "owner": "Gladtbam",
         "versions": [
             {
-                "version": "2.0.0.0-beta.1",
+                "version": "2.0.0.0",
                 "changelog": "refactor: 重构核心架构，移除外部工具依赖，全面迁移至原生 HarfBuzzSharp C# 子集化\nfeat: 完善服务端 JIT 即时拦截、入库扫描自动构建与连播预加载生命周期管控\nfeat: 实现原生字体缓存引擎，支持 TTC 多字重解析与进阶 Name Table 元数据提取\nfeat: 增加 ASS 字体变体匹配功能，支持 Bold/Italic 精确兜底逻辑\nrefactor: 引入 Channel 队列重构 LibraryScanTracker 解决扫库并发任务爆炸及内存泄漏\nfix: 修复各类并发锁及 CodeQL 安全规范扫描警告",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v2.0.0.0-beta.1/Jellyfin.Plugin.AssSubsetter_2.0.0.0-beta.1.zip",
