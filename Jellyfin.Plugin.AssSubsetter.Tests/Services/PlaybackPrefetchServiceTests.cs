@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -438,7 +438,11 @@ public class PlaybackPrefetchServiceTests : IDisposable
             {
                 Directory.Delete(_tempDataPath, true);
             }
-            catch
+            catch (IOException)
+            {
+                /* Ignore */
+            }
+            catch (UnauthorizedAccessException)
             {
                 /* Ignore */
             }

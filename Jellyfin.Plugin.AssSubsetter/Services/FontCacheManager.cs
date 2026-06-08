@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -133,9 +134,13 @@ public sealed class FontCacheManager : IDisposable
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (JsonException ex)
                 {
-                    _logger.LogWarning(ex, "[AssSubsetter] Failed to load existing font cache. A full rebuild will be performed.");
+                    _logger.LogWarning(ex, "[AssSubsetter] Failed to parse existing font cache JSON. A full rebuild will be performed.");
+                }
+                catch (IOException ex)
+                {
+                    _logger.LogWarning(ex, "[AssSubsetter] IO Error reading existing font cache. A full rebuild will be performed.");
                 }
             }
 
@@ -151,9 +156,13 @@ public sealed class FontCacheManager : IDisposable
                                     f.EndsWith(".otf", StringComparison.OrdinalIgnoreCase) ||
                                     f.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase)));
                 }
-                catch (Exception ex)
+                catch (IOException ex)
                 {
-                    _logger.LogWarning(ex, "[AssSubsetter] Error scanning directory {Dir}", dir);
+                    _logger.LogWarning(ex, "[AssSubsetter] IO Error scanning directory {Dir}", dir);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    _logger.LogWarning(ex, "[AssSubsetter] Permission Error scanning directory {Dir}", dir);
                 }
             }
 
@@ -203,9 +212,13 @@ public sealed class FontCacheManager : IDisposable
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                            catch (IOException ex)
                             {
-                                _logger.LogDebug(ex, "[AssSubsetter] Failed to read TTC header for file {File}", file);
+                                _logger.LogDebug(ex, "[AssSubsetter] IO Error reading TTC header for file {File}", file);
+                            }
+                            catch (UnauthorizedAccessException ex)
+                            {
+                                _logger.LogDebug(ex, "[AssSubsetter] Permission Error reading TTC header for file {File}", file);
                             }
                         }
 
@@ -243,9 +256,17 @@ public sealed class FontCacheManager : IDisposable
                         }
                     }
                 }
-                catch
+                catch (IOException)
                 {
                     // Ignore unreadable fonts
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Ignore unreadable fonts
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "[AssSubsetter] Unexpected error reading font metadata for file {File}", file);
                 }
 
                 int current = Interlocked.Increment(ref processed);
@@ -311,9 +332,17 @@ public sealed class FontCacheManager : IDisposable
                 needsScan = true;
             }
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            _logger.LogError(ex, "[AssSubsetter] Failed to load font cache from disk.");
+            _logger.LogError(ex, "[AssSubsetter] Failed to parse font cache JSON from disk.");
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] IO error loading font cache from disk.");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Permission error loading font cache from disk.");
         }
         finally
         {
@@ -435,7 +464,7 @@ public sealed class FontCacheManager : IDisposable
                                 str = System.Text.Encoding.UTF8.GetString(data, stringStart, length);
                             }
                         }
-                        catch
+                        catch (ArgumentException)
                         {
                             // Ignore decoding errors
                         }

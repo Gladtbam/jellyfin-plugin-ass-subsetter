@@ -45,7 +45,11 @@ internal static class AssPathHelper
                 }
             }
         }
-        catch
+        catch (IOException)
+        {
+            /* Ignore directory read exceptions */
+        }
+        catch (UnauthorizedAccessException)
         {
             /* Ignore directory read exceptions */
         }
@@ -78,7 +82,11 @@ internal static class AssPathHelper
                     .ToArray();
             }
         }
-        catch
+        catch (IOException)
+        {
+            /* Ignore directory read exceptions */
+        }
+        catch (UnauthorizedAccessException)
         {
             /* Ignore directory read exceptions */
         }

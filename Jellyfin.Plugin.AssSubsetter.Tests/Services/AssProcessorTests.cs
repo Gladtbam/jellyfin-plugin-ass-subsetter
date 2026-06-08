@@ -68,7 +68,7 @@ public class AssProcessorTests : IDisposable
     {
         if (Directory.Exists(_tempDataPath))
         {
-            try { Directory.Delete(_tempDataPath, true); } catch { /* Ignore */ }
+            try { Directory.Delete(_tempDataPath, true); } catch (IOException) { /* Ignore */ } catch (UnauthorizedAccessException) { /* Ignore */ }
         }
     }
 }

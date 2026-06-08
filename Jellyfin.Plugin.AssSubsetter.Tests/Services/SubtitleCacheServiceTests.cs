@@ -104,7 +104,11 @@ public class SubtitleCacheServiceTests : IDisposable
             {
                 Directory.Delete(_tempDataPath, true);
             }
-            catch
+            catch (IOException)
+            {
+                /* Ignore */
+            }
+            catch (UnauthorizedAccessException)
             {
                 /* Ignore */
             }
