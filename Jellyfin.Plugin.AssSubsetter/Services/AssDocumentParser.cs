@@ -31,6 +31,7 @@ public class AssDocumentParser
         int eventStyleIndex = 3;
         int eventTextIndex = 9;
 
+        // codeql[cs/linq/missed-select] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
         foreach (var line in File.ReadLines(filePath))
         {
             var trimmedLine = line.Trim();
@@ -146,6 +147,7 @@ public class AssDocumentParser
         }
 
         var result = new Dictionary<FontDescriptor, HashSet<uint>>();
+        // codeql[cs/linq/missed-where] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
         foreach (var kvp in usedChars)
         {
             if (kvp.Value.Count > 0)

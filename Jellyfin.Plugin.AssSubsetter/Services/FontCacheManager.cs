@@ -82,6 +82,7 @@ public sealed class FontCacheManager : IDisposable
         if (!string.IsNullOrWhiteSpace(_config.CustomFontDirectories))
         {
             var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
+            // codeql[cs/linq/missed-select] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
             foreach (var dir in customDirs)
             {
                 string trimmedDir = dir.Trim();
@@ -264,6 +265,8 @@ public sealed class FontCacheManager : IDisposable
                 {
                     // Ignore unreadable fonts
                 }
+
+                // codeql[cs/catch-of-all-exceptions] Justification: Protects Parallel.ForEach from being terminated by corrupted fonts or third-party parsing errors.
                 catch (Exception ex)
                 {
                     _logger.LogDebug(ex, "[AssSubsetter] Unexpected error reading font metadata for file {File}", file);
@@ -377,6 +380,7 @@ public sealed class FontCacheManager : IDisposable
         }
 
         // Try loose match (Contains)
+        // codeql[cs/linq/missed-where] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
         foreach (var kvp in _fontIndex)
         {
             if (kvp.Key.Contains(fontName, StringComparison.OrdinalIgnoreCase) ||

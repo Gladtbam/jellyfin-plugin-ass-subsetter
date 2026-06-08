@@ -117,6 +117,8 @@ public class SubtitleInterceptorMiddleware
                         }
                     }
                 }
+
+                // codeql[cs/catch-of-all-exceptions] Justification: Middleware must not crash the request pipeline; fallback to native processing is required on any failure.
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "[AssSubsetter] Error occurred while intercepting subtitle stream. Falling back to native pipeline.");
