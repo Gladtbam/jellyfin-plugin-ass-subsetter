@@ -32,7 +32,7 @@ public sealed class FontCacheManager : IDisposable
     private readonly PluginConfiguration _config;
 
     private Dictionary<string, List<FontCacheEntry>> _fontIndex = new(StringComparer.OrdinalIgnoreCase);
-    private bool _isLoaded;
+    private volatile bool _isLoaded;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="FontCacheManager"/> class.

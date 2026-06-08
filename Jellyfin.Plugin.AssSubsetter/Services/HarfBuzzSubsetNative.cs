@@ -156,6 +156,7 @@ public static class HarfBuzzSubsetNative
             logger.LogError(ex, "[AssSubsetter] hb_subset symbols not found in libHarfBuzzSharp. The native library might lack subsetting support.");
             return null;
         }
+        // codeql[cs/catch-of-all-exceptions] Justification: Native interop crashes can yield unpredictable managed exceptions.
         catch (Exception ex)
         {
             logger.LogError(ex, "[AssSubsetter] Exception occurred during font subsetting via HarfBuzzSharp.");

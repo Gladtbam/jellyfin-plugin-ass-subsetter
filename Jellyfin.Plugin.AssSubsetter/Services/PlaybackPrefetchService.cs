@@ -75,9 +75,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
         }
-        catch (NullReferenceException)
+        catch (ObjectDisposedException)
         {
-            // 忽略卸载时的空引用异常
+            // Ignore exceptions if the manager is already disposed during shutdown
         }
 
         return Task.CompletedTask;
@@ -131,6 +131,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             {
                 await PrefetchNextEpisodeAsync(episode).ConfigureAwait(false);
             }
+            // codeql[cs/catch-of-all-exceptions] Justification: Prevent background task loop termination.
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[AssSubsetter] Error occurred while prefetching next episode subtitles.");
@@ -254,9 +255,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
                 _sessionManager.PlaybackProgress -= OnPlaybackProgress;
                 _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             }
-            catch (NullReferenceException)
+            catch (ObjectDisposedException)
             {
-                // 忽略销毁时的依赖异常
+                // Ignore exceptions if the manager is already disposed during shutdown
             }
         }
 

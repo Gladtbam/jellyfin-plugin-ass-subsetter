@@ -69,9 +69,9 @@ public class LibraryScanTracker : IHostedService, IDisposable
             _libraryManager.ItemAdded -= OnItemAdded;
             _libraryManager.ItemUpdated -= OnItemUpdated;
         }
-        catch (NullReferenceException)
+        catch (ObjectDisposedException)
         {
-            // Ignore exceptions during event unsubscription at shutdown
+            // Ignore exceptions if the manager is already disposed during shutdown
         }
 
         _processQueue.Writer.TryComplete();
@@ -125,6 +125,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
             {
                 break;
             }
+            // codeql[cs/catch-of-all-exceptions] Justification: Prevent background task loop termination.
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[AssSubsetter] Unexpected error auto-generating subtitle for item {ItemId}", video.Id);
@@ -157,9 +158,9 @@ public class LibraryScanTracker : IHostedService, IDisposable
                 _libraryManager.ItemAdded -= OnItemAdded;
                 _libraryManager.ItemUpdated -= OnItemUpdated;
             }
-            catch (NullReferenceException)
+            catch (ObjectDisposedException)
             {
-                // Ignore exceptions during disposal
+                // Ignore exceptions if the manager is already disposed during shutdown
             }
 
             _cts?.Dispose();

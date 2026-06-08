@@ -151,6 +151,7 @@ public class AssProcessor
             _logger.LogError(ex, "[AssSubsetter] Unauthorized access exception occurred while generating subset font.");
             return false;
         }
+        // codeql[cs/catch-of-all-exceptions] Justification: Interacting with native HarfBuzz/Skia APIs can throw unpredictable managed exceptions.
         catch (Exception ex)
         {
             _logger.LogError(ex, "[AssSubsetter] Unexpected exception occurred while generating subset font.");
