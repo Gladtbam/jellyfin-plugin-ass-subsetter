@@ -69,9 +69,13 @@ public class SubtitleCacheService
             {
                 File.SetLastAccessTime(cacheFilePath, DateTime.Now);
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogWarning(ex, "Failed to update last access time for cache file: {Path}", cacheFilePath);
+                _logger.LogWarning(ex, "Failed to update last access time for cache file: {Path} (IO Error)", cacheFilePath);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Failed to update last access time for cache file: {Path} (Permission Error)", cacheFilePath);
             }
 
             return cacheFilePath;
@@ -89,7 +93,11 @@ public class SubtitleCacheService
                 {
                     File.SetLastAccessTime(cacheFilePath, DateTime.Now);
                 }
-                catch
+                catch (IOException)
+                {
+                    /* 忽略 */
+                }
+                catch (UnauthorizedAccessException)
                 {
                     /* 忽略 */
                 }
@@ -102,9 +110,13 @@ public class SubtitleCacheService
                 long requiredSpace = File.Exists(originalAssPath) ? new FileInfo(originalAssPath).Length : 2 * 1024 * 1024;
                 EnforceCapacityLimit(requiredSpace);
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogError(ex, "Error occurred during LRU cache eviction.");
+                _logger.LogError(ex, "IO Error occurred during LRU cache eviction.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "Permission Error occurred during LRU cache eviction.");
             }
 
             _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
@@ -116,7 +128,11 @@ public class SubtitleCacheService
                 {
                     File.SetLastAccessTime(cacheFilePath, DateTime.Now);
                 }
-                catch
+                catch (IOException)
+                {
+                    /* 忽略 */
+                }
+                catch (UnauthorizedAccessException)
                 {
                     /* 忽略 */
                 }
@@ -164,9 +180,13 @@ public class SubtitleCacheService
                 currentSize -= fileSize;
                 _logger.LogDebug("[AssSubsetter] LRU evicted oldest cache file: {Name}", file.Name);
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogWarning(ex, "Failed to delete evicted cache file: {Name}", file.Name);
+                _logger.LogWarning(ex, "Failed to delete evicted cache file: {Name} (IO Error)", file.Name);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete evicted cache file: {Name} (Permission Error)", file.Name);
             }
         }
     }

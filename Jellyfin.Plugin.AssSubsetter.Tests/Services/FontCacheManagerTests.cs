@@ -100,7 +100,7 @@ public class FontCacheManagerTests : IDisposable
     {
         if (Directory.Exists(_tempDir))
         {
-            try { Directory.Delete(_tempDir, true); } catch { /* ignore */ }
+            try { Directory.Delete(_tempDir, true); } catch (IOException) { /* ignore */ } catch (UnauthorizedAccessException) { /* ignore */ }
         }
     }
 }

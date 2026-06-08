@@ -141,9 +141,19 @@ public class AssProcessor
         {
             return false;
         }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] IO Exception occurred while generating subset font.");
+            return false;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Unauthorized access exception occurred while generating subset font.");
+            return false;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[AssSubsetter] Exception occurred while generating subset font.");
+            _logger.LogError(ex, "[AssSubsetter] Unexpected exception occurred while generating subset font.");
             return false;
         }
     }

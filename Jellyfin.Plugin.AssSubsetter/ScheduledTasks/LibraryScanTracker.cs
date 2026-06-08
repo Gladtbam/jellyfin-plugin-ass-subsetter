@@ -69,7 +69,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
             _libraryManager.ItemAdded -= OnItemAdded;
             _libraryManager.ItemUpdated -= OnItemUpdated;
         }
-        catch (Exception)
+        catch (NullReferenceException)
         {
             // Ignore exceptions during event unsubscription at shutdown
         }
@@ -127,7 +127,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[AssSubsetter] Error auto-generating subtitle for item {ItemId}", video.Id);
+                _logger.LogError(ex, "[AssSubsetter] Unexpected error auto-generating subtitle for item {ItemId}", video.Id);
             }
         }
     }
@@ -157,7 +157,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
                 _libraryManager.ItemAdded -= OnItemAdded;
                 _libraryManager.ItemUpdated -= OnItemUpdated;
             }
-            catch (Exception)
+            catch (NullReferenceException)
             {
                 // Ignore exceptions during disposal
             }

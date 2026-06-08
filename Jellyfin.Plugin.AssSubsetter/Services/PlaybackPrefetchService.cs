@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,9 +75,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
         }
-        catch (Exception)
+        catch (NullReferenceException)
         {
-            // 忽略卸载时的任何静默异常
+            // 忽略卸载时的空引用异常
         }
 
         return Task.CompletedTask;
@@ -190,9 +191,13 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
                 _logger.LogDebug("[AssSubsetter] Prefetch subsetting: {AssPath}", assPath);
                 await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (IOException ex)
             {
-                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle: {AssPath}", assPath);
+                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle (IO Error): {AssPath}", assPath);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle (Permission Error): {AssPath}", assPath);
             }
         }
 
@@ -249,9 +254,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
                 _sessionManager.PlaybackProgress -= OnPlaybackProgress;
                 _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             }
-            catch (Exception)
+            catch (NullReferenceException)
             {
-                // 忽略销毁时的任何依赖异常
+                // 忽略销毁时的依赖异常
             }
         }
 
