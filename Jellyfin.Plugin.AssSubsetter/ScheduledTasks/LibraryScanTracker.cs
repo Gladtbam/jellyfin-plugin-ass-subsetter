@@ -125,6 +125,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
             {
                 break;
             }
+
             // codeql[cs/catch-of-all-exceptions] Justification: Prevent background task loop termination.
             catch (Exception ex)
             {

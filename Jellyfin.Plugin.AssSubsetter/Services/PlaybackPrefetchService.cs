@@ -131,6 +131,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             {
                 await PrefetchNextEpisodeAsync(episode).ConfigureAwait(false);
             }
+
             // codeql[cs/catch-of-all-exceptions] Justification: Prevent background task loop termination.
             catch (Exception ex)
             {
