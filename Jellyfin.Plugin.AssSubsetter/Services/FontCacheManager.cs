@@ -45,7 +45,7 @@ public sealed class FontCacheManager : IDisposable
         _config = config;
 
         _cacheFilePath = string.IsNullOrWhiteSpace(_config.FontCacheFilePath)
-            ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "font_caches.json")
+            ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "ass_subsetter_font_caches.json")
             : _config.FontCacheFilePath;
 
         var cacheDir = Path.GetDirectoryName(_cacheFilePath);

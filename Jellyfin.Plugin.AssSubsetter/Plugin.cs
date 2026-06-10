@@ -25,7 +25,8 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         Instance = this;
 
-        PluginDataPath = Path.Join(applicationPaths.DataPath, Name);
+        PluginDataPath = applicationPaths.DataPath;
+        PluginCachePath = Path.Join(applicationPaths.CachePath, "ass-subsetter");
     }
 
     /// <inheritdoc />
@@ -35,9 +36,14 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => Guid.Parse("7d13aa46-8b4a-ce85-9648-2cf4f52b8222");
 
     /// <summary>
-    /// Gets the path to the permanent folder where this plugin stores its data, binaries, and caches.
+    /// Gets the Jellyfin program data path for storing persistent plugin files.
     /// </summary>
     public string PluginDataPath { get; }
+
+    /// <summary>
+    /// Gets the plugin-specific cache folder under Jellyfin's cache directory.
+    /// </summary>
+    public string PluginCachePath { get; }
 
     /// <summary>
     /// Gets the current plugin instance.

@@ -36,7 +36,7 @@ public class SubtitleCacheService
         _logger = logger;
         _cacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
             ? cacheFolderPath
-            : Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "Cache");
+            : Plugin.Instance?.PluginCachePath ?? Path.Join(AppContext.BaseDirectory, "Cache");
 
         if (!Directory.Exists(_cacheFolderPath))
         {
