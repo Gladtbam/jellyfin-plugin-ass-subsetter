@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
@@ -36,7 +38,7 @@ public class AssProcessor
     }
 
     /// <summary>
-    /// Generates a subsetted ASS subtitle file.
+    /// Generates a subsetted ASS subtitle file with font renaming for correct player matching.
     /// </summary>
     /// <param name="inputAssPath">The physical path of the original ASS file.</param>
     /// <param name="outputCachePath">The path where the subsetted ASS file should be saved.</param>
@@ -50,7 +52,7 @@ public class AssProcessor
         {
             _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
 
-            // 1. Parse ASS to get required characters per font
+            // Parse ASS to get required characters per font
             var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
             if (usedChars.Count == 0)
             {
@@ -59,23 +61,20 @@ public class AssProcessor
                 return true;
             }
 
-            // 2. Ensure font cache is loaded
+            // Ensure font cache is loaded
             await _fontCacheManager.EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-            // 3. Prepare the output file by copying the original
+            // Prepare output directory
             string? outDir = Path.GetDirectoryName(outputCachePath);
             if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
             {
                 Directory.CreateDirectory(outDir);
             }
 
-            File.Copy(inputAssPath, outputCachePath, true);
-
-            // 4. Subset fonts and append to ASS
-            using var writer = new StreamWriter(outputCachePath, append: true);
-            await writer.WriteLineAsync().ConfigureAwait(false);
-            await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
-
+            // Subset fonts, rename, and collect name mapping
+            // Key: original font name (case-insensitive) → Value: new random prefix name
+            var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var embeddedFonts = new List<(string EmbeddedName, byte[] Data)>();
             int subsetCount = 0;
 
             foreach (var kvp in usedChars)
@@ -85,6 +84,14 @@ public class AssProcessor
                 FontDescriptor desc = kvp.Key;
                 string fontName = desc.FontName;
                 var codepoints = kvp.Value;
+
+                // Skip if we already generated a prefix for this font family name
+                // (multiple variants like Bold/Italic share the same prefix)
+                if (!fontNameMap.TryGetValue(fontName, out string? newPrefix))
+                {
+                    newPrefix = FontNameRewriter.GenerateRandomPrefix();
+                    fontNameMap[fontName] = newPrefix;
+                }
 
                 var fontInfo = _fontCacheManager.FindFontFilePath(desc);
                 if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
@@ -103,38 +110,49 @@ public class AssProcessor
 
                 if (subsetData != null && subsetData.Length > 0)
                 {
-                    // Use clean standard filename for the embedded font
-                    string safeFontName = string.Join("_", fontName.Split(Path.GetInvalidFileNameChars()));
-
-                    if (desc.RequestedWeight.HasValue)
+                    // Rename font family in the subsetted binary
+                    byte[]? renamedData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix);
+                    if (renamedData == null)
                     {
-                        safeFontName += $"_{desc.RequestedWeight}";
+                        _logger.LogWarning("[AssSubsetter] Failed to rename font '{FontName}' to '{Prefix}'. Using subsetted font without renaming.", fontName, newPrefix);
+                        renamedData = subsetData;
                     }
-                    else if (desc.IsBoldRequest)
+                    else
                     {
-                        safeFontName += "_Bold";
-                    }
-
-                    if (desc.IsItalic)
-                    {
-                        safeFontName += "_Italic";
+                        _logger.LogDebug("[AssSubsetter] Renamed font '{FontName}' → '{Prefix}'", fontName, newPrefix);
                     }
 
-                    string embeddedName = $"{safeFontName}.ttf";
-                    await writer.WriteLineAsync($"fontname: {embeddedName}").ConfigureAwait(false);
-
-                    var encodedLines = EncodeFontToAssLines(subsetData);
-                    foreach (var line in encodedLines)
-                    {
-                        await writer.WriteLineAsync(line).ConfigureAwait(false);
-                    }
-
-                    await writer.WriteLineAsync().ConfigureAwait(false);
+                    string embeddedName = $"{newPrefix}.ttf";
+                    embeddedFonts.Add((embeddedName, renamedData));
                     subsetCount++;
                 }
             }
 
-            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts.", subsetCount);
+            // Read original ASS content and rewrite font name references
+            string originalContent = await File.ReadAllTextAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+            string rewrittenContent = RewriteAssFontNames(originalContent, fontNameMap);
+
+            // Write the modified ASS content + [Fonts] section to output
+            await File.WriteAllTextAsync(outputCachePath, rewrittenContent, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+
+            using var writer = new StreamWriter(outputCachePath, append: true, new UTF8Encoding(false));
+            await writer.WriteLineAsync().ConfigureAwait(false);
+            await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
+
+            foreach (var (embeddedName, data) in embeddedFonts)
+            {
+                await writer.WriteLineAsync($"fontname: {embeddedName}").ConfigureAwait(false);
+
+                var encodedLines = EncodeFontToAssLines(data);
+                foreach (var line in encodedLines)
+                {
+                    await writer.WriteLineAsync(line).ConfigureAwait(false);
+                }
+
+                await writer.WriteLineAsync().ConfigureAwait(false);
+            }
+
+            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", subsetCount);
             return true;
         }
         catch (OperationCanceledException)
@@ -158,6 +176,168 @@ public class AssProcessor
             _logger.LogError(ex, "[AssSubsetter] Unexpected exception occurred while generating subset font.");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Rewrites font name references in ASS content, replacing original font names with
+    /// their mapped random prefix names in both [V4+ Styles] Fontname fields and \fn override tags.
+    /// </summary>
+    /// <param name="content">The original ASS file content.</param>
+    /// <param name="fontNameMap">Mapping from original font names to new prefix names (case-insensitive keys).</param>
+    /// <returns>The rewritten ASS content with updated font name references.</returns>
+    internal static string RewriteAssFontNames(string content, Dictionary<string, string> fontNameMap)
+    {
+        if (fontNameMap.Count == 0)
+        {
+            return content;
+        }
+
+        var lines = content.Split('\n');
+        var result = new StringBuilder(content.Length);
+
+        bool inStyles = false;
+        bool inEvents = false;
+
+        int styleFontIndex = -1;
+
+        for (int li = 0; li < lines.Length; li++)
+        {
+            // Preserve original line endings
+            string line = lines[li].TrimEnd('\r');
+
+            var trimmed = line.Trim();
+
+            if (trimmed.StartsWith('['))
+            {
+                inStyles = trimmed.Equals("[V4+ Styles]", StringComparison.OrdinalIgnoreCase) ||
+                           trimmed.Equals("[V4 Styles]", StringComparison.OrdinalIgnoreCase);
+                inEvents = trimmed.Equals("[Events]", StringComparison.OrdinalIgnoreCase);
+
+                result.Append(line);
+                if (li < lines.Length - 1)
+                {
+                    result.Append("\r\n");
+                }
+
+                continue;
+            }
+
+            string outputLine;
+
+            if (inStyles)
+            {
+                if (trimmed.StartsWith("Format:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var formatStr = trimmed.Substring(7).Trim();
+                    var columns = formatStr.Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
+                    styleFontIndex = columns.IndexOf("fontname");
+                    outputLine = line;
+                }
+                else if (trimmed.StartsWith("Style:", StringComparison.OrdinalIgnoreCase) && styleFontIndex >= 0)
+                {
+                    outputLine = RewriteStyleLine(line, styleFontIndex, fontNameMap);
+                }
+                else
+                {
+                    outputLine = line;
+                }
+            }
+            else if (inEvents)
+            {
+                if (trimmed.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase))
+                {
+                    outputLine = RewriteFnTags(line, fontNameMap);
+                }
+                else
+                {
+                    outputLine = line;
+                }
+            }
+            else
+            {
+                outputLine = line;
+            }
+
+            result.Append(outputLine);
+            if (li < lines.Length - 1)
+            {
+                result.Append("\r\n");
+            }
+        }
+
+        return result.ToString();
+    }
+
+    /// <summary>
+    /// Rewrites the Fontname field in a Style: line, replacing the font name with its mapped prefix.
+    /// Preserves the @ vertical font prefix if present.
+    /// </summary>
+    private static string RewriteStyleLine(string line, int fontIndex, Dictionary<string, string> fontNameMap)
+    {
+        // Style: name,fontname,size,...
+        int colonPos = line.IndexOf(':', StringComparison.Ordinal);
+        if (colonPos < 0)
+        {
+            return line;
+        }
+
+        string prefix = line.Substring(0, colonPos + 1);
+        string rest = line.Substring(colonPos + 1);
+
+        // Split carefully — Style fields are comma-separated
+        var parts = rest.Split(',');
+        if (fontIndex >= parts.Length)
+        {
+            return line;
+        }
+
+        string originalFontField = parts[fontIndex];
+        string trimmedFont = originalFontField.Trim();
+
+        bool hasVerticalPrefix = trimmedFont.StartsWith('@');
+        string lookupName = hasVerticalPrefix ? trimmedFont.Substring(1) : trimmedFont;
+
+        if (fontNameMap.TryGetValue(lookupName, out string? newName))
+        {
+            // Preserve leading whitespace from original field
+            int firstNonSpace = 0;
+            while (firstNonSpace < originalFontField.Length && originalFontField[firstNonSpace] == ' ')
+            {
+                firstNonSpace++;
+            }
+
+            string leadingSpace = firstNonSpace > 0
+                ? originalFontField.Substring(0, firstNonSpace)
+                : string.Empty;
+
+            parts[fontIndex] = hasVerticalPrefix
+                ? $"{leadingSpace}@{newName}"
+                : $"{leadingSpace}{newName}";
+        }
+
+        return prefix + string.Join(",", parts);
+    }
+
+    /// <summary>
+    /// Rewrites \fn override tags in a Dialogue/Comment line, replacing font names with mapped prefix names.
+    /// </summary>
+    private static string RewriteFnTags(string line, Dictionary<string, string> fontNameMap)
+    {
+        // Match \fn followed by the font name (up to the next \ or })
+        // Pattern: \fn[@]FontName where FontName continues until \ or }
+        return Regex.Replace(line, @"\\fn(@?)([^\\}]+)", match =>
+        {
+            string verticalPrefix = match.Groups[1].Value;
+            string fontName = match.Groups[2].Value.Trim();
+
+            if (fontNameMap.TryGetValue(fontName, out string? newName))
+            {
+                return $"\\fn{verticalPrefix}{newName}";
+            }
+
+            return match.Value;
+        });
     }
 
     /// <summary>
