@@ -37,11 +37,11 @@ public class SubtitleCacheServiceTests : IDisposable
             MaxCacheSizeMB = 1
         };
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
         var assParser = new AssDocumentParser();
-        _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
+        _assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 
-        _cacheService = new SubtitleCacheService(_config, _assProcessor, null, _customCachePath, new NullLogger<SubtitleCacheService>());
+        _cacheService = new SubtitleCacheService(() => _config, _assProcessor, null, _customCachePath, new NullLogger<SubtitleCacheService>());
     }
 
     [Fact]

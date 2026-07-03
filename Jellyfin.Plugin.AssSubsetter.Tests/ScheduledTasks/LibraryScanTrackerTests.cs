@@ -30,10 +30,10 @@ public class LibraryScanTrackerTests : IDisposable
 
         _mockLibraryManager = new Mock<ILibraryManager>();
         _mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
+            (Func<PluginConfiguration>)(() => _config), null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _tracker = new LibraryScanTracker(
-            _mockLibraryManager.Object, _mockCacheService.Object, _config, new NullLogger<LibraryScanTracker>());
+            _mockLibraryManager.Object, _mockCacheService.Object, () => _config, new NullLogger<LibraryScanTracker>());
     }
 
     [Fact]

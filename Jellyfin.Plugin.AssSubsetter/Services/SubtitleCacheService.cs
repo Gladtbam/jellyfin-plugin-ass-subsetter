@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 public class SubtitleCacheService
 {
     private readonly string _cacheFolderPath;
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
     private readonly AssProcessor _assProcessor;
     private readonly AssToSupConverter? _assToSupConverter;
     private readonly ILogger<SubtitleCacheService> _logger;
@@ -27,14 +27,14 @@ public class SubtitleCacheService
     /// <summary>
     /// Initializes a new instance of the <see cref="SubtitleCacheService"/> class.
     /// </summary>
-    /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="assProcessor">The ASS processor instance.</param>
-    /// <param name="assToSupConverter">The ASS to SUP converter instance (optional).</param>
-    /// <param name="cacheFolderPath">The custom cache folder path. Pass null or empty to use plugin default path.</param>
+    /// <param name="assToSupConverter">The ASS to SUP converter instance.</param>
+    /// <param name="cacheFolderPath">Optional custom cache path.</param>
     /// <param name="logger">The logger instance.</param>
-    public SubtitleCacheService(PluginConfiguration config, AssProcessor assProcessor, AssToSupConverter? assToSupConverter, string cacheFolderPath, ILogger<SubtitleCacheService> logger)
+    public SubtitleCacheService(Func<PluginConfiguration> configFactory, AssProcessor assProcessor, AssToSupConverter? assToSupConverter, string cacheFolderPath, ILogger<SubtitleCacheService> logger)
     {
-        _config = config;
+        _configFactory = configFactory;
         _assProcessor = assProcessor;
         _assToSupConverter = assToSupConverter;
         _logger = logger;
@@ -47,6 +47,8 @@ public class SubtitleCacheService
             Directory.CreateDirectory(_cacheFolderPath);
         }
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <summary>
     /// Gets the cache folder path.
@@ -68,7 +70,7 @@ public class SubtitleCacheService
         videoWidth = videoWidth > 0 ? videoWidth : 1920;
         videoHeight = videoHeight > 0 ? videoHeight : 1080;
 
-        if (_config.SubtitleMode == SubtitleProcessingMode.ConvertToSup)
+        if (Config.SubtitleMode == SubtitleProcessingMode.ConvertToSup)
         {
             string supCachePath = GetSupCachePath(itemId, originalAssPath);
 
@@ -135,7 +137,7 @@ public class SubtitleCacheService
             }
 
             _logger.LogWarning("[AssSubsetter] JIT subsetting failed for item {ItemId}. Falling back.", itemId);
-            return new SubtitleResult(_config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
+            return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
         }
         finally
         {
@@ -272,7 +274,7 @@ public class SubtitleCacheService
             }
 
             _logger.LogWarning("[AssSubsetter] ASS to SUP conversion failed for item {ItemId}. Falling back.", itemId);
-            return _config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
+            return Config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
         }
         finally
         {
@@ -299,7 +301,7 @@ public class SubtitleCacheService
     private void EnforceCapacityLimit(long requiredSpace)
     {
         var dirInfo = new DirectoryInfo(_cacheFolderPath);
-        long maxCacheSizeInBytes = (long)_config.MaxCacheSizeMB * 1024 * 1024;
+        long maxCacheSizeInBytes = (long)Config.MaxCacheSizeMB * 1024 * 1024;
         long currentSize = dirInfo.EnumerateFiles()
             .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
                         f.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase))
@@ -310,7 +312,7 @@ public class SubtitleCacheService
             return;
         }
 
-        _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, _config.MaxCacheSizeMB);
+        _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
 
         var oldestFiles = dirInfo.GetFiles()
                                 .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||

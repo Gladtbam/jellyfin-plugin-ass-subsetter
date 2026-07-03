@@ -43,13 +43,13 @@ public class PlaybackPrefetchServiceTests : IDisposable
         _mockSessionManager = new Mock<ISessionManager>();
         _mockLibraryManager = new Mock<ILibraryManager>();
         _mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
+            (Func<PluginConfiguration>)(() => _config), null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _service = new PlaybackPrefetchService(
             _mockSessionManager.Object,
             _mockLibraryManager.Object,
             _mockCacheService.Object,
-            _config,
+            () => _config,
             new NullLogger<PlaybackPrefetchService>());
     }
 

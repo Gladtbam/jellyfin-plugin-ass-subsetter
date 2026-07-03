@@ -19,7 +19,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
 {
     private readonly ILibraryManager _libraryManager;
     private readonly SubtitleCacheService _cacheService;
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
     private readonly ILogger<LibraryScanTracker> _logger;
 
     private readonly Channel<Video> _processQueue = Channel.CreateBounded<Video>(
@@ -34,19 +34,21 @@ public class LibraryScanTracker : IHostedService, IDisposable
     /// </summary>
     /// <param name="libraryManager">The library manager instance.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
-    /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="logger">The logger instance.</param>
     public LibraryScanTracker(
         ILibraryManager libraryManager,
         SubtitleCacheService cacheService,
-        PluginConfiguration config,
+        Func<PluginConfiguration> configFactory,
         ILogger<LibraryScanTracker> logger)
     {
         _libraryManager = libraryManager;
         _cacheService = cacheService;
-        _config = config;
+        _configFactory = configFactory;
         _logger = logger;
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -100,7 +102,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
 
     private void EnqueueItem(BaseItem item)
     {
-        if (!_config.EnableAutoScanProcessing || item is not Video video)
+        if (!Config.EnableAutoScanProcessing || item is not Video video)
         {
             return;
         }

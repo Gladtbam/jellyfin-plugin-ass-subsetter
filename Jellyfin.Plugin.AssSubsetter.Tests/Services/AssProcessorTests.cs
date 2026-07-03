@@ -25,9 +25,9 @@ public class AssProcessorTests : IDisposable
             FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
         };
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
         var assParser = new AssDocumentParser();
-        _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, NullLogger<AssProcessor>.Instance);
+        _assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, NullLogger<AssProcessor>.Instance);
     }
 
     [Fact]

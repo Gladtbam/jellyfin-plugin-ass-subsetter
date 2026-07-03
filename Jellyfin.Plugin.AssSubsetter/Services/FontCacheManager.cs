@@ -29,7 +29,7 @@ public sealed class FontCacheManager : IDisposable
     private readonly ILogger<FontCacheManager> _logger;
     private readonly string _cacheFilePath;
     private readonly SemaphoreSlim _scanLock = new(1, 1);
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
 
     private Dictionary<string, List<FontCacheEntry>> _fontIndex = new(StringComparer.OrdinalIgnoreCase);
     private volatile bool _isLoaded;
@@ -38,15 +38,15 @@ public sealed class FontCacheManager : IDisposable
     /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
-    /// <param name="config">The plugin configuration.</param>
-    public FontCacheManager(ILogger<FontCacheManager> logger, PluginConfiguration config)
+    /// <param name="configFactory">The plugin configuration factory.</param>
+    public FontCacheManager(ILogger<FontCacheManager> logger, Func<PluginConfiguration> configFactory)
     {
         _logger = logger;
-        _config = config;
+        _configFactory = configFactory;
 
-        _cacheFilePath = string.IsNullOrWhiteSpace(_config.FontCacheFilePath)
+        _cacheFilePath = string.IsNullOrWhiteSpace(Config.FontCacheFilePath)
             ? Path.Join(Plugin.Instance?.PluginDataPath ?? AppContext.BaseDirectory, "ass_subsetter_font_caches.json")
-            : _config.FontCacheFilePath;
+            : Config.FontCacheFilePath;
 
         var cacheDir = Path.GetDirectoryName(_cacheFilePath);
         if (!string.IsNullOrEmpty(cacheDir) && !Directory.Exists(cacheDir))
@@ -54,6 +54,8 @@ public sealed class FontCacheManager : IDisposable
             Directory.CreateDirectory(cacheDir);
         }
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <summary>
     /// Gets the list of directories to scan for fonts.
@@ -79,9 +81,9 @@ public sealed class FontCacheManager : IDisposable
             dirs.Add(Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library/Fonts"));
         }
 
-        if (!string.IsNullOrWhiteSpace(_config.CustomFontDirectories))
+        if (!string.IsNullOrWhiteSpace(Config.CustomFontDirectories))
         {
-            var customDirs = _config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
+            var customDirs = Config.CustomFontDirectories.Split(_splitChars, StringSplitOptions.RemoveEmptyEntries);
             // codeql[cs/linq/missed-select] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
             foreach (var dir in customDirs)
             {

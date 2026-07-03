@@ -19,20 +19,22 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// </summary>
 public class AssToSupConverter : IDisposable
 {
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
     private readonly ILogger<AssToSupConverter> _logger;
     private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AssToSupConverter"/> class.
     /// </summary>
-    /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="logger">The logger instance.</param>
-    public AssToSupConverter(PluginConfiguration config, ILogger<AssToSupConverter> logger)
+    public AssToSupConverter(Func<PluginConfiguration> configFactory, ILogger<AssToSupConverter> logger)
     {
-        _config = config;
+        _configFactory = configFactory;
         _logger = logger;
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <summary>
     /// Converts an ASS subtitle file to SUP (PGS) format using libass rendering.
@@ -129,7 +131,7 @@ public class AssToSupConverter : IDisposable
             }
 
             // Set custom fonts directories
-            string fontsDir = _config.CustomFontDirectories;
+            string fontsDir = Config.CustomFontDirectories;
             if (!string.IsNullOrEmpty(fontsDir))
             {
                 // ass_set_fonts_dir only takes a single directory, so we set the first one
@@ -170,7 +172,7 @@ public class AssToSupConverter : IDisposable
             }
 
             // Render and encode
-            int frameIntervalMs = 1000 / Math.Clamp(_config.AssToSupFrameRate, 10, 60);
+            int frameIntervalMs = 1000 / Math.Clamp(Config.AssToSupFrameRate, 10, 60);
 
             using var fileStream = new FileStream(outputSupPath, FileMode.Create, FileAccess.Write, FileShare.None);
 

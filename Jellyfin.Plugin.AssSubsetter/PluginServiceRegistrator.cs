@@ -1,3 +1,4 @@
+using System;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Middleware;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
@@ -21,7 +22,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         // Register libass native library resolver for ASS to SUP conversion
         LibassNative.RegisterResolver();
 
-        serviceCollection.AddSingleton(provider => Plugin.Instance!.Configuration);
+        serviceCollection.AddSingleton<Func<PluginConfiguration>>(() => Plugin.Instance!.Configuration);
 
         serviceCollection.AddSingleton<FontCacheManager>();
         serviceCollection.AddSingleton<AssDocumentParser>();
@@ -29,17 +30,17 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(provider =>
         {
             var logger = provider.GetRequiredService<ILogger<AssProcessor>>();
-            var config = provider.GetRequiredService<PluginConfiguration>();
+            var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
             var fontCacheManager = provider.GetRequiredService<FontCacheManager>();
             var assParser = provider.GetRequiredService<AssDocumentParser>();
-            return new AssProcessor(config, fontCacheManager, assParser, logger);
+            return new AssProcessor(configFactory, fontCacheManager, assParser, logger);
         });
 
         serviceCollection.AddSingleton(provider =>
         {
-            var config = provider.GetRequiredService<PluginConfiguration>();
+            var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
             var logger = provider.GetRequiredService<ILogger<AssToSupConverter>>();
-            return new AssToSupConverter(config, logger);
+            return new AssToSupConverter(configFactory, logger);
         });
 
         serviceCollection.AddSingleton(provider =>
@@ -47,8 +48,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             var assProcessor = provider.GetRequiredService<AssProcessor>();
             var assToSupConverter = provider.GetRequiredService<AssToSupConverter>();
             var logger = provider.GetRequiredService<ILogger<SubtitleCacheService>>();
-            var config = provider.GetRequiredService<PluginConfiguration>();
-            return new SubtitleCacheService(config, assProcessor, assToSupConverter, string.Empty, logger);
+            var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
+            return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, string.Empty, logger);
         });
 
         serviceCollection.AddHostedService<LibraryScanTracker>();

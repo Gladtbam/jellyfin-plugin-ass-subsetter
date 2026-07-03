@@ -25,7 +25,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     private readonly ISessionManager _sessionManager;
     private readonly ILibraryManager _libraryManager;
     private readonly SubtitleCacheService _cacheService;
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
     private readonly ILogger<PlaybackPrefetchService> _logger;
 
     /// <summary>
@@ -42,21 +42,23 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     /// <param name="sessionManager">The session manager instance.</param>
     /// <param name="libraryManager">The library manager instance.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
-    /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="logger">The logger instance.</param>
     public PlaybackPrefetchService(
         ISessionManager sessionManager,
         ILibraryManager libraryManager,
         SubtitleCacheService cacheService,
-        PluginConfiguration config,
+        Func<PluginConfiguration> configFactory,
         ILogger<PlaybackPrefetchService> logger)
     {
         _sessionManager = sessionManager;
         _libraryManager = libraryManager;
         _cacheService = cacheService;
-        _config = config;
+        _configFactory = configFactory;
         _logger = logger;
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -85,7 +87,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
     private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
     {
-        if (!_config.EnablePrefetchSubsetting)
+        if (!Config.EnablePrefetchSubsetting)
         {
             return;
         }
@@ -105,7 +107,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         double progressPercent = (double)positionTicks.Value / runtimeTicks.Value * 100.0;
 
-        if (progressPercent < _config.PrefetchTriggerPercent)
+        if (progressPercent < Config.PrefetchTriggerPercent)
         {
             return;
         }

@@ -18,24 +18,26 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 public class AssProcessor
 {
     private readonly ILogger<AssProcessor> _logger;
-    private readonly PluginConfiguration _config;
+    private readonly Func<PluginConfiguration> _configFactory;
     private readonly FontCacheManager _fontCacheManager;
     private readonly AssDocumentParser _assParser;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AssProcessor"/> class.
     /// </summary>
-    /// <param name="config">The plugin configuration instance.</param>
+    /// <param name="configFactory">The configuration factory.</param>
     /// <param name="fontCacheManager">The font cache manager.</param>
     /// <param name="assParser">The ASS document parser.</param>
-    /// <param name="logger">The logger instance.</param>
-    public AssProcessor(PluginConfiguration config, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
+    /// <param name="logger">The logger.</param>
+    public AssProcessor(Func<PluginConfiguration> configFactory, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
     {
         _logger = logger;
-        _config = config;
+        _configFactory = configFactory;
         _fontCacheManager = fontCacheManager;
         _assParser = assParser;
     }
+
+    private PluginConfiguration Config => _configFactory();
 
     /// <summary>
     /// Generates a subsetted ASS subtitle file with font renaming for correct player matching.

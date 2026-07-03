@@ -39,13 +39,13 @@ public class SubtitleCacheServiceSupTests : IDisposable
             FallbackToOriginalOnError = true,
         };
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, _config);
+        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
         var assParser = new AssDocumentParser();
-        var assProcessor = new AssProcessor(_config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
+        var assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 
         // Use null converter — tests that need converter will use Mock<SubtitleCacheService>
         _cacheService = new SubtitleCacheService(
-            _config,
+            () => _config,
             assProcessor,
             null,
             _customCachePath,
@@ -110,7 +110,7 @@ public class SubtitleCacheServiceSupTests : IDisposable
     {
         // Arrange — Use a mock so we can track calls to GetOrGenerateSupAsync
         var mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, null!, _customCachePath, new NullLogger<SubtitleCacheService>());
+            (Func<PluginConfiguration>)(() => _config), null!, null!, _customCachePath, new NullLogger<SubtitleCacheService>());
 
         // Make GetOrGenerateSupAsync block to simulate long-running conversion
         mockCacheService.Protected()
@@ -151,7 +151,7 @@ public class SubtitleCacheServiceSupTests : IDisposable
     {
         // Arrange
         var mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, null!, _customCachePath, new NullLogger<SubtitleCacheService>());
+            (Func<PluginConfiguration>)(() => _config), null!, null!, _customCachePath, new NullLogger<SubtitleCacheService>());
 
         var callCount = 0;
         mockCacheService.Protected()
