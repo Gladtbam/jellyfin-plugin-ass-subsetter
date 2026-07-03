@@ -18,6 +18,9 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
     /// <inheritdoc />
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
+        // Register libass native library resolver for ASS to SUP conversion
+        LibassNative.RegisterResolver();
+
         serviceCollection.AddSingleton(provider => Plugin.Instance!.Configuration);
 
         serviceCollection.AddSingleton<FontCacheManager>();
@@ -34,10 +37,18 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton(provider =>
         {
+            var config = provider.GetRequiredService<PluginConfiguration>();
+            var logger = provider.GetRequiredService<ILogger<AssToSupConverter>>();
+            return new AssToSupConverter(config, logger);
+        });
+
+        serviceCollection.AddSingleton(provider =>
+        {
             var assProcessor = provider.GetRequiredService<AssProcessor>();
+            var assToSupConverter = provider.GetRequiredService<AssToSupConverter>();
             var logger = provider.GetRequiredService<ILogger<SubtitleCacheService>>();
             var config = provider.GetRequiredService<PluginConfiguration>();
-            return new SubtitleCacheService(config, assProcessor, string.Empty, logger);
+            return new SubtitleCacheService(config, assProcessor, assToSupConverter, string.Empty, logger);
         });
 
         serviceCollection.AddHostedService<LibraryScanTracker>();

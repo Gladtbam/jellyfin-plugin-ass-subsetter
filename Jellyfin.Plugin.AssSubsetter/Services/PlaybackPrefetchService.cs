@@ -184,14 +184,15 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             return;
         }
 
-        _logger.LogInformation("[AssSubsetter] Found {Count} ASS subtitle file(s) for next episode. Starting subset generation...", assPaths.Length);
+        _logger.LogInformation("[AssSubsetter] Found {Count} ASS subtitle file(s) for next episode. Starting prefetch...", assPaths.Length);
 
         foreach (string assPath in assPaths)
         {
             try
             {
-                _logger.LogDebug("[AssSubsetter] Prefetch subsetting: {AssPath}", assPath);
-                await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogDebug("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
+
+                await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, nextEpisode.Width, nextEpisode.Height, CancellationToken.None).ConfigureAwait(false);
             }
             catch (IOException ex)
             {
@@ -203,7 +204,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             }
         }
 
-        _logger.LogInformation("[AssSubsetter] Prefetch subsetting completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
+        _logger.LogInformation("[AssSubsetter] Prefetch completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
     }
 
     private Episode? FindNextEpisode(Episode currentEpisode)

@@ -7,6 +7,7 @@ using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -14,6 +15,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Middleware;
 
+[Collection("PluginInstance")]
 public class SubtitleInterceptorMiddlewareTests : IDisposable
 {
     private readonly string _tempDataPath;
@@ -30,7 +32,7 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
         _mockLibraryManager = new Mock<ILibraryManager>();
 
         _mockCacheService = new Mock<SubtitleCacheService>(
-            null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
+            null!, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _nextCalled = false;
         _nextDelegate = (HttpContext context) =>
@@ -43,8 +45,9 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
     [Fact]
     public async Task InvokeAsync_ShouldCallNext_WhenRouteDoesNotMatch()
     {
+        var mockAppLifetime = new Mock<IHostApplicationLifetime>();
         var middleware = new SubtitleInterceptorMiddleware(
-            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, new NullLogger<SubtitleInterceptorMiddleware>());
+            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, mockAppLifetime.Object, new NullLogger<SubtitleInterceptorMiddleware>());
 
         var context = new DefaultHttpContext();
         context.Request.Path = "/System/Info";
@@ -66,8 +69,9 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
             (Func<It.IsAnyType, Exception?, string>)It.IsAny<object>()))
         .Callback((LogLevel l, EventId e, object v, Exception ex, object f) => throw new Exception("Middleware threw: " + ex));
 
+        var mockAppLifetime2 = new Mock<IHostApplicationLifetime>();
         var middleware = new SubtitleInterceptorMiddleware(
-            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, mockLogger.Object);
+            _nextDelegate, _mockCacheService.Object, _mockLibraryManager.Object, mockAppLifetime2.Object, mockLogger.Object);
 
         var itemId = Guid.NewGuid();
         var context = new DefaultHttpContext();
@@ -94,8 +98,8 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
         _mockLibraryManager.Setup(m => m.GetItemById(itemId)).Returns(video);
 
         _mockCacheService
-            .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cachedAssPath);
+            .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SubtitleResult(cachedAssPath, "text/x-ssa", true));
 
         await middleware.InvokeAsync(context);
 

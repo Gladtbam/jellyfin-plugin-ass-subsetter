@@ -104,5 +104,7 @@
         <Rule Id="CA2101" Action="None" />
         <!-- disable warning CA2234: Pass System.Uri objects instead of strings -->
         <Rule Id="CA2234" Action="None" />
+        <!-- disable warning CA5392: DefaultDllImportSearchPaths is not applicable with custom NativeLibrary.SetDllImportResolver -->
+        <Rule Id="CA5392" Action="None" />
     </Rules>
 </RuleSet>

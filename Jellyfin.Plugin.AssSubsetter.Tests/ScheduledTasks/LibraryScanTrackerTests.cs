@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,7 +30,7 @@ public class LibraryScanTrackerTests : IDisposable
 
         _mockLibraryManager = new Mock<ILibraryManager>();
         _mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
+            _config, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _tracker = new LibraryScanTracker(
             _mockLibraryManager.Object, _mockCacheService.Object, _config, new NullLogger<LibraryScanTracker>());
@@ -55,7 +55,7 @@ public class LibraryScanTrackerTests : IDisposable
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(itemId, assPath, It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(itemId, assPath, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once(),
             "The cache service should be triggered within the background task.");
     }
@@ -71,7 +71,7 @@ public class LibraryScanTrackerTests : IDisposable
 
         Thread.Sleep(50);
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

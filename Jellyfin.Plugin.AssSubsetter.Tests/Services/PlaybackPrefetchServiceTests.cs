@@ -14,6 +14,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
+[Collection("PluginInstance")]
 public class PlaybackPrefetchServiceTests : IDisposable
 {
     private readonly string _tempDataPath;
@@ -42,7 +43,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         _mockSessionManager = new Mock<ISessionManager>();
         _mockLibraryManager = new Mock<ILibraryManager>();
         _mockCacheService = new Mock<SubtitleCacheService>(
-            _config, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
+            _config, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _service = new PlaybackPrefetchService(
             _mockSessionManager.Object,
@@ -91,7 +92,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -110,7 +111,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -131,7 +132,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -150,7 +151,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -169,7 +170,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -194,7 +195,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once());
     }
 
@@ -218,7 +219,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert: should be called 3 times (once for each ASS subtitle)
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
     }
 
@@ -246,7 +247,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert: should only be called once despite two progress events
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once());
     }
 
@@ -279,7 +280,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert: should be called twice total
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
 
@@ -304,7 +305,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -342,7 +343,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Assert: should only be called once (normal sub only, not subsetted)
         _mockCacheService.Verify(
-            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            s => s.GetOrGenerateSubtitleAsync(nextEpisode.Id, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once());
     }
 

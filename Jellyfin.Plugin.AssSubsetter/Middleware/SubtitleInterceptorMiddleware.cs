@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Middleware;
@@ -24,6 +26,7 @@ public class SubtitleInterceptorMiddleware
     private readonly ILogger<SubtitleInterceptorMiddleware> _logger;
     private readonly SubtitleCacheService _cacheService;
     private readonly ILibraryManager _libraryManager;
+    private readonly IHostApplicationLifetime _appLifetime;
 
     private static readonly Regex _subtitleRouteRegex = new(
         @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/.*/Subtitles/\d+(?:/\d+)?/Stream\.ass$",
@@ -35,16 +38,19 @@ public class SubtitleInterceptorMiddleware
     /// <param name="next">The next middleware in pipeline.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
     /// <param name="libraryManager">The library manager to locate physical files.</param>
+    /// <param name="appLifetime">The application lifetime for background task cancellation.</param>
     /// <param name="logger">The logger instance.</param>
     public SubtitleInterceptorMiddleware(
         RequestDelegate next,
         SubtitleCacheService cacheService,
         ILibraryManager libraryManager,
+        IHostApplicationLifetime appLifetime,
         ILogger<SubtitleInterceptorMiddleware> logger)
     {
         _next = next;
         _cacheService = cacheService;
         _libraryManager = libraryManager;
+        _appLifetime = appLifetime;
         _logger = logger;
     }
 
@@ -75,14 +81,17 @@ public class SubtitleInterceptorMiddleware
 
                         if (!string.IsNullOrEmpty(originalAssPath) && File.Exists(originalAssPath))
                         {
-                            _logger.LogDebug("[AssSubsetter] Target external ASS found: {Path}", originalAssPath);
-
-                            string finalAssPath = await _cacheService.GetOrGenerateSubtitleAsync(
+                            var result = await _cacheService.GetOrGenerateSubtitleAsync(
                                 itemId,
                                 originalAssPath,
+                                video.Width,
+                                video.Height,
                                 context.RequestAborted).ConfigureAwait(false);
 
-                            if (!string.IsNullOrEmpty(finalAssPath) && File.Exists(finalAssPath))
+                            string finalPath = result.Path;
+                            string contentType = result.ContentType;
+
+                            if (!string.IsNullOrEmpty(finalPath) && File.Exists(finalPath))
                             {
                                 var corsService = context.RequestServices.GetService(typeof(ICorsService)) as ICorsService;
                                 var corsPolicyProvider = context.RequestServices.GetService(typeof(ICorsPolicyProvider)) as ICorsPolicyProvider;
@@ -97,7 +106,7 @@ public class SubtitleInterceptorMiddleware
                                     }
                                 }
 
-                                var fileResult = new PhysicalFileResult(finalAssPath, "text/x-ssa")
+                                var fileResult = new PhysicalFileResult(finalPath, contentType)
                                 {
                                     EnableRangeProcessing = true
                                 };

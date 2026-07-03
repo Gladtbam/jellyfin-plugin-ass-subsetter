@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests;
 
+[Collection("PluginInstance")]
 public class PluginTests
 {
     private readonly Plugin _plugin;

@@ -10,6 +10,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
+[Collection("PluginInstance")]
 public class SubtitleCacheServiceTests : IDisposable
 {
     private readonly string _tempDataPath;
@@ -40,7 +41,7 @@ public class SubtitleCacheServiceTests : IDisposable
         var assParser = new AssDocumentParser();
         _assProcessor = new AssProcessor(_config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 
-        _cacheService = new SubtitleCacheService(_config, _assProcessor, _customCachePath, new NullLogger<SubtitleCacheService>());
+        _cacheService = new SubtitleCacheService(_config, _assProcessor, null, _customCachePath, new NullLogger<SubtitleCacheService>());
     }
 
     [Fact]
@@ -56,10 +57,12 @@ public class SubtitleCacheServiceTests : IDisposable
         File.WriteAllText(expectedCachePath, "mock cache data");
 
         // Act
-        var result = await _cacheService.GetOrGenerateSubtitleAsync(itemId, originalAssPath, TestContext.Current.CancellationToken);
+        var result = await _cacheService.GetOrGenerateSubtitleAsync(itemId, originalAssPath, 0, 0, TestContext.Current.CancellationToken);
 
         // Assert
-        Assert.Equal(expectedCachePath, result);
+        Assert.Equal(expectedCachePath, result.Path);
+        Assert.Equal("text/x-ssa", result.ContentType);
+        Assert.True(result.IsReady);
     }
 
     [Fact]
@@ -89,7 +92,7 @@ public class SubtitleCacheServiceTests : IDisposable
         await File.WriteAllTextAsync(originalPath, "short subtitle lines", TestContext.Current.CancellationToken);
 
         // Act
-        await _cacheService.GetOrGenerateSubtitleAsync(newId, originalPath, TestContext.Current.CancellationToken);
+        await _cacheService.GetOrGenerateSubtitleAsync(newId, originalPath, 0, 0, TestContext.Current.CancellationToken);
 
         // Assert
         Assert.False(File.Exists(oldFilePath1), "The oldest file should be evicted successfully.");

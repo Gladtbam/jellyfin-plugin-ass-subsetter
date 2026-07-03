@@ -11,21 +11,40 @@
                 <form id="AssSubsetterConfigForm">
 
                     <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SubtitleMode">字幕处理模式 (Subtitle Processing Mode)</label>
+                        <select id="SubtitleMode" name="SubtitleMode" is="emby-select">
+                            <option value="0">字体子集化 (Font Subsetting)</option>
+                            <option value="1">转换为 SUP 位图字幕 (Convert to SUP/PGS)</option>
+                        </select>
+                        <div class="fieldDescription">选择字幕处理方式。子集化模式精简ASS内嵌字体；SUP模式通过libass渲染将ASS转为PGS位图字幕。两种模式互斥。</div>
+                    </div>
+
+                    <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="CustomFontDirectories">自定义源字体目录 (Custom Font Directories)</label>
                         <input id="CustomFontDirectories" name="CustomFontDirectories" type="text" is="emby-input" />
                         <div class="fieldDescription">例如：/fonts/my_anime_fonts;/media/extra_fonts。多个路径请用分号 ; 隔开。(系统默认字体目录已被自动包含，无需填写)</div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="FontCacheFilePath">字体缓存文件路径 (Font Cache File Path)</label>
-                        <input id="FontCacheFilePath" name="FontCacheFilePath" type="text" is="emby-input" />
-                        <div class="fieldDescription">本地字体解析索引 JSON 数据库存储路径。建议保持留空，插件会自动在内部数据目录生成 font_caches.json。</div>
+                    <div id="SubsettingOptions">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="FontCacheFilePath">字体缓存文件路径 (Font Cache File Path)</label>
+                            <input id="FontCacheFilePath" name="FontCacheFilePath" type="text" is="emby-input" />
+                            <div class="fieldDescription">本地字体解析索引 JSON 数据库存储路径。建议保持留空，插件会自动在内部数据目录生成 font_caches.json。</div>
+                        </div>
+                    </div>
+
+                    <div id="SupOptions" style="display:none">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="AssToSupFrameRate">扫描帧率 (Scan Frame Rate)</label>
+                            <input id="AssToSupFrameRate" name="AssToSupFrameRate" type="number" is="emby-input" min="10" max="60" required />
+                            <div class="fieldDescription">ASS 转 SUP 时的渲染采样帧率。值越高动画越流畅但文件越大（推荐值: 24）。视频分辨率从元数据自动获取。</div>
+                        </div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="MaxCacheSizeMB">最大缓存容量限制 (Max Cache Size in MB)</label>
                         <input id="MaxCacheSizeMB" name="MaxCacheSizeMB" type="number" is="emby-input" min="100" max="51200" required />
-                        <div class="fieldDescription">处理后的临时精简字幕文件的最大总体积。达到上限后将自动清理最旧的缓存（推荐值: 1024）。</div>
+                        <div class="fieldDescription">处理后的临时字幕缓存文件的最大总体积。达到上限后将自动清理最旧的缓存（推荐值: 1024）。</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -33,21 +52,21 @@
                             <input id="EnableAutoScanProcessing" name="EnableAutoScanProcessing" type="checkbox" is="emby-checkbox" />
                             <span>开启自动扫描预处理 (Enable Auto Scan Processing)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后，媒体库添加入库新视频时将自动在后台预生成子集化字幕缓存。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，媒体库添加入库新视频时将自动在后台预处理字幕缓存。</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
                         <label class="emby-checkbox-label">
                             <input id="EnablePrefetchSubsetting" name="EnablePrefetchSubsetting" type="checkbox" is="emby-checkbox" />
-                            <span>开启播放时提前子集化下一集 (Enable Prefetch Next Episode)</span>
+                            <span>开启播放时提前处理下一集 (Enable Prefetch Next Episode)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后，当检测到用户播放进度接近当前剧集结尾时，自动在后台提前子集化下一集的所有 ASS 字幕，实现无缝切集。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，当检测到用户播放进度接近当前剧集结尾时，自动在后台提前处理下一集的所有 ASS 字幕。</div>
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="PrefetchTriggerPercent">提前子集化触发进度 (Prefetch Trigger Percent)</label>
+                        <label class="inputLabel inputLabelUnfocused" for="PrefetchTriggerPercent">提前处理触发进度 (Prefetch Trigger Percent)</label>
                         <input id="PrefetchTriggerPercent" name="PrefetchTriggerPercent" type="number" is="emby-input" min="50" max="99" required />
-                        <div class="fieldDescription">当播放进度达到此百分比时触发下一集的提前子集化（推荐值: 90）。</div>
+                        <div class="fieldDescription">当播放进度达到此百分比时触发下一集的提前处理（推荐值: 85）。</div>
                     </div>
 
                     <div class="checkboxContainer checkboxContainer-withDescription">
@@ -55,7 +74,7 @@
                             <input id="FallbackToOriginalOnError" name="FallbackToOriginalOnError" type="checkbox" is="emby-checkbox" />
                             <span>异常时回退至原版字幕 (Fallback to Original on Error)</span>
                         </label>
-                        <div class="fieldDescription checkboxFieldDescription">开启后，如果生成失败（如字体严重损坏或超时），将无缝返回不带内嵌字体的原始字幕，确保播放不中断。</div>
+                        <div class="fieldDescription checkboxFieldDescription">开启后，如果处理失败将无缝返回原始字幕，确保播放不中断。</div>
                     </div>
 
                     <div>
@@ -71,16 +90,38 @@
                 pluginUniqueId: '7d13aa46-8b4a-ce85-9648-2cf4f52b8222'
             };
 
+            function updateModeVisibility() {
+                var mode = document.querySelector('#SubtitleMode').value;
+                var subsettingOpts = document.querySelector('#SubsettingOptions');
+                var supOpts = document.querySelector('#SupOptions');
+                if (mode === '1') {
+                    subsettingOpts.style.display = 'none';
+                    supOpts.style.display = '';
+                } else {
+                    subsettingOpts.style.display = '';
+                    supOpts.style.display = 'none';
+                }
+            }
+
+            document.querySelector('#SubtitleMode').addEventListener('change', updateModeVisibility);
+
             document.querySelector('#AssSubsetterConfigPage').addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
                 ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
+                    var modeVal = config.SubtitleMode;
+                    if (modeVal === 'Subsetting' || modeVal === 0) modeVal = '0';
+                    if (modeVal === 'ConvertToSup' || modeVal === 1) modeVal = '1';
+
+                    document.querySelector('#SubtitleMode').value = modeVal || '0';
                     document.querySelector('#CustomFontDirectories').value = config.CustomFontDirectories || "";
                     document.querySelector('#FontCacheFilePath').value = config.FontCacheFilePath || "";
                     document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
-                    document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false; // 默认 true
-                    document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false; // 默认 true
+                    document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false;
+                    document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false;
                     document.querySelector('#PrefetchTriggerPercent').value = config.PrefetchTriggerPercent || 90;
-                    document.querySelector('#FallbackToOriginalOnError').checked = config.FallbackToOriginalOnError !== false; // 默认 true
+                    document.querySelector('#FallbackToOriginalOnError').checked = config.FallbackToOriginalOnError !== false;
+                    document.querySelector('#AssToSupFrameRate').value = config.AssToSupFrameRate || 24;
+                    updateModeVisibility();
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -90,6 +131,7 @@
                 Dashboard.showLoadingMsg();
 
                 ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
+                    config.SubtitleMode = parseInt(document.querySelector('#SubtitleMode').value || "0", 10);
                     config.CustomFontDirectories = document.querySelector('#CustomFontDirectories').value;
                     config.FontCacheFilePath = document.querySelector('#FontCacheFilePath').value;
                     config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
@@ -97,6 +139,7 @@
                     config.EnablePrefetchSubsetting = document.querySelector('#EnablePrefetchSubsetting').checked;
                     config.PrefetchTriggerPercent = parseInt(document.querySelector('#PrefetchTriggerPercent').value || "90", 10);
                     config.FallbackToOriginalOnError = document.querySelector('#FallbackToOriginalOnError').checked;
+                    config.AssToSupFrameRate = parseInt(document.querySelector('#AssToSupFrameRate').value || "24", 10);
 
                     ApiClient.updatePluginConfiguration(AssSubsetterConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

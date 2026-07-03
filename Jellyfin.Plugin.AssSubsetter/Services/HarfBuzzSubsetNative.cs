@@ -1,4 +1,3 @@
-#pragma warning disable SA1300, SA1600, SA1611, SA1615, SA1503, CA1854, CA1861, CA1865, CA1869, SA1516, SA1028, CA5392, SA1513, SA1649, SA1402, CS1591
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -14,48 +13,48 @@ public static class HarfBuzzSubsetNative
     private const string LibName = "libHarfBuzzSharp";
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_blob_create(IntPtr data, uint length, int memoryMode, IntPtr userData, IntPtr destroy);
+    [DllImport(LibName, EntryPoint = "hb_blob_create", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbBlobCreate(IntPtr data, uint length, int memoryMode, IntPtr userData, IntPtr destroy);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_face_create(IntPtr blob, uint index);
+    [DllImport(LibName, EntryPoint = "hb_face_create", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbFaceCreate(IntPtr blob, uint index);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_subset_input_create_or_fail();
+    [DllImport(LibName, EntryPoint = "hb_subset_input_create_or_fail", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbSubsetInputCreateOrFail();
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_subset_input_unicode_set(IntPtr input);
+    [DllImport(LibName, EntryPoint = "hb_subset_input_unicode_set", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbSubsetInputUnicodeSet(IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void hb_set_add(IntPtr set, uint codepoint);
+    [DllImport(LibName, EntryPoint = "hb_set_add", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void HbSetAdd(IntPtr set, uint codepoint);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_subset_or_fail(IntPtr face, IntPtr input);
+    [DllImport(LibName, EntryPoint = "hb_subset_or_fail", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbSubsetOrFail(IntPtr face, IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_face_reference_blob(IntPtr face);
+    [DllImport(LibName, EntryPoint = "hb_face_reference_blob", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbFaceReferenceBlob(IntPtr face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr hb_blob_get_data(IntPtr blob, out uint length);
+    [DllImport(LibName, EntryPoint = "hb_blob_get_data", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr HbBlobGetData(IntPtr blob, out uint length);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void hb_subset_input_destroy(IntPtr input);
+    [DllImport(LibName, EntryPoint = "hb_subset_input_destroy", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void HbSubsetInputDestroy(IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void hb_face_destroy(IntPtr face);
+    [DllImport(LibName, EntryPoint = "hb_face_destroy", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void HbFaceDestroy(IntPtr face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void hb_blob_destroy(IntPtr blob);
+    [DllImport(LibName, EntryPoint = "hb_blob_destroy", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void HbBlobDestroy(IntPtr blob);
 
     /// <summary>
     /// Subsets a font in memory keeping only the specified codepoints.
@@ -74,7 +73,7 @@ public static class HarfBuzzSubsetNative
             var dataPtr = pin.AddrOfPinnedObject();
             // 0 = HB_MEMORY_MODE_DUPLICATE, 1 = HB_MEMORY_MODE_READONLY
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            var blob = hb_blob_create(dataPtr, (uint)fontData.Length, 1, IntPtr.Zero, IntPtr.Zero);
+            var blob = HbBlobCreate(dataPtr, (uint)fontData.Length, 1, IntPtr.Zero, IntPtr.Zero);
             if (blob == IntPtr.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_blob_create failed.");
@@ -83,97 +82,97 @@ public static class HarfBuzzSubsetNative
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var face = hb_face_create(blob, faceIndex);
+            var face = HbFaceCreate(blob, faceIndex);
             if (face == IntPtr.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_face_create failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var input = hb_subset_input_create_or_fail();
+            var input = HbSubsetInputCreateOrFail();
             if (input == IntPtr.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_subset_input_create_or_fail failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(face);
+                HbFaceDestroy(face);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var unicodeSet = hb_subset_input_unicode_set(input);
+            var unicodeSet = HbSubsetInputUnicodeSet(input);
             if (unicodeSet == IntPtr.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_subset_input_unicode_set failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_subset_input_destroy(input);
+                HbSubsetInputDestroy(input);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(face);
+                HbFaceDestroy(face);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
             foreach (var cp in unicodeCodepoints)
             {
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_set_add(unicodeSet, cp);
+                HbSetAdd(unicodeSet, cp);
             }
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var subsetFace = hb_subset_or_fail(face, input);
+            var subsetFace = HbSubsetOrFail(face, input);
             if (subsetFace == IntPtr.Zero)
             {
                 logger.LogWarning("[AssSubsetter] hb_subset_or_fail failed. The font might be unsupported or empty.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_subset_input_destroy(input);
+                HbSubsetInputDestroy(input);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(face);
+                HbFaceDestroy(face);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var resultBlob = hb_face_reference_blob(subsetFace);
+            var resultBlob = HbFaceReferenceBlob(subsetFace);
             if (resultBlob == IntPtr.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_face_reference_blob failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(subsetFace);
+                HbFaceDestroy(subsetFace);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_subset_input_destroy(input);
+                HbSubsetInputDestroy(input);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(face);
+                HbFaceDestroy(face);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
-            var resultDataPtr = hb_blob_get_data(resultBlob, out uint length);
+            var resultDataPtr = HbBlobGetData(resultBlob, out uint length);
             if (resultDataPtr == IntPtr.Zero || length == 0)
             {
                 logger.LogError("[AssSubsetter] hb_blob_get_data failed or returned 0 length.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(resultBlob);
+                HbBlobDestroy(resultBlob);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(subsetFace);
+                HbFaceDestroy(subsetFace);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_subset_input_destroy(input);
+                HbSubsetInputDestroy(input);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_face_destroy(face);
+                HbFaceDestroy(face);
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-                hb_blob_destroy(blob);
+                HbBlobDestroy(blob);
                 return null;
             }
 
@@ -182,15 +181,15 @@ public static class HarfBuzzSubsetNative
 
             // Cleanup
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            hb_blob_destroy(resultBlob);
+            HbBlobDestroy(resultBlob);
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            hb_face_destroy(subsetFace);
+            HbFaceDestroy(subsetFace);
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            hb_subset_input_destroy(input);
+            HbSubsetInputDestroy(input);
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            hb_face_destroy(face);
+            HbFaceDestroy(face);
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            hb_blob_destroy(blob);
+            HbBlobDestroy(blob);
 
             return result;
         }
@@ -204,9 +203,9 @@ public static class HarfBuzzSubsetNative
             logger.LogError(ex, "[AssSubsetter] hb_subset symbols not found in libHarfBuzzSharp. The native library might lack subsetting support.");
             return null;
         }
-        // codeql[cs/catch-of-all-exceptions] Justification: Native interop crashes can yield unpredictable managed exceptions.
         catch (Exception ex)
         {
+            // codeql[cs/catch-of-all-exceptions] Justification: Native interop crashes can yield unpredictable managed exceptions.
             logger.LogError(ex, "[AssSubsetter] Exception occurred during font subsetting via HarfBuzzSharp.");
             return null;
         }

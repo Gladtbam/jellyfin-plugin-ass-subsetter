@@ -3,6 +3,18 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.AssSubsetter.Configuration;
 
 /// <summary>
+/// Subtitle processing mode.
+/// </summary>
+public enum SubtitleProcessingMode
+{
+    /// <summary>Font subsetting mode (default). Subsets fonts and embeds them in ASS.</summary>
+    Subsetting = 0,
+
+    /// <summary>Convert ASS to SUP (PGS) bitmap subtitle mode using libass rendering.</summary>
+    ConvertToSup = 1,
+}
+
+/// <summary>
 /// Plugin configuration.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
@@ -12,14 +24,22 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public PluginConfiguration()
     {
+        SubtitleMode = SubtitleProcessingMode.Subsetting;
         EnableAutoScanProcessing = true;
         EnablePrefetchSubsetting = true;
-        PrefetchTriggerPercent = 90;
+        PrefetchTriggerPercent = 85;
         MaxCacheSizeMB = 1024;
         FontCacheFilePath = string.Empty;
         CustomFontDirectories = string.Empty;
         FallbackToOriginalOnError = true;
+        AssToSupFrameRate = 24;
     }
+
+    /// <summary>
+    /// Gets or sets the subtitle processing mode.
+    /// Subsetting and ConvertToSup are mutually exclusive.
+    /// </summary>
+    public SubtitleProcessingMode SubtitleMode { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether auto scan processing is enabled.
@@ -58,4 +78,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets a value indicating whether to fallback to the original subtitle on error.
     /// </summary>
     public bool FallbackToOriginalOnError { get; set; }
+
+    /// <summary>
+    /// Gets or sets the frame rate used for ASS to SUP conversion scanning.
+    /// Higher values produce smoother animations but larger files. Default is 24.
+    /// </summary>
+    public int AssToSupFrameRate { get; set; }
 }
