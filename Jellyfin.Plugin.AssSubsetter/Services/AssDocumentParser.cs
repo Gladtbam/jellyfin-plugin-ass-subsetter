@@ -130,6 +130,11 @@ public class AssDocumentParser
                         eventTextIndex >= 0 && eventTextIndex < parts.Length)
                     {
                         string styleName = parts[eventStyleIndex].Trim();
+                        if (styleName.StartsWith('*') || styleName.StartsWith('@'))
+                        {
+                            styleName = styleName.Substring(1);
+                        }
+
                         string text = parts[eventTextIndex];
 
                         FontDescriptor currentFont = styles.TryGetValue(styleName, out var f) ? f : new FontDescriptor("Arial", null, false, false);
