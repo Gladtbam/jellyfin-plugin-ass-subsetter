@@ -8,12 +8,13 @@
 ## ⚙️ 工作原理
 * **路由拦截**：当客户端向服务器请求外挂字幕时，插件底层的 HTTP 中间件会瞬间拦截该请求。
 * **物理裁剪**：按需提取字幕文本中实际用到的字形，将动辄几十 MB 的原始字体文件“瘦身”至仅 100~300 KB。
-* **动态封包**：将精简后的 TTF 字体进行 UUEncode 二进制编码，直接内嵌打包进下发给客户端的 `.ass` 文本文件内部。
+* **动态封包与转码**：支持将精简后的字体通过 UUEncode 内嵌打包为 `.ass` 文件下发；支持通过 libass 实时渲染并编码为 `.sup` (PGS) 格式，解决部分客户端的 ASS 兼容性问题。
 * **缓存调度**：处理完毕的成品字幕受 LRU（最近最少使用）机制管控，超出容量上限自动清理；同时支持在新片入库时后台静默预处理。
 * **连播预取**：支持在用户观看剧集进度到达设定阈值（默认 90%）时，后台自动提取下一集的所有外挂字幕并进行子集化处理，实现无缝连播体验。
 
 ## 🛠️ 技术架构
-* **核心处理引擎**：[MkvAutoSubset](https://github.com/MkvAutoSubset/MkvAutoSubset)。
+* **核心处理引擎**：通过原生 P/Invoke 深度集成 **HarfBuzz** 进行内存级子集化处理（已弃用 [MkvAutoSubset](https://github.com/MkvAutoSubset/MkvAutoSubset) 外部依赖），实现极速无损裁剪。
+* **图形渲染引擎**：内建 **libass** 渲染层与纯 C# 实现的 PGS 编码器（AssToSupConverter），支持 ASS 到 SUP 格式的高效转换。
 * **Jellyfin 插件端**：基于 **C# (.NET 9.0)** 开发，深度集成 ASP.NET Core 的依赖注入、路由拦截（Middleware）与后台常驻任务（IHostedService）。
 
 ## 🚀 安装与使用
