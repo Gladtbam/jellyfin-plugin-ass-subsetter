@@ -8,6 +8,14 @@
         "owner": "Gladtbam",
         "versions": [
             {
+                "version": "2.2.0.0",
+                "changelog": "fix：排除 ASS 中特殊字符\n\nfeat: 重构字幕缓存服务并集成后台 SUP 转换支持\n\nrefactor: 重构插件配置依赖注入以支持热更新",
+                "targetAbi": "10.11.9.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v2.2.0.0/Jellyfin.Plugin.AssSubsetter_2.2.0.0.zip",
+                "checksum": "9ec75e07fcb71def047d1c7b695a9efb",
+                "timestamp": "2026-07-03T14:30:36Z"
+            },
+            {
                 "version": "2.1.0.0",
                 "changelog": "fix: 增加字体名称重写，修复 HarfBuzz 子集化字幕在播放器中字体不匹配的问题\n\nfeat: 修改文件存储路径",
                 "targetAbi": "10.11.9.0",
