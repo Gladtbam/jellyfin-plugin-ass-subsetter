@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Native;
@@ -9,7 +11,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Native;
 /// P/Invoke bindings for libass (the ASS/SSA subtitle rendering library).
 /// Automatically resolves the libass shared library from jellyfin-ffmpeg's directory.
 /// </summary>
-internal static class LibassNative
+internal static partial class LibassNative
 {
     private const string LibassLibrary = "libass";
     private static readonly object _resolverLock = new();
@@ -29,30 +31,34 @@ internal static class LibassNative
     /// Initializes the libass library.
     /// </summary>
     /// <returns>ASS_Library handle, or <see cref="IntPtr.Zero"/> on failure.</returns>
-    [DllImport(LibassLibrary, EntryPoint = "ass_library_init", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr AssLibraryInit();
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_library_init")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial IntPtr AssLibraryInit();
 
     /// <summary>
     /// Destroys a libass library instance.
     /// </summary>
     /// <param name="library">ASS_Library handle to destroy.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_library_done", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssLibraryDone(IntPtr library);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_library_done")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssLibraryDone(IntPtr library);
 
     /// <summary>
     /// Initializes a renderer for the given library.
     /// </summary>
     /// <param name="library">ASS_Library handle.</param>
     /// <returns>ASS_Renderer handle, or <see cref="IntPtr.Zero"/> on failure.</returns>
-    [DllImport(LibassLibrary, EntryPoint = "ass_renderer_init", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr AssRendererInit(IntPtr library);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_renderer_init")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial IntPtr AssRendererInit(IntPtr library);
 
     /// <summary>
     /// Destroys a renderer instance.
     /// </summary>
     /// <param name="renderer">ASS_Renderer handle to destroy.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_renderer_done", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssRendererDone(IntPtr renderer);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_renderer_done")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssRendererDone(IntPtr renderer);
 
     /// <summary>
     /// Sets the frame (canvas) size for the renderer.
@@ -60,8 +66,9 @@ internal static class LibassNative
     /// <param name="renderer">ASS_Renderer handle.</param>
     /// <param name="w">Frame width in pixels.</param>
     /// <param name="h">Frame height in pixels.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_set_frame_size", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssSetFrameSize(IntPtr renderer, int w, int h);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_set_frame_size")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssSetFrameSize(IntPtr renderer, int w, int h);
 
     /// <summary>
     /// Sets the storage (source) video size for the renderer.
@@ -69,8 +76,9 @@ internal static class LibassNative
     /// <param name="renderer">ASS_Renderer handle.</param>
     /// <param name="w">Storage width in pixels.</param>
     /// <param name="h">Storage height in pixels.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_set_storage_size", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssSetStorageSize(IntPtr renderer, int w, int h);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_set_storage_size")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssSetStorageSize(IntPtr renderer, int w, int h);
 
     /// <summary>
     /// Sets font settings for the renderer.
@@ -81,13 +89,14 @@ internal static class LibassNative
     /// <param name="dfp">Default font provider (1 = autodetect).</param>
     /// <param name="config">Fontconfig config path, or null.</param>
     /// <param name="update">Whether to update fontconfig cache (1 = yes).</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_set_fonts", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssSetFonts(
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_set_fonts", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssSetFonts(
         IntPtr renderer,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string? defaultFont,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string? defaultFamily,
+        string? defaultFont,
+        string? defaultFamily,
         int dfp,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string? config,
+        string? config,
         int update);
 
     /// <summary>
@@ -95,10 +104,11 @@ internal static class LibassNative
     /// </summary>
     /// <param name="library">ASS_Library handle.</param>
     /// <param name="fontsDir">Path to directory containing font files.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_set_fonts_dir", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssSetFontsDir(
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_set_fonts_dir", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssSetFontsDir(
         IntPtr library,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string fontsDir);
+        string fontsDir);
 
     /// <summary>
     /// Reads a subtitle file and creates an ASS_Track.
@@ -107,18 +117,20 @@ internal static class LibassNative
     /// <param name="fname">Path to the ASS/SSA subtitle file.</param>
     /// <param name="codepage">Character encoding, or null for auto-detection.</param>
     /// <returns>ASS_Track handle, or <see cref="IntPtr.Zero"/> on failure.</returns>
-    [DllImport(LibassLibrary, EntryPoint = "ass_read_file", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr AssReadFile(
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_read_file", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial IntPtr AssReadFile(
         IntPtr library,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string fname,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string? codepage);
+        string fname,
+        string? codepage);
 
     /// <summary>
     /// Frees an ASS_Track.
     /// </summary>
     /// <param name="track">ASS_Track handle to free.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_free_track", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssFreeTrack(IntPtr track);
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_free_track")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssFreeTrack(IntPtr track);
 
     /// <summary>
     /// Renders a frame at the given timestamp.
@@ -128,8 +140,9 @@ internal static class LibassNative
     /// <param name="now">Timestamp in milliseconds.</param>
     /// <param name="detectChange">Output: non-zero if the rendered image changed.</param>
     /// <returns>Pointer to the first ASS_Image in a linked list, or <see cref="IntPtr.Zero"/>.</returns>
-    [DllImport(LibassLibrary, EntryPoint = "ass_render_frame", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr AssRenderFrame(
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_render_frame")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial IntPtr AssRenderFrame(
         IntPtr renderer,
         IntPtr track,
         long now,
@@ -141,8 +154,9 @@ internal static class LibassNative
     /// <param name="library">ASS_Library handle.</param>
     /// <param name="callback">Log callback delegate, or null to disable logging.</param>
     /// <param name="userData">User data pointer passed to the callback.</param>
-    [DllImport(LibassLibrary, EntryPoint = "ass_set_message_cb", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void AssSetMessageCb(
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_set_message_cb")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static partial void AssSetMessageCb(
         IntPtr library,
         AssLogCallback? callback,
         IntPtr userData);

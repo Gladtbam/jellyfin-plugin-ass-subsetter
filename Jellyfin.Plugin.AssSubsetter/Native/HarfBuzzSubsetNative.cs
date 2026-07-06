@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Native;
@@ -8,53 +10,64 @@ namespace Jellyfin.Plugin.AssSubsetter.Native;
 /// <summary>
 /// Native P/Invoke bindings for HarfBuzz subsetting.
 /// </summary>
-public static class HarfBuzzSubsetNative
+public static partial class HarfBuzzSubsetNative
 {
     private const string LibName = "libHarfBuzzSharp";
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_blob_create", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbBlobCreate(IntPtr data, uint length, int memoryMode, IntPtr userData, IntPtr destroy);
+    [LibraryImport(LibName, EntryPoint = "hb_blob_create")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbBlobCreate(IntPtr data, uint length, int memoryMode, IntPtr userData, IntPtr destroy);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_face_create", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbFaceCreate(IntPtr blob, uint index);
+    [LibraryImport(LibName, EntryPoint = "hb_face_create")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbFaceCreate(IntPtr blob, uint index);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_subset_input_create_or_fail", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbSubsetInputCreateOrFail();
+    [LibraryImport(LibName, EntryPoint = "hb_subset_input_create_or_fail")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbSubsetInputCreateOrFail();
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_subset_input_unicode_set", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbSubsetInputUnicodeSet(IntPtr input);
+    [LibraryImport(LibName, EntryPoint = "hb_subset_input_unicode_set")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbSubsetInputUnicodeSet(IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_set_add", CallingConvention = CallingConvention.Cdecl)]
-    private static extern void HbSetAdd(IntPtr set, uint codepoint);
+    [LibraryImport(LibName, EntryPoint = "hb_set_add")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial void HbSetAdd(IntPtr set, uint codepoint);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_subset_or_fail", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbSubsetOrFail(IntPtr face, IntPtr input);
+    [LibraryImport(LibName, EntryPoint = "hb_subset_or_fail")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbSubsetOrFail(IntPtr face, IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_face_reference_blob", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbFaceReferenceBlob(IntPtr face);
+    [LibraryImport(LibName, EntryPoint = "hb_face_reference_blob")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbFaceReferenceBlob(IntPtr face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_blob_get_data", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr HbBlobGetData(IntPtr blob, out uint length);
+    [LibraryImport(LibName, EntryPoint = "hb_blob_get_data")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbBlobGetData(IntPtr blob, out uint length);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_subset_input_destroy", CallingConvention = CallingConvention.Cdecl)]
-    private static extern void HbSubsetInputDestroy(IntPtr input);
+    [LibraryImport(LibName, EntryPoint = "hb_subset_input_destroy")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial void HbSubsetInputDestroy(IntPtr input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_face_destroy", CallingConvention = CallingConvention.Cdecl)]
-    private static extern void HbFaceDestroy(IntPtr face);
+    [LibraryImport(LibName, EntryPoint = "hb_face_destroy")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial void HbFaceDestroy(IntPtr face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
-    [DllImport(LibName, EntryPoint = "hb_blob_destroy", CallingConvention = CallingConvention.Cdecl)]
-    private static extern void HbBlobDestroy(IntPtr blob);
+    [LibraryImport(LibName, EntryPoint = "hb_blob_destroy")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial void HbBlobDestroy(IntPtr blob);
 
     /// <summary>
     /// Subsets a font in memory keeping only the specified codepoints.
