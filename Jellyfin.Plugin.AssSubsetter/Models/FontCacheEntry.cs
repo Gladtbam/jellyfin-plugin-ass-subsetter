@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Models;
 
 /// <summary>
 /// Represents a cached font file's metadata.

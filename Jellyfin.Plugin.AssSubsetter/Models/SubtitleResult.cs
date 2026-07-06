@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Models;
 
 /// <summary>
 /// Represents the result of a subtitle retrieval or generation operation.

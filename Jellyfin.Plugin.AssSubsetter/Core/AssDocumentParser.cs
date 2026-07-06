@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Jellyfin.Plugin.AssSubsetter.Models;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
 /// A lightweight parser for Advanced SubStation Alpha (ASS) files, extracting required font characters.

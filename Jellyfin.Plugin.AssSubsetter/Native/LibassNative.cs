@@ -3,7 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Native;
 
 /// <summary>
 /// P/Invoke bindings for libass (the ASS/SSA subtitle rendering library).

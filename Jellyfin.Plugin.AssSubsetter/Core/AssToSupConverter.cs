@@ -9,9 +9,10 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Native;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
 /// Service that converts ASS subtitle files to SUP (PGS) format

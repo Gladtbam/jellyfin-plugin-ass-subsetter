@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Core;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;

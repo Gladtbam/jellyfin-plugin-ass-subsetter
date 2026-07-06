@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

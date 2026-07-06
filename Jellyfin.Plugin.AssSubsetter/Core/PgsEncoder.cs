@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
 /// Pure C# encoder for PGS/SUP (Blu-ray Presentation Graphic Stream) format.

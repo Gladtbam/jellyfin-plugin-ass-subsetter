@@ -8,9 +8,12 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Models;
+using Jellyfin.Plugin.AssSubsetter.Native;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
 /// Processor for handling ASS subtitle subsetting via local HarfBuzzSharp.

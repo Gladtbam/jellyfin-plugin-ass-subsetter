@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.AssSubsetter.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Models;
 
 /// <summary>
 /// Uniquely identifies a requested font variant, including weight and italic properties.

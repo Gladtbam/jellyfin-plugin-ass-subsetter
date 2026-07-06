@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Jellyfin.Plugin.AssSubsetter.Services;
+using Jellyfin.Plugin.AssSubsetter.Core;
+using Jellyfin.Plugin.AssSubsetter.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
-namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
+namespace Jellyfin.Plugin.AssSubsetter.Tests.Core;
 
 public class AssDocumentParserTests : IDisposable
 {

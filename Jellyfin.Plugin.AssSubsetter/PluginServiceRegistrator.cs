@@ -1,6 +1,8 @@
 using System;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Core;
 using Jellyfin.Plugin.AssSubsetter.Middleware;
+using Jellyfin.Plugin.AssSubsetter.Native;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller;
