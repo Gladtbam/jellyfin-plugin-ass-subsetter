@@ -173,14 +173,14 @@ internal static class LibassNative
                 if (!string.IsNullOrEmpty(ffmpegPath))
                 {
                     string ffmpegDir = Path.GetDirectoryName(ffmpegPath) ?? string.Empty;
-                    string libassPath = Path.Combine(ffmpegDir, "lib", GetPlatformLibName());
+                    string libassPath = Path.Join(ffmpegDir, "lib", GetPlatformLibName());
                     if (File.Exists(libassPath) && NativeLibrary.TryLoad(libassPath, out IntPtr handle1))
                     {
                         logger?.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
                         return handle1;
                     }
 
-                    libassPath = Path.Combine(ffmpegDir, GetPlatformLibName());
+                    libassPath = Path.Join(ffmpegDir, GetPlatformLibName());
                     if (File.Exists(libassPath) && NativeLibrary.TryLoad(libassPath, out IntPtr handle2))
                     {
                         logger?.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
