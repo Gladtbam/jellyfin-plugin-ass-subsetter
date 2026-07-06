@@ -66,7 +66,7 @@ public class AssDocumentParser
                     if (styleNameIndex >= 0 && styleNameIndex < parts.Length &&
                         styleFontIndex >= 0 && styleFontIndex < parts.Length)
                     {
-                        string name = parts[styleNameIndex].Trim();
+                        string name = NormalizeStyleName(parts[styleNameIndex].Trim());
                         string fontName = parts[styleFontIndex].Trim();
                         if (fontName.StartsWith('@'))
                         {
@@ -129,11 +129,7 @@ public class AssDocumentParser
                     if (eventStyleIndex >= 0 && eventStyleIndex < parts.Length &&
                         eventTextIndex >= 0 && eventTextIndex < parts.Length)
                     {
-                        string styleName = parts[eventStyleIndex].Trim();
-                        if (styleName.StartsWith('*') || styleName.StartsWith('@'))
-                        {
-                            styleName = styleName.Substring(1);
-                        }
+                        string styleName = NormalizeStyleName(parts[eventStyleIndex].Trim());
 
                         string text = parts[eventTextIndex];
 
@@ -273,7 +269,7 @@ public class AssDocumentParser
                         end++;
                     }
 
-                    string overrideStyle = tagContent.Substring(start, end - start).Trim();
+                    string overrideStyle = NormalizeStyleName(tagContent.Substring(start, end - start).Trim());
                     if (string.IsNullOrEmpty(overrideStyle))
                     {
                         currentFont = defaultFont;
@@ -332,5 +328,20 @@ public class AssDocumentParser
                 }
             }
         }
+    }
+
+    private static string NormalizeStyleName(string styleName)
+    {
+        if (string.IsNullOrEmpty(styleName))
+        {
+            return styleName;
+        }
+
+        if (styleName.StartsWith('*') || styleName.StartsWith('@'))
+        {
+            return styleName.Substring(1);
+        }
+
+        return styleName;
     }
 }
