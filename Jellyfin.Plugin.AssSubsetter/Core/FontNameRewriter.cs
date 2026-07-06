@@ -124,29 +124,14 @@ public static class FontNameRewriter
 
             if (isTargetNameId)
             {
-                // Replace with new family name
-                if (nameId == 6)
-                {
-                    // PostScript name: ASCII, no spaces
-                    stringBytes = GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: true);
-                }
-                else
-                {
-                    stringBytes = GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: false);
-                }
+                // Replace with new family name, PostScript name: ASCII, no spaces
+                stringBytes = nameId == 6 ? GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: true) : GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: false);
             }
             else
             {
                 // Keep original string data
                 int srcStart = storageOffset + offset;
-                if (srcStart + length <= nameSpan.Length)
-                {
-                    stringBytes = nameSpan.Slice(srcStart, length).ToArray();
-                }
-                else
-                {
-                    stringBytes = Array.Empty<byte>();
-                }
+                stringBytes = srcStart + length <= nameSpan.Length ? nameSpan.Slice(srcStart, length).ToArray() : Array.Empty<byte>();
             }
 
             ushort newOffset = (ushort)newStringData.Count;

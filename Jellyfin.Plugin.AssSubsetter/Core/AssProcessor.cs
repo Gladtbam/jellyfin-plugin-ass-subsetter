@@ -249,15 +249,10 @@ public class AssProcessor
             }
             else if (inEvents)
             {
-                if (trimmed.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase) ||
-                    trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase))
-                {
-                    outputLine = RewriteFnTags(line, fontNameMap);
-                }
-                else
-                {
-                    outputLine = line;
-                }
+                outputLine = trimmed.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase) ||
+                              trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase)
+                    ? RewriteFnTags(line, fontNameMap)
+                    : line;
             }
             else
             {
