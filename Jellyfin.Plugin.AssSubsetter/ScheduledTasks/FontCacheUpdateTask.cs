@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 /// <summary>
-/// Scheduled task to scan physical font directories and build the local font cache index.
+///     Scheduled task to scan physical font directories and build the local font cache index.
 /// </summary>
 public class FontCacheUpdateTask : IScheduledTask
 {
@@ -17,7 +17,7 @@ public class FontCacheUpdateTask : IScheduledTask
     private readonly ILogger<FontCacheUpdateTask> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="FontCacheUpdateTask"/> class.
+    ///     Initializes a new instance of the <see cref="FontCacheUpdateTask" /> class.
     /// </summary>
     /// <param name="fontCacheManager">The font cache manager.</param>
     /// <param name="logger">The logger.</param>
@@ -54,15 +54,8 @@ public class FontCacheUpdateTask : IScheduledTask
     {
         return
         [
-            new TaskTriggerInfo
-            {
-                Type = TaskTriggerInfoType.StartupTrigger
-            },
-            new TaskTriggerInfo
-            {
-                Type = TaskTriggerInfoType.IntervalTrigger,
-                IntervalTicks = TimeSpan.FromHours(24).Ticks
-            }
+            new TaskTriggerInfo { Type = TaskTriggerInfoType.StartupTrigger },
+            new TaskTriggerInfo { Type = TaskTriggerInfoType.IntervalTrigger, IntervalTicks = TimeSpan.FromHours(24).Ticks }
         ];
     }
 }

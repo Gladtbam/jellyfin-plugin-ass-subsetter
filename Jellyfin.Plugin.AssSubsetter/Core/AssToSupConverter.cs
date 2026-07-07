@@ -15,8 +15,8 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
-/// Service that converts ASS subtitle files to SUP (PGS) format
-/// using libass for rendering and a pure C# PGS encoder for output.
+///     Service that converts ASS subtitle files to SUP (PGS) format
+///     using libass for rendering and a pure C# PGS encoder for output.
 /// </summary>
 public class AssToSupConverter : IDisposable
 {
@@ -25,7 +25,7 @@ public class AssToSupConverter : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="AssToSupConverter"/> class.
+    ///     Initializes a new instance of the <see cref="AssToSupConverter" /> class.
     /// </summary>
     /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="logger">The logger instance.</param>
@@ -37,8 +37,15 @@ public class AssToSupConverter : IDisposable
 
     private PluginConfiguration Config => _configFactory();
 
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
     /// <summary>
-    /// Converts an ASS subtitle file to SUP (PGS) format using libass rendering.
+    ///     Converts an ASS subtitle file to SUP (PGS) format using libass rendering.
     /// </summary>
     /// <param name="inputAssPath">Path to the input ASS file.</param>
     /// <param name="outputSupPath">Path for the output SUP file.</param>
@@ -297,7 +304,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Composes all ASS_Image layers into a single RGBA bitmap and calculates the tight crop rectangle.
+    ///     Composes all ASS_Image layers into a single RGBA bitmap and calculates the tight crop rectangle.
     /// </summary>
     private static byte[] ComposeFrame(
         IntPtr firstImage,
@@ -373,7 +380,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Alpha-blends a single ASS_Image layer onto the RGBA canvas.
+    ///     Alpha-blends a single ASS_Image layer onto the RGBA canvas.
     /// </summary>
     private static void BlendImage(
         byte[] canvas,
@@ -429,9 +436,9 @@ public class AssToSupConverter : IDisposable
                 int outA = alpha + (((dstA * (255 - alpha)) + 127) / 255);
                 if (outA > 0)
                 {
-                    canvas[pixelOffset] = (byte)(((r * alpha) + ((dstR * dstA * (255 - alpha)) / 255) + (outA / 2)) / outA);
-                    canvas[pixelOffset + 1] = (byte)(((g * alpha) + ((dstG * dstA * (255 - alpha)) / 255) + (outA / 2)) / outA);
-                    canvas[pixelOffset + 2] = (byte)(((b * alpha) + ((dstB * dstA * (255 - alpha)) / 255) + (outA / 2)) / outA);
+                    canvas[pixelOffset] = (byte)(((r * alpha) + (dstR * dstA * (255 - alpha) / 255) + (outA / 2)) / outA);
+                    canvas[pixelOffset + 1] = (byte)(((g * alpha) + (dstG * dstA * (255 - alpha) / 255) + (outA / 2)) / outA);
+                    canvas[pixelOffset + 2] = (byte)(((b * alpha) + (dstB * dstA * (255 - alpha) / 255) + (outA / 2)) / outA);
                     canvas[pixelOffset + 3] = (byte)Math.Min(outA, 255);
                 }
             }
@@ -439,7 +446,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Extracts a cropped rectangular region from the full RGBA canvas.
+    ///     Extracts a cropped rectangular region from the full RGBA canvas.
     /// </summary>
     private static byte[] CropRgba(byte[] rgba, int canvasWidth, int cropX, int cropY, int cropW, int cropH)
     {
@@ -456,8 +463,8 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Builds a sorted list of all time points that need to be rendered.
-    /// Combines event start/end times with animation frame sampling.
+    ///     Builds a sorted list of all time points that need to be rendered.
+    ///     Combines event start/end times with animation frame sampling.
     /// </summary>
     private List<long> BuildTimePoints(List<AssEvent> events, int frameIntervalMs)
     {
@@ -495,7 +502,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Parses ASS dialogue events to extract timing information.
+    ///     Parses ASS dialogue events to extract timing information.
     /// </summary>
     private static List<AssEvent> ParseAssEvents(string assFilePath)
     {
@@ -576,7 +583,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Parses an ASS timestamp string (H:MM:SS.CC) to milliseconds.
+    ///     Parses an ASS timestamp string (H:MM:SS.CC) to milliseconds.
     /// </summary>
     private static long ParseAssTimestamp(string timestamp)
     {
@@ -595,15 +602,8 @@ public class AssToSupConverter : IDisposable
         return (((hours * 3600L) + (minutes * 60L) + seconds) * 1000L) + (centiseconds * 10L);
     }
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
     /// <summary>
-    /// Releases resources.
+    ///     Releases resources.
     /// </summary>
     /// <param name="disposing">Whether managed resources should be released.</param>
     protected virtual void Dispose(bool disposing)
@@ -617,7 +617,7 @@ public class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    /// Represents a parsed ASS dialogue event with timing information.
+    ///     Represents a parsed ASS dialogue event with timing information.
     /// </summary>
     private sealed record AssEvent(long StartMs, long EndMs, bool HasAnimation);
 }

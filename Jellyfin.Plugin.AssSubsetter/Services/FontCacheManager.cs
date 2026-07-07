@@ -1,10 +1,12 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,27 +18,23 @@ using SkiaSharp;
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
 /// <summary>
-/// Manages the discovery and indexing of physical font files on the system.
+///     Manages the discovery and indexing of physical font files on the system.
 /// </summary>
 public sealed class FontCacheManager : IDisposable
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
-    {
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    };
+    private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     private static readonly char[] _splitChars = new[] { ';', ',' };
-    private readonly ILogger<FontCacheManager> _logger;
     private readonly string _cacheFilePath;
-    private readonly SemaphoreSlim _scanLock = new(1, 1);
     private readonly Func<PluginConfiguration> _configFactory;
+    private readonly ILogger<FontCacheManager> _logger;
+    private readonly SemaphoreSlim _scanLock = new(1, 1);
 
     private Dictionary<string, List<FontCacheEntry>> _fontIndex = new(StringComparer.OrdinalIgnoreCase);
     private volatile bool _isLoaded;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="FontCacheManager"/> class.
+    ///     Initializes a new instance of the <see cref="FontCacheManager" /> class.
     /// </summary>
     /// <param name="logger">The logger.</param>
     /// <param name="configFactory">The plugin configuration factory.</param>
@@ -58,8 +56,14 @@ public sealed class FontCacheManager : IDisposable
 
     private PluginConfiguration Config => _configFactory();
 
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        _scanLock.Dispose();
+    }
+
     /// <summary>
-    /// Gets the list of directories to scan for fonts.
+    ///     Gets the list of directories to scan for fonts.
     /// </summary>
     private List<string> GetFontDirectories()
     {
@@ -104,7 +108,7 @@ public sealed class FontCacheManager : IDisposable
     }
 
     /// <summary>
-    /// Scans directories and updates the JSON cache.
+    ///     Scans directories and updates the JSON cache.
     /// </summary>
     /// <param name="progress">The progress reporter.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -174,11 +178,7 @@ public sealed class FontCacheManager : IDisposable
             int totalFiles = allFontFiles.Count;
             int processed = 0;
 
-            var parallelOptions = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount,
-                CancellationToken = cancellationToken
-            };
+            var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount, CancellationToken = cancellationToken };
 
             Parallel.ForEach(allFontFiles, parallelOptions, file =>
             {
@@ -209,7 +209,7 @@ public sealed class FontCacheManager : IDisposable
                                 byte[] header = new byte[12];
                                 if (fs.Read(header, 0, 12) == 12 && header[0] == 't' && header[1] == 't' && header[2] == 'c' && header[3] == 'f')
                                 {
-                                    faceCount = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(8, 4));
+                                    faceCount = (int)BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(8, 4));
                                     if (faceCount <= 0 || faceCount > 100)
                                     {
                                         faceCount = 1;
@@ -245,7 +245,7 @@ public sealed class FontCacheManager : IDisposable
                                     {
                                         Path = file,
                                         FaceIndex = faceIndex,
-                                        Type = System.IO.Path.GetExtension(file).TrimStart('.').ToLowerInvariant(),
+                                        Type = Path.GetExtension(file).TrimStart('.').ToLowerInvariant(),
                                         FamilyName = names.First(),
                                         Style = extracted.Style,
                                         Names = names,
@@ -301,7 +301,7 @@ public sealed class FontCacheManager : IDisposable
     }
 
     /// <summary>
-    /// Loads the cache into memory if not already loaded. Triggers a full scan if no cache file exists.
+    ///     Loads the cache into memory if not already loaded. Triggers a full scan if no cache file exists.
     /// </summary>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -362,7 +362,7 @@ public sealed class FontCacheManager : IDisposable
     }
 
     /// <summary>
-    /// Finds the best matching physical font file for the given font name and styles.
+    ///     Finds the best matching physical font file for the given font name and styles.
     /// </summary>
     /// <param name="desc">The font variant descriptor containing name, weight, and italic properties.</param>
     /// <returns>A tuple containing the path and face index, or null if not found.</returns>
@@ -434,8 +434,8 @@ public sealed class FontCacheManager : IDisposable
 
         if (data != null && data.Length >= 6)
         {
-            ushort count = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2));
-            ushort stringOffset = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4));
+            ushort count = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2));
+            ushort stringOffset = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(4));
 
             for (int i = 0; i < count; i++)
             {
@@ -445,11 +445,11 @@ public sealed class FontCacheManager : IDisposable
                     break;
                 }
 
-                ushort platformId = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset));
-                ushort encodingId = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 2));
-                ushort nameId = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 6));
-                ushort length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 8));
-                ushort offset = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 10));
+                ushort platformId = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset));
+                ushort encodingId = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 2));
+                ushort nameId = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 6));
+                ushort length = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 8));
+                ushort offset = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(recordOffset + 10));
 
                 // 1 = Font Family name, 2 = Font Subfamily name (Style), 4 = Full font name, 6 = PostScript name, 16 = Typographic Family name
                 if (nameId == 1 || nameId == 2 || nameId == 4 || nameId == 6 || nameId == 16)
@@ -463,12 +463,12 @@ public sealed class FontCacheManager : IDisposable
                             if (platformId == 3 && (encodingId == 1 || encodingId == 10))
                             {
                                 // Windows Unicode
-                                str = System.Text.Encoding.BigEndianUnicode.GetString(data, stringStart, length);
+                                str = Encoding.BigEndianUnicode.GetString(data, stringStart, length);
                             }
                             else if (platformId == 1 && encodingId == 0)
                             {
                                 // Mac Roman
-                                str = System.Text.Encoding.UTF8.GetString(data, stringStart, length);
+                                str = Encoding.UTF8.GetString(data, stringStart, length);
                             }
                         }
                         catch (ArgumentException)
@@ -522,11 +522,5 @@ public sealed class FontCacheManager : IDisposable
         }
 
         return index;
-    }
-
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        _scanLock.Dispose();
     }
 }

@@ -11,15 +11,15 @@ using MediaBrowser.Model.Serialization;
 namespace Jellyfin.Plugin.AssSubsetter;
 
 /// <summary>
-/// The main plugin.
+///     The main plugin.
 /// </summary>
 public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="Plugin"/> class.
+    ///     Initializes a new instance of the <see cref="Plugin" /> class.
     /// </summary>
-    /// <param name="applicationPaths">Instance of the <see cref="IApplicationPaths"/> interface.</param>
-    /// <param name="xmlSerializer">Instance of the <see cref="IXmlSerializer"/> interface.</param>
+    /// <param name="applicationPaths">Instance of the <see cref="IApplicationPaths" /> interface.</param>
+    /// <param name="xmlSerializer">Instance of the <see cref="IXmlSerializer" /> interface.</param>
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
@@ -36,17 +36,17 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => Guid.Parse("7d13aa46-8b4a-ce85-9648-2cf4f52b8222");
 
     /// <summary>
-    /// Gets the Jellyfin program data path for storing persistent plugin files.
+    ///     Gets the Jellyfin program data path for storing persistent plugin files.
     /// </summary>
     public string PluginDataPath { get; }
 
     /// <summary>
-    /// Gets the plugin-specific cache folder under Jellyfin's cache directory.
+    ///     Gets the plugin-specific cache folder under Jellyfin's cache directory.
     /// </summary>
     public string PluginCachePath { get; }
 
     /// <summary>
-    /// Gets the current plugin instance.
+    ///     Gets the current plugin instance.
     /// </summary>
     public static Plugin? Instance { get; private set; }
 
@@ -55,11 +55,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         return
         [
-            new PluginPageInfo
-            {
-                Name = Name,
-                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
-            }
+            new PluginPageInfo { Name = Name, EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace) }
         ];
     }
 }

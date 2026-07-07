@@ -2,13 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.Marshalling;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Native;
 
 /// <summary>
-/// Native P/Invoke bindings for HarfBuzz subsetting.
+///     Native P/Invoke bindings for HarfBuzz subsetting.
 /// </summary>
 public static partial class HarfBuzzSubsetNative
 {
@@ -70,7 +69,7 @@ public static partial class HarfBuzzSubsetNative
     private static partial void HbBlobDestroy(IntPtr blob);
 
     /// <summary>
-    /// Subsets a font in memory keeping only the specified codepoints.
+    ///     Subsets a font in memory keeping only the specified codepoints.
     /// </summary>
     /// <param name="fontData">The raw binary font data.</param>
     /// <param name="faceIndex">The index of the face within a TTC, or 0 for TTF/OTF.</param>

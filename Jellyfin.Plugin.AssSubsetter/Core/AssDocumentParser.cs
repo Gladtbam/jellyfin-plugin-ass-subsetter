@@ -7,12 +7,12 @@ using Jellyfin.Plugin.AssSubsetter.Models;
 namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
-/// A lightweight parser for Advanced SubStation Alpha (ASS) files, extracting required font characters.
+///     A lightweight parser for Advanced SubStation Alpha (ASS) files, extracting required font characters.
 /// </summary>
 public class AssDocumentParser
 {
     /// <summary>
-    /// Parses an ASS file and extracts the unique Unicode codepoints used per font.
+    ///     Parses an ASS file and extracts the unique Unicode codepoints used per font.
     /// </summary>
     /// <param name="filePath">The ASS file path.</param>
     /// <returns>A dictionary mapping FontName to a HashSet of used Unicode codepoints.</returns>

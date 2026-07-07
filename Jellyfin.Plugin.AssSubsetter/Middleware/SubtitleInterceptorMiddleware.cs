@@ -3,7 +3,6 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
@@ -19,22 +18,22 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 
 /// <summary>
-/// ASP.NET Core middleware to intercept Jellyfin ASS subtitle streams and replace them with subsetted fonts version.
+///     ASP.NET Core middleware to intercept Jellyfin ASS subtitle streams and replace them with subsetted fonts version.
 /// </summary>
 public class SubtitleInterceptorMiddleware
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<SubtitleInterceptorMiddleware> _logger;
-    private readonly SubtitleCacheService _cacheService;
-    private readonly ILibraryManager _libraryManager;
-    private readonly IHostApplicationLifetime _appLifetime;
-
     private static readonly Regex _subtitleRouteRegex = new(
         @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/.*/Subtitles/\d+(?:/\d+)?/Stream\.ass$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private readonly IHostApplicationLifetime _appLifetime;
+    private readonly SubtitleCacheService _cacheService;
+    private readonly ILibraryManager _libraryManager;
+    private readonly ILogger<SubtitleInterceptorMiddleware> _logger;
+    private readonly RequestDelegate _next;
+
     /// <summary>
-    /// Initializes a new instance of the <see cref="SubtitleInterceptorMiddleware"/> class.
+    ///     Initializes a new instance of the <see cref="SubtitleInterceptorMiddleware" /> class.
     /// </summary>
     /// <param name="next">The next middleware in pipeline.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
@@ -56,7 +55,7 @@ public class SubtitleInterceptorMiddleware
     }
 
     /// <summary>
-    /// Invokes the middleware to process requests.
+    ///     Invokes the middleware to process requests.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -107,10 +106,7 @@ public class SubtitleInterceptorMiddleware
                                     }
                                 }
 
-                                var fileResult = new PhysicalFileResult(finalPath, contentType)
-                                {
-                                    EnableRangeProcessing = true
-                                };
+                                var fileResult = new PhysicalFileResult(finalPath, contentType) { EnableRangeProcessing = true };
 
                                 var actionContext = new ActionContext(
                                     context,

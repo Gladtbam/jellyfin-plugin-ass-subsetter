@@ -18,27 +18,27 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
 /// <summary>
-/// Background service that monitors playback progress and prefetches (subsets)
-/// the next episode's ASS subtitles when the user is nearing the end of the current episode.
+///     Background service that monitors playback progress and prefetches (subsets)
+///     the next episode's ASS subtitles when the user is nearing the end of the current episode.
 /// </summary>
 public class PlaybackPrefetchService : IHostedService, IDisposable
 {
-    private readonly ISessionManager _sessionManager;
-    private readonly ILibraryManager _libraryManager;
     private readonly SubtitleCacheService _cacheService;
     private readonly Func<PluginConfiguration> _configFactory;
+    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<PlaybackPrefetchService> _logger;
+    private readonly ISessionManager _sessionManager;
 
     /// <summary>
-    /// Tracks which session+item combinations have already triggered a prefetch
-    /// to avoid redundant work. Key format: "{SessionId}_{ItemId}".
+    ///     Tracks which session+item combinations have already triggered a prefetch
+    ///     to avoid redundant work. Key format: "{SessionId}_{ItemId}".
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _triggeredPrefetches = new();
 
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PlaybackPrefetchService"/> class.
+    ///     Initializes a new instance of the <see cref="PlaybackPrefetchService" /> class.
     /// </summary>
     /// <param name="sessionManager">The session manager instance.</param>
     /// <param name="libraryManager">The library manager instance.</param>
@@ -60,6 +60,13 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     }
 
     private PluginConfiguration Config => _configFactory();
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -220,11 +227,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         int currentIndex = currentEpisode.IndexNumber ?? 0;
 
-        var children = _libraryManager.GetItemList(new InternalItemsQuery
-        {
-            ParentId = parentId,
-            IncludeItemTypes = [BaseItemKind.Episode]
-        });
+        var children = _libraryManager.GetItemList(new InternalItemsQuery { ParentId = parentId, IncludeItemTypes = [BaseItemKind.Episode] });
 
         var nextEpisode = children
             .OfType<Episode>()
@@ -235,15 +238,8 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         return nextEpisode;
     }
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
     /// <summary>
-    /// Releases unmanaged and - optionally - managed resources.
+    ///     Releases unmanaged and - optionally - managed resources.
     /// </summary>
     /// <param name="disposing"><c>true</c> to release both managed and unmanaged resources.</param>
     protected virtual void Dispose(bool disposing)

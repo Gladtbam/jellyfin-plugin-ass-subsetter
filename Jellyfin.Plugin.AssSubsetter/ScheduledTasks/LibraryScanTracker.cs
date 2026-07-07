@@ -13,25 +13,26 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 /// <summary>
-/// Background service that tracks library scans and preemptively generates subset fonts.
-/// Uses a bounded channel to prevent task explosion during bulk library scans.
+///     Background service that tracks library scans and preemptively generates subset fonts.
+///     Uses a bounded channel to prevent task explosion during bulk library scans.
 /// </summary>
 public class LibraryScanTracker : IHostedService, IDisposable
 {
-    private readonly ILibraryManager _libraryManager;
     private readonly SubtitleCacheService _cacheService;
     private readonly Func<PluginConfiguration> _configFactory;
+    private readonly ILibraryManager _libraryManager;
     private readonly ILogger<LibraryScanTracker> _logger;
 
     private readonly Channel<Video> _processQueue = Channel.CreateBounded<Video>(
         new BoundedChannelOptions(256) { FullMode = BoundedChannelFullMode.DropOldest });
 
-    private CancellationTokenSource? _cts;
     private Task? _consumerTask;
+
+    private CancellationTokenSource? _cts;
     private bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="LibraryScanTracker"/> class.
+    ///     Initializes a new instance of the <see cref="LibraryScanTracker" /> class.
     /// </summary>
     /// <param name="libraryManager">The library manager instance.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
@@ -50,6 +51,13 @@ public class LibraryScanTracker : IHostedService, IDisposable
     }
 
     private PluginConfiguration Config => _configFactory();
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -138,15 +146,8 @@ public class LibraryScanTracker : IHostedService, IDisposable
         }
     }
 
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
     /// <summary>
-    /// Releases unmanaged and - optionally - managed resources.
+    ///     Releases unmanaged and - optionally - managed resources.
     /// </summary>
     /// <param name="disposing"><c>true</c> to release both managed and unmanaged resources.</param>
     protected virtual void Dispose(bool disposing)

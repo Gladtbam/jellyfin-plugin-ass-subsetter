@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter;
 
 /// <summary>
-/// Registers plugin services and injects the interceptor middleware into the ASP.NET Core pipeline.
+///     Registers plugin services and injects the interceptor middleware into the ASP.NET Core pipeline.
 /// </summary>
 public class PluginServiceRegistrator : IPluginServiceRegistrator
 {

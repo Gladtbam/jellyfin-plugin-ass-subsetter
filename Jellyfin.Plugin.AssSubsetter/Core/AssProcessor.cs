@@ -16,17 +16,17 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
-/// Processor for handling ASS subtitle subsetting via local HarfBuzzSharp.
+///     Processor for handling ASS subtitle subsetting via local HarfBuzzSharp.
 /// </summary>
 public class AssProcessor
 {
-    private readonly ILogger<AssProcessor> _logger;
+    private readonly AssDocumentParser _assParser;
     private readonly Func<PluginConfiguration> _configFactory;
     private readonly FontCacheManager _fontCacheManager;
-    private readonly AssDocumentParser _assParser;
+    private readonly ILogger<AssProcessor> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="AssProcessor"/> class.
+    ///     Initializes a new instance of the <see cref="AssProcessor" /> class.
     /// </summary>
     /// <param name="configFactory">The configuration factory.</param>
     /// <param name="fontCacheManager">The font cache manager.</param>
@@ -43,7 +43,7 @@ public class AssProcessor
     private PluginConfiguration Config => _configFactory();
 
     /// <summary>
-    /// Generates a subsetted ASS subtitle file with font renaming for correct player matching.
+    ///     Generates a subsetted ASS subtitle file with font renaming for correct player matching.
     /// </summary>
     /// <param name="inputAssPath">The physical path of the original ASS file.</param>
     /// <param name="outputCachePath">The path where the subsetted ASS file should be saved.</param>
@@ -140,7 +140,7 @@ public class AssProcessor
             // Write the modified ASS content + [Fonts] section to output
             await File.WriteAllTextAsync(outputCachePath, rewrittenContent, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
 
-            using var writer = new StreamWriter(outputCachePath, append: true, new UTF8Encoding(false));
+            using var writer = new StreamWriter(outputCachePath, true, new UTF8Encoding(false));
             await writer.WriteLineAsync().ConfigureAwait(false);
             await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
 
@@ -184,8 +184,8 @@ public class AssProcessor
     }
 
     /// <summary>
-    /// Rewrites font name references in ASS content, replacing original font names with
-    /// their mapped random prefix names in both [V4+ Styles] Fontname fields and \fn override tags.
+    ///     Rewrites font name references in ASS content, replacing original font names with
+    ///     their mapped random prefix names in both [V4+ Styles] Fontname fields and \fn override tags.
     /// </summary>
     /// <param name="content">The original ASS file content.</param>
     /// <param name="fontNameMap">Mapping from original font names to new prefix names (case-insensitive keys).</param>
@@ -250,7 +250,7 @@ public class AssProcessor
             else if (inEvents)
             {
                 outputLine = trimmed.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase) ||
-                              trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase)
+                             trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase)
                     ? RewriteFnTags(line, fontNameMap)
                     : line;
             }
@@ -270,8 +270,8 @@ public class AssProcessor
     }
 
     /// <summary>
-    /// Rewrites the Fontname field in a Style: line, replacing the font name with its mapped prefix.
-    /// Preserves the @ vertical font prefix if present.
+    ///     Rewrites the Fontname field in a Style: line, replacing the font name with its mapped prefix.
+    ///     Preserves the @ vertical font prefix if present.
     /// </summary>
     private static string RewriteStyleLine(string line, int fontIndex, Dictionary<string, string> fontNameMap)
     {
@@ -320,7 +320,7 @@ public class AssProcessor
     }
 
     /// <summary>
-    /// Rewrites \fn override tags in a Dialogue/Comment line, replacing font names with mapped prefix names.
+    ///     Rewrites \fn override tags in a Dialogue/Comment line, replacing font names with mapped prefix names.
     /// </summary>
     private static string RewriteFnTags(string line, Dictionary<string, string> fontNameMap)
     {
@@ -341,14 +341,14 @@ public class AssProcessor
     }
 
     /// <summary>
-    /// Encodes font binary data into ASS UUEncode format lines (3 bytes to 4 characters with a +33 offset).
+    ///     Encodes font binary data into ASS UUEncode format lines (3 bytes to 4 characters with a +33 offset).
     /// </summary>
     /// <param name="fileData">The binary data of the font file.</param>
     /// <returns>A list of encoded strings representing the font data.</returns>
     private static List<string> EncodeFontToAssLines(byte[] fileData)
     {
         var lines = new List<string>();
-        var sb = new System.Text.StringBuilder(80);
+        var sb = new StringBuilder(80);
 
         for (int i = 0; i < fileData.Length; i += 3)
         {

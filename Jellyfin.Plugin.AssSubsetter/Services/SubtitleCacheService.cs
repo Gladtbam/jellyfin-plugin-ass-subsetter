@@ -13,21 +13,20 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
 /// <summary>
-/// Service responsible for managing subtitle cache and enforcing LRU capacity limits.
+///     Service responsible for managing subtitle cache and enforcing LRU capacity limits.
 /// </summary>
 public class SubtitleCacheService
 {
-    private readonly string _cacheFolderPath;
-    private readonly Func<PluginConfiguration> _configFactory;
     private readonly AssProcessor _assProcessor;
     private readonly AssToSupConverter? _assToSupConverter;
-    private readonly ILogger<SubtitleCacheService> _logger;
+    private readonly Func<PluginConfiguration> _configFactory;
 
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _fileLocks = new();
+    private readonly ILogger<SubtitleCacheService> _logger;
     private readonly ConcurrentDictionary<Guid, byte> _pendingConversions = new();
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="SubtitleCacheService"/> class.
+    ///     Initializes a new instance of the <see cref="SubtitleCacheService" /> class.
     /// </summary>
     /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="assProcessor">The ASS processor instance.</param>
@@ -40,25 +39,25 @@ public class SubtitleCacheService
         _assProcessor = assProcessor;
         _assToSupConverter = assToSupConverter;
         _logger = logger;
-        _cacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
+        CacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
             ? cacheFolderPath
             : Plugin.Instance?.PluginCachePath ?? Path.Join(AppContext.BaseDirectory, "Cache");
 
-        if (!Directory.Exists(_cacheFolderPath))
+        if (!Directory.Exists(CacheFolderPath))
         {
-            Directory.CreateDirectory(_cacheFolderPath);
+            Directory.CreateDirectory(CacheFolderPath);
         }
     }
 
     private PluginConfiguration Config => _configFactory();
 
     /// <summary>
-    /// Gets the cache folder path.
+    ///     Gets the cache folder path.
     /// </summary>
-    public string CacheFolderPath => _cacheFolderPath;
+    public string CacheFolderPath { get; }
 
     /// <summary>
-    /// Gets an existing subset subtitle file or generates one on-demand (JIT).
+    ///     Gets an existing subset subtitle file or generates one on-demand (JIT).
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
@@ -148,7 +147,7 @@ public class SubtitleCacheService
     }
 
     /// <summary>
-    /// Gets the expected SUP cache file path for a given item, without triggering conversion.
+    ///     Gets the expected SUP cache file path for a given item, without triggering conversion.
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
@@ -156,11 +155,11 @@ public class SubtitleCacheService
     private string GetSupCachePath(Guid itemId, string originalAssPath)
     {
         string safeFileName = Path.GetFileNameWithoutExtension(originalAssPath);
-        return Path.Join(_cacheFolderPath, $"{itemId:N}_{safeFileName}.sup");
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}.sup");
     }
 
     /// <summary>
-    /// Gets the expected ASS subset cache file path for a given item.
+    ///     Gets the expected ASS subset cache file path for a given item.
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
@@ -168,12 +167,12 @@ public class SubtitleCacheService
     private string GetSubsetCachePath(Guid itemId, string originalAssPath)
     {
         string safeFileName = Path.GetFileName(originalAssPath);
-        return Path.Join(_cacheFolderPath, $"{itemId:N}_{safeFileName}");
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}");
     }
 
     /// <summary>
-    /// Triggers a background ASS to SUP conversion if one is not already in progress for the given item.
-    /// This is a fire-and-forget operation; the conversion runs on a background thread.
+    ///     Triggers a background ASS to SUP conversion if one is not already in progress for the given item.
+    ///     This is a fire-and-forget operation; the conversion runs on a background thread.
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
@@ -214,7 +213,7 @@ public class SubtitleCacheService
     }
 
     /// <summary>
-    /// Gets an existing SUP subtitle file or generates one on-demand via ASS to SUP conversion.
+    ///     Gets an existing SUP subtitle file or generates one on-demand via ASS to SUP conversion.
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
@@ -302,7 +301,7 @@ public class SubtitleCacheService
 
     private void EnforceCapacityLimit(long requiredSpace)
     {
-        var dirInfo = new DirectoryInfo(_cacheFolderPath);
+        var dirInfo = new DirectoryInfo(CacheFolderPath);
         long maxCacheSizeInBytes = (long)Config.MaxCacheSizeMB * 1024 * 1024;
         long currentSize = dirInfo.EnumerateFiles()
             .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
@@ -317,10 +316,10 @@ public class SubtitleCacheService
         _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
 
         var oldestFiles = dirInfo.GetFiles()
-                                .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
-                                            f.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase))
-                                .OrderBy(f => f.LastAccessTime)
-                                .ToList();
+            .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
+                        f.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(f => f.LastAccessTime)
+            .ToList();
 
         foreach (var file in oldestFiles)
         {

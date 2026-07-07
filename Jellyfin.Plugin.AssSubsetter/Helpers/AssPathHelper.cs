@@ -6,12 +6,12 @@ using System.Linq;
 namespace Jellyfin.Plugin.AssSubsetter.Helpers;
 
 /// <summary>
-/// Shared utility methods for locating original ASS subtitle files associated with a video.
+///     Shared utility methods for locating original ASS subtitle files associated with a video.
 /// </summary>
 internal static class AssPathHelper
 {
     /// <summary>
-    /// Gets the first original (non-subsetted) ASS subtitle file path for a given video path.
+    ///     Gets the first original (non-subsetted) ASS subtitle file path for a given video path.
     /// </summary>
     /// <param name="videoPath">The physical path of the video file.</param>
     /// <returns>The path to the first matching ASS file, or empty string if none found.</returns>
@@ -58,7 +58,7 @@ internal static class AssPathHelper
     }
 
     /// <summary>
-    /// Gets all original (non-subsetted) ASS subtitle file paths for a given video path.
+    ///     Gets all original (non-subsetted) ASS subtitle file paths for a given video path.
     /// </summary>
     /// <param name="videoPath">The physical path of the video file.</param>
     /// <returns>An array of matching ASS file paths.</returns>

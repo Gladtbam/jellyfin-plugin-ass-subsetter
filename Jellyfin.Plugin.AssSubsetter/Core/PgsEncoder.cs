@@ -6,8 +6,8 @@ using System.IO;
 namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
-/// Pure C# encoder for PGS/SUP (Blu-ray Presentation Graphic Stream) format.
-/// Handles palette quantization, RLE encoding, and segment assembly.
+///     Pure C# encoder for PGS/SUP (Blu-ray Presentation Graphic Stream) format.
+///     Handles palette quantization, RLE encoding, and segment assembly.
 /// </summary>
 internal static class PgsEncoder
 {
@@ -25,7 +25,7 @@ internal static class PgsEncoder
     private const int MaxOdsPayload = 65515; // 65535 - 4 (obj header) - 7 (first fragment header) - ... simplified
 
     /// <summary>
-    /// Writes a complete Display Set to show a subtitle bitmap.
+    ///     Writes a complete Display Set to show a subtitle bitmap.
     /// </summary>
     /// <param name="stream">The output stream.</param>
     /// <param name="pts90">Presentation timestamp in 90kHz ticks.</param>
@@ -65,7 +65,7 @@ internal static class PgsEncoder
             objectY,
             objectWidth,
             objectHeight,
-            isEpochStart: true);
+            true);
 
         // WDS - Window Definition Segment
         WriteWds(stream, pts90, objectX, objectY, objectWidth, objectHeight);
@@ -81,7 +81,7 @@ internal static class PgsEncoder
     }
 
     /// <summary>
-    /// Writes a Display Set to clear/hide the current subtitle.
+    ///     Writes a Display Set to clear/hide the current subtitle.
     /// </summary>
     /// <param name="stream">The output stream.</param>
     /// <param name="pts90">Presentation timestamp in 90kHz ticks.</param>
@@ -106,8 +106,8 @@ internal static class PgsEncoder
     }
 
     /// <summary>
-    /// Quantizes an RGBA bitmap to a palette of at most 256 colors.
-    /// Returns the indexed bitmap and the palette.
+    ///     Quantizes an RGBA bitmap to a palette of at most 256 colors.
+    ///     Returns the indexed bitmap and the palette.
     /// </summary>
     /// <param name="rgbaData">RGBA pixel data (4 bytes per pixel).</param>
     /// <param name="width">Image width.</param>
@@ -175,8 +175,8 @@ internal static class PgsEncoder
     }
 
     /// <summary>
-    /// PGS RLE encoding for indexed bitmap data.
-    /// Format: sequences of (color, run_length) with special encoding for long runs and line ends.
+    ///     PGS RLE encoding for indexed bitmap data.
+    ///     Format: sequences of (color, run_length) with special encoding for long runs and line ends.
     /// </summary>
     /// <param name="indexedBitmap">Palette-indexed bitmap data (1 byte per pixel).</param>
     /// <param name="width">Image width in pixels.</param>
@@ -376,11 +376,11 @@ internal static class PgsEncoder
             // Convert RGB to YCbCr (BT.709)
             RgbToYcbcr(r, g, b, out byte y, out byte cb, out byte cr);
 
-            entry[0] = (byte)i;  // Palette entry ID
-            entry[1] = y;        // Y (luminance)
-            entry[2] = cr;       // Cr
-            entry[3] = cb;       // Cb
-            entry[4] = a;        // Alpha (0 = transparent, 255 = opaque)
+            entry[0] = (byte)i; // Palette entry ID
+            entry[1] = y; // Y (luminance)
+            entry[2] = cr; // Cr
+            entry[3] = cb; // Cb
+            entry[4] = a; // Alpha (0 = transparent, 255 = opaque)
 
             stream.Write(entry);
         }

@@ -6,8 +6,8 @@ using System.Text;
 namespace Jellyfin.Plugin.AssSubsetter.Core;
 
 /// <summary>
-/// Rewrites the OpenType 'name' table in a font binary to replace the font family name
-/// with a unique random prefix, enabling correct font matching in ASS subtitle embedding.
+///     Rewrites the OpenType 'name' table in a font binary to replace the font family name
+///     with a unique random prefix, enabling correct font matching in ASS subtitle embedding.
 /// </summary>
 public static class FontNameRewriter
 {
@@ -17,7 +17,7 @@ public static class FontNameRewriter
     private static readonly ushort[] TargetNameIds = new ushort[] { 1, 4, 6, 16 };
 
     /// <summary>
-    /// Generates a random 8-character uppercase alphanumeric prefix, matching the style used by mkvlib/mkvtool.
+    ///     Generates a random 8-character uppercase alphanumeric prefix, matching the style used by mkvlib/mkvtool.
     /// </summary>
     /// <returns>An 8-character random string.</returns>
     public static string GenerateRandomPrefix()
@@ -34,8 +34,8 @@ public static class FontNameRewriter
     }
 
     /// <summary>
-    /// Renames the font family in the binary font data by replacing name table entries
-    /// (Name IDs 1, 4, 6, 16) with the specified new family name.
+    ///     Renames the font family in the binary font data by replacing name table entries
+    ///     (Name IDs 1, 4, 6, 16) with the specified new family name.
     /// </summary>
     /// <param name="fontData">The raw binary font data (TTF/OTF).</param>
     /// <param name="newFamilyName">The new family name to set (e.g., a random 8-char prefix).</param>
@@ -125,7 +125,7 @@ public static class FontNameRewriter
             if (isTargetNameId)
             {
                 // Replace with new family name, PostScript name: ASCII, no spaces
-                stringBytes = nameId == 6 ? GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: true) : GetEncodedString(newFamilyName, platformId, encodingId, isPostScript: false);
+                stringBytes = nameId == 6 ? GetEncodedString(newFamilyName, platformId, encodingId, true) : GetEncodedString(newFamilyName, platformId, encodingId, false);
             }
             else
             {
@@ -142,7 +142,7 @@ public static class FontNameRewriter
                 LanguageId = languageId,
                 NameId = nameId,
                 Length = (ushort)stringBytes.Length,
-                Offset = newOffset,
+                Offset = newOffset
             });
             newStringData.AddRange(stringBytes);
         }
