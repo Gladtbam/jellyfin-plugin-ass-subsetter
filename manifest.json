@@ -8,6 +8,14 @@
         "owner": "Gladtbam",
         "versions": [
             {
+                "version": "2.2.1.0",
+                "changelog": "fix：修复样式名匹配时特殊字符处理不一致的问题",
+                "targetAbi": "10.11.9.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v2.2.1.0/Jellyfin.Plugin.AssSubsetter_2.2.1.0.zip",
+                "checksum": "76e86308d70a7c6274ea4b04c0661e6d",
+                "timestamp": "2026-07-08T12:18:07Z"
+            },
+            {
                 "version": "2.2.0.0",
                 "changelog": "fix：排除 ASS 中特殊字符\n\nfeat: 重构字幕缓存服务并集成后台 SUP 转换支持\n\nrefactor: 重构插件配置依赖注入以支持热更新",
                 "targetAbi": "10.11.9.0",
@@ -25,7 +33,7 @@
             },
             {
                 "version": "2.0.0.0",
-                "changelog": "refactor: 重构核心架构，移除外部工具依赖，全面迁移至原生 HarfBuzzSharp C# 子集化\nfeat: 完善服务端 JIT 即时拦截、入库扫描自动构建与连播预加载生命周期管控\nfeat: 实现原生字体缓存引擎，支持 TTC 多字重解析与进阶 Name Table 元数据提取\nfeat: 增加 ASS 字体变体匹配功能，支持 Bold/Italic 精确兜底逻辑\nrefactor: 引入 Channel 队列重构 LibraryScanTracker 解决扫库并发任务爆炸及内存泄漏\nfix: 修复各类并发锁及 CodeQL 安全规范扫描警告",
+                "changelog": "refactor: 重构核心架构，移除外部工具依赖，全面迁移至原生 HarfBuzzSharp C# 子集化\n\nfeat: 完善服务端 JIT 即时拦截、入库扫描自动构建与连播预加载生命周期管控\n\nfeat: 实现原生字体缓存引擎，支持 TTC 多字重解析与进阶 Name Table 元数据提取\n\nfeat: 增加 ASS 字体变体匹配功能，支持 Bold/Italic 精确兜底逻辑\n\nrefactor: 引入 Channel 队列重构 LibraryScanTracker 解决扫库并发任务爆炸及内存泄漏\n\nfix: 修复各类并发锁及 CodeQL 安全规范扫描警告",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v2.0.0.0-beta.1/Jellyfin.Plugin.AssSubsetter_2.0.0.0-beta.1.zip",
                 "checksum": "d97d9097717b605d42f16f93af3d422c",
@@ -41,7 +49,7 @@
             },
             {
                 "version": "1.2.0.0",
-                "changelog": "fix: 当mkvtool执行失败时，同时记录并输出标准输出(stdout)和标准错误(stderr)以便排查问题\nfeat: 实现自动提前预取下一集所有ASS字幕的功能",
+                "changelog": "fix: 当mkvtool执行失败时，同时记录并输出标准输出(stdout)和标准错误(stderr)以便排查问题\n\nfeat: 实现自动提前预取下一集所有ASS字幕的功能",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.2.0.0/Jellyfin.Plugin.AssSubsetter_1.2.0.0.zip",
                 "checksum": "635e45c2a0d6d156408a5f37a8c96914",
@@ -49,7 +57,7 @@
             },
             {
                 "version": "1.1.0.0",
-                "changelog": "feat：改为后台异步按需下载 mkvtool 工具，移除内置二进制包\nfix：重定向数据目录至 Jellyfin 的 Data 管道，确保字幕缓存与核心工具在插件更新时不再被清空抹除。\nfeat：引入 mkvtool 强制版本锁定 (Version Pinning) \nfeat：加入双重检查锁定 (Double-Check Locking) 机制。",
+                "changelog": "feat：改为后台异步按需下载 mkvtool 工具，移除内置二进制包\n\nfix：重定向数据目录至 Jellyfin 的 Data 管道，确保字幕缓存与核心工具在插件更新时不再被清空抹除\n\nfeat：引入 mkvtool 强制版本锁定 (Version Pinning)\n\nfeat：加入双重检查锁定 (Double-Check Locking) 机制。",
                 "targetAbi": "10.11.9.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v1.1.0/Jellyfin.Plugin.AssSubsetter_1.1.0.zip",
                 "checksum": "5137fcc746c5dd5d046649e2d72b620f",
