@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
@@ -30,13 +31,13 @@ public class FontCacheUpdateTask : IScheduledTask
     }
 
     /// <inheritdoc />
-    public string Name => "构建 ASS Subsetter 本地字体索引缓存";
+    public string Name => LocalizationHelper.GetString("FontCacheTask_Name");
 
     /// <inheritdoc />
     public string Key => "LocalFontCacheUpdateTask";
 
     /// <inheritdoc />
-    public string Description => "扫描系统的系统字体与配置的自定义字体目录。";
+    public string Description => LocalizationHelper.GetString("FontCacheTask_Description");
 
     /// <inheritdoc />
     public string Category => "Subtitles";
@@ -44,9 +45,9 @@ public class FontCacheUpdateTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("[AssSubsetter] 开始执行本地字体数据库更新任务...");
+        _logger.LogInformation("[AssSubsetter] Starting font database update task...");
         await _fontCacheManager.ScanAndSaveAsync(progress, cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("[AssSubsetter] 本地字体数据库缓存构建全部完成！");
+        _logger.LogInformation("[AssSubsetter] Font database cache build completed!");
     }
 
     /// <inheritdoc />

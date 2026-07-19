@@ -166,11 +166,11 @@ public sealed class FontCacheManager : IDisposable
                 }
                 catch (IOException ex)
                 {
-                    _logger.LogWarning(ex, "[AssSubsetter] IO Error scanning directory {Dir}", dir);
+                    _logger.LogError(ex, "[AssSubsetter] IO Error scanning directory {Dir}", dir);
                 }
                 catch (UnauthorizedAccessException ex)
                 {
-                    _logger.LogWarning(ex, "[AssSubsetter] Permission Error scanning directory {Dir}", dir);
+                    _logger.LogError(ex, "[AssSubsetter] Permission Error scanning directory {Dir}", dir);
                 }
             }
 
@@ -218,11 +218,11 @@ public sealed class FontCacheManager : IDisposable
                             }
                             catch (IOException ex)
                             {
-                                _logger.LogDebug(ex, "[AssSubsetter] IO Error reading TTC header for file {File}", file);
+                                _logger.LogError(ex, "[AssSubsetter] IO Error reading TTC header for file {File}", file);
                             }
                             catch (UnauthorizedAccessException ex)
                             {
-                                _logger.LogDebug(ex, "[AssSubsetter] Permission Error reading TTC header for file {File}", file);
+                                _logger.LogError(ex, "[AssSubsetter] Permission Error reading TTC header for file {File}", file);
                             }
                         }
 
@@ -272,7 +272,7 @@ public sealed class FontCacheManager : IDisposable
                 // codeql[cs/catch-of-all-exceptions] Justification: Protects Parallel.ForEach from being terminated by corrupted fonts or third-party parsing errors.
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "[AssSubsetter] Unexpected error reading font metadata for file {File}", file);
+                    _logger.LogError(ex, "[AssSubsetter] Unexpected error reading font metadata for file {File}", file);
                 }
 
                 int current = Interlocked.Increment(ref processed);

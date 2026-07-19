@@ -32,7 +32,9 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var mockPaths = new Mock<MediaBrowser.Common.Configuration.IApplicationPaths>();
         mockPaths.Setup(p => p.DataPath).Returns(_tempDataPath);
         mockPaths.Setup(p => p.PluginsPath).Returns(_tempDataPath);
-        _ = new Plugin(mockPaths.Object, new Mock<MediaBrowser.Model.Serialization.IXmlSerializer>().Object);
+        var mockConfigManager = new Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager>();
+        mockConfigManager.Setup(c => c.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration());
+        _ = new Plugin(mockPaths.Object, new Mock<MediaBrowser.Model.Serialization.IXmlSerializer>().Object, mockConfigManager.Object);
 
         _config = new PluginConfiguration
         {

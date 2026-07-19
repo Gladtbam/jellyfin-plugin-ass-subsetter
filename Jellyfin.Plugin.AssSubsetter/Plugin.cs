@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
@@ -20,13 +22,21 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </summary>
     /// <param name="applicationPaths">Instance of the <see cref="IApplicationPaths" /> interface.</param>
     /// <param name="xmlSerializer">Instance of the <see cref="IXmlSerializer" /> interface.</param>
-    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
+    /// <param name="configManager">Instance of the <see cref="IServerConfigurationManager" /> interface.</param>
+    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, IServerConfigurationManager configManager)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
 
         PluginDataPath = applicationPaths.DataPath;
         PluginCachePath = Path.Join(applicationPaths.CachePath, "ass-subsetter");
+
+        // Initialize localization based on server UI culture
+        LocalizationHelper.Initialize(configManager.Configuration.UICulture);
+        configManager.ConfigurationUpdated += (_, _) =>
+        {
+            LocalizationHelper.Initialize(configManager.Configuration.UICulture);
+        };
     }
 
     /// <inheritdoc />

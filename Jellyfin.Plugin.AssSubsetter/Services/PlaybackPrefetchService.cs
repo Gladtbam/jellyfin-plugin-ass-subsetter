@@ -129,7 +129,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         }
 
         _logger.LogInformation(
-            "Playback progress for episode {EpisodeName} (S{Season}E{Episode}) reached {Percent:F1}%, triggering prefetch for next episode.",
+            "[AssSubsetter] Playback progress for episode {EpisodeName} (S{Season}E{Episode}) reached {Percent:F1}%, triggering prefetch for next episode.",
             episode.Name,
             episode.ParentIndexNumber,
             episode.IndexNumber,
@@ -176,15 +176,11 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         if (nextEpisode is null)
         {
-            _logger.LogDebug("[AssSubsetter] No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
+            _logger.LogInformation("[AssSubsetter] No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
             return;
         }
 
-        _logger.LogInformation(
-            "[AssSubsetter] Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...",
-            nextEpisode.Name,
-            nextEpisode.ParentIndexNumber,
-            nextEpisode.IndexNumber);
+        _logger.LogInformation("[AssSubsetter] Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...", nextEpisode.Name, nextEpisode.ParentIndexNumber, nextEpisode.IndexNumber);
 
         string[] assPaths = AssPathHelper.GetAllOriginalAssPaths(nextEpisode.Path);
 
@@ -200,17 +196,17 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         {
             try
             {
-                _logger.LogDebug("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
+                _logger.LogInformation("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
 
                 await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, nextEpisode.Width, nextEpisode.Height, CancellationToken.None).ConfigureAwait(false);
             }
             catch (IOException ex)
             {
-                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle (IO Error): {AssPath}", assPath);
+                _logger.LogError(ex, "[AssSubsetter] Failed to prefetch subtitle (IO Error): {AssPath}", assPath);
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning(ex, "[AssSubsetter] Failed to prefetch subtitle (Permission Error): {AssPath}", assPath);
+                _logger.LogError(ex, "[AssSubsetter] Failed to prefetch subtitle (Permission Error): {AssPath}", assPath);
             }
         }
 

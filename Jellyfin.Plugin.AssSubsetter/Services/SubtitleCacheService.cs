@@ -183,7 +183,7 @@ public class SubtitleCacheService
     {
         if (!_pendingConversions.TryAdd(itemId, 0))
         {
-            _logger.LogDebug("[AssSubsetter] Background SUP conversion already in progress for item {ItemId}. Skipping.", itemId);
+            _logger.LogInformation("[AssSubsetter] Background SUP conversion already in progress for item {ItemId}. Skipping.", itemId);
             return;
         }
 
@@ -258,11 +258,11 @@ public class SubtitleCacheService
             }
             catch (IOException ex)
             {
-                _logger.LogError(ex, "IO Error occurred during LRU cache eviction.");
+                _logger.LogError(ex, "[AssSubsetter] IO Error occurred during LRU cache eviction.");
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogError(ex, "Permission Error occurred during LRU cache eviction.");
+                _logger.LogError(ex, "[AssSubsetter] Permission Error occurred during LRU cache eviction.");
             }
 
             _logger.LogInformation("[AssSubsetter] SUP cache miss for item {ItemId}. Triggering ASS to SUP conversion...", itemId);
@@ -337,11 +337,11 @@ public class SubtitleCacheService
             }
             catch (IOException ex)
             {
-                _logger.LogWarning(ex, "Failed to delete evicted cache file: {Name} (IO Error)", file.Name);
+                _logger.LogError(ex, "[AssSubsetter] Failed to delete evicted cache file: {Name} (IO Error)", file.Name);
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning(ex, "Failed to delete evicted cache file: {Name} (Permission Error)", file.Name);
+                _logger.LogError(ex, "[AssSubsetter] Failed to delete evicted cache file: {Name} (Permission Error)", file.Name);
             }
         }
     }

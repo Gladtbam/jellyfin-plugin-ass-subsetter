@@ -20,8 +20,10 @@ public class PluginTests
         mockPaths.Setup(p => p.PluginsPath).Returns("tempPlugins");
 
         var mockXmlSerializer = new Mock<IXmlSerializer>();
+        var mockConfigManager = new Mock<MediaBrowser.Controller.Configuration.IServerConfigurationManager>();
+        mockConfigManager.Setup(c => c.Configuration).Returns(new MediaBrowser.Model.Configuration.ServerConfiguration());
 
-        _plugin = new Plugin(mockPaths.Object, mockXmlSerializer.Object);
+        _plugin = new Plugin(mockPaths.Object, mockXmlSerializer.Object, mockConfigManager.Object);
     }
 
     [Fact]
