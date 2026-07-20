@@ -21,8 +21,9 @@ public class SubtitleCacheService
     private readonly AssToSupConverter? _assToSupConverter;
     private readonly Func<PluginConfiguration> _configFactory;
 
-    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _fileLocks = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks = new(StringComparer.Ordinal);
     private readonly ILogger<SubtitleCacheService> _logger;
+    private readonly MksMuxer? _mksMuxer;
     private readonly ConcurrentDictionary<Guid, byte> _pendingConversions = new();
 
     /// <summary>
@@ -34,10 +35,31 @@ public class SubtitleCacheService
     /// <param name="cacheFolderPath">Optional custom cache path.</param>
     /// <param name="logger">The logger instance.</param>
     public SubtitleCacheService(Func<PluginConfiguration> configFactory, AssProcessor assProcessor, AssToSupConverter? assToSupConverter, string cacheFolderPath, ILogger<SubtitleCacheService> logger)
+        : this(configFactory, assProcessor, assToSupConverter, null, cacheFolderPath, logger)
+    {
+    }
+
+    /// <summary>
+    ///     Initializes a new instance of the <see cref="SubtitleCacheService" /> class.
+    /// </summary>
+    /// <param name="configFactory">The configuration factory.</param>
+    /// <param name="assProcessor">The ASS processor instance.</param>
+    /// <param name="assToSupConverter">The ASS to SUP converter instance.</param>
+    /// <param name="mksMuxer">The MKS muxer instance.</param>
+    /// <param name="cacheFolderPath">Optional custom cache path.</param>
+    /// <param name="logger">The logger instance.</param>
+    public SubtitleCacheService(
+        Func<PluginConfiguration> configFactory,
+        AssProcessor assProcessor,
+        AssToSupConverter? assToSupConverter,
+        MksMuxer? mksMuxer,
+        string cacheFolderPath,
+        ILogger<SubtitleCacheService> logger)
     {
         _configFactory = configFactory;
         _assProcessor = assProcessor;
         _assToSupConverter = assToSupConverter;
+        _mksMuxer = mksMuxer;
         _logger = logger;
         CacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
             ? cacheFolderPath
@@ -71,6 +93,11 @@ public class SubtitleCacheService
         videoWidth = videoWidth > 0 ? videoWidth : 1920;
         videoHeight = videoHeight > 0 ? videoHeight : 1080;
 
+        if (Config.SubtitleMode == SubtitleProcessingMode.GenerateMks)
+        {
+            return await GetOrGenerateMksAsync(itemId, originalAssPath, cancellationToken).ConfigureAwait(false);
+        }
+
         if (Config.SubtitleMode == SubtitleProcessingMode.ConvertToSup)
         {
             string supCachePath = GetSupCachePath(itemId, originalAssPath);
@@ -100,7 +127,7 @@ public class SubtitleCacheService
             return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
         }
 
-        var fileLock = _fileLocks.GetOrAdd(itemId, _ => new SemaphoreSlim(1, 1));
+        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
         await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -156,6 +183,12 @@ public class SubtitleCacheService
     {
         string safeFileName = Path.GetFileNameWithoutExtension(originalAssPath);
         return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}.sup");
+    }
+
+    private string GetMksCachePath(Guid itemId, string originalAssPath)
+    {
+        string safeFileName = Path.GetFileNameWithoutExtension(originalAssPath);
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}.mks");
     }
 
     /// <summary>
@@ -239,7 +272,7 @@ public class SubtitleCacheService
             return string.Empty;
         }
 
-        var fileLock = _fileLocks.GetOrAdd(itemId, _ => new SemaphoreSlim(1, 1));
+        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
         await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -299,13 +332,91 @@ public class SubtitleCacheService
         }
     }
 
+    private async Task<SubtitleResult> GetOrGenerateMksAsync(Guid itemId, string originalAssPath, CancellationToken cancellationToken)
+    {
+        string cacheFilePath = GetMksCachePath(itemId, originalAssPath);
+        if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
+        {
+            _logger.LogInformation("[AssSubsetter] MKS cache hit for item {ItemId}.", itemId);
+            TouchFile(cacheFilePath);
+            return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
+        }
+
+        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
+        try
+        {
+            await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return CreateMksFallback(originalAssPath);
+        }
+
+        try
+        {
+            if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
+            {
+                TouchFile(cacheFilePath);
+                return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
+            }
+
+            if (_mksMuxer == null)
+            {
+                _logger.LogWarning("[AssSubsetter] MKS muxer is not available for item {ItemId}.", itemId);
+                return CreateMksFallback(originalAssPath);
+            }
+
+            var artifact = await _assProcessor.GenerateSubsetArtifactAsync(originalAssPath, cancellationToken).ConfigureAwait(false);
+            if (artifact == null)
+            {
+                return CreateMksFallback(originalAssPath);
+            }
+
+            try
+            {
+                long requiredSpace = artifact.AssContent.Length + artifact.Fonts.Sum(font => (long)font.Data.Length);
+                EnforceCapacityLimit(Math.Max(requiredSpace, 1));
+            }
+            catch (IOException ex)
+            {
+                _logger.LogError(ex, "[AssSubsetter] IO error during MKS cache eviction.");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogError(ex, "[AssSubsetter] Permission error during MKS cache eviction.");
+            }
+
+            bool success = await _mksMuxer.MuxAsync(artifact, cacheFilePath, cancellationToken).ConfigureAwait(false);
+            if (success && File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
+            {
+                TouchFile(cacheFilePath);
+                return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
+            }
+
+            return CreateMksFallback(originalAssPath);
+        }
+        finally
+        {
+            fileLock.Release();
+        }
+    }
+
+    private SubtitleResult CreateMksFallback(string originalAssPath)
+    {
+        return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
+    }
+
+    private static string GetGenerationKey(Guid itemId, string originalAssPath)
+    {
+        return $"{itemId:N}:{Path.GetFullPath(originalAssPath)}";
+    }
+
     private void EnforceCapacityLimit(long requiredSpace)
     {
         var dirInfo = new DirectoryInfo(CacheFolderPath);
         long maxCacheSizeInBytes = (long)Config.MaxCacheSizeMB * 1024 * 1024;
         long currentSize = dirInfo.EnumerateFiles()
-            .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
-                        f.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase))
+            .Where(IsManagedCacheFile)
             .Sum(f => f.Length);
 
         if (currentSize + requiredSpace <= maxCacheSizeInBytes)
@@ -316,8 +427,7 @@ public class SubtitleCacheService
         _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
 
         var oldestFiles = dirInfo.GetFiles()
-            .Where(f => f.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
-                        f.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase))
+            .Where(IsManagedCacheFile)
             .OrderBy(f => f.LastAccessTime)
             .ToList();
 
@@ -344,5 +454,12 @@ public class SubtitleCacheService
                 _logger.LogError(ex, "[AssSubsetter] Failed to delete evicted cache file: {Name} (Permission Error)", file.Name);
             }
         }
+    }
+
+    private static bool IsManagedCacheFile(FileInfo file)
+    {
+        return file.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
+               file.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase) ||
+               file.Extension.Equals(".mks", StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -102,6 +102,92 @@ public class SubtitleCacheServiceTests : IDisposable
         Assert.True(File.Exists(oldFilePath2), "The newer file must be preserved.");
     }
 
+    [Fact]
+    public async Task GetOrGenerateSubtitleAsync_ShouldGenerateAndCacheMks()
+    {
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        string originalAssPath = Path.Join(_tempDataPath, "mks-source.ass");
+        await File.WriteAllTextAsync(originalAssPath, "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Text", TestContext.Current.CancellationToken);
+        int invocationCount = 0;
+        var muxer = new MksMuxer(
+            NullLogger<MksMuxer>.Instance,
+            () => "ffmpeg",
+            (startInfo, _) =>
+            {
+                invocationCount++;
+                File.WriteAllText(startInfo.ArgumentList[^1], "mks-data");
+                return Task.FromResult(0);
+            });
+        var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        Guid itemId = Guid.NewGuid();
+
+        var first = await service.GetOrGenerateSubtitleAsync(itemId, originalAssPath, cancellationToken: TestContext.Current.CancellationToken);
+        var second = await service.GetOrGenerateSubtitleAsync(itemId, originalAssPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.EndsWith(".mks", first.Path, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("video/x-matroska", first.ContentType);
+        Assert.True(first.IsReady);
+        Assert.Equal(first.Path, second.Path);
+        Assert.Equal(1, invocationCount);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task GetOrGenerateSubtitleAsync_ShouldApplyConfiguredFallback_WhenMksFails(bool fallbackEnabled, bool expectsOriginal)
+    {
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        _config.FallbackToOriginalOnError = fallbackEnabled;
+        string originalAssPath = Path.Join(_tempDataPath, "failed-mks.ass");
+        await File.WriteAllTextAsync(originalAssPath, "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Text", TestContext.Current.CancellationToken);
+        var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", (_, _) => Task.FromResult(1));
+        var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+
+        var result = await service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), originalAssPath, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(expectsOriginal ? originalAssPath : string.Empty, result.Path);
+        Assert.Equal("text/x-ssa", result.ContentType);
+        Assert.False(result.IsReady);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public async Task GetOrGenerateSubtitleAsync_ShouldApplyConfiguredFallback_WhenMksIsCancelled(bool fallbackEnabled, bool expectsOriginal)
+    {
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        _config.FallbackToOriginalOnError = fallbackEnabled;
+        string originalAssPath = Path.Join(_tempDataPath, "cancelled-mks.ass");
+        await File.WriteAllTextAsync(originalAssPath, "plain", TestContext.Current.CancellationToken);
+        var service = new SubtitleCacheService(() => _config, _assProcessor, null, null, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var result = await service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), originalAssPath, cancellationToken: cts.Token);
+
+        Assert.Equal(expectsOriginal ? originalAssPath : string.Empty, result.Path);
+        Assert.False(result.IsReady);
+    }
+
+    [Fact]
+    public async Task GetOrGenerateSubtitleAsync_ShouldEvictOldMks_WhenQuotaExceeded()
+    {
+        _config.MaxCacheSizeMB = 1;
+        string oldMks = Path.Join(_customCachePath, "old.mks");
+        string newerAss = Path.Join(_customCachePath, "newer.ass");
+        await File.WriteAllBytesAsync(oldMks, new byte[600 * 1024], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(newerAss, new byte[600 * 1024], TestContext.Current.CancellationToken);
+        File.SetLastAccessTime(oldMks, DateTime.Now.AddMinutes(-5));
+        File.SetLastAccessTime(newerAss, DateTime.Now.AddMinutes(-1));
+
+        string source = Path.Join(_tempDataPath, "quota.ass");
+        await File.WriteAllTextAsync(source, "plain", TestContext.Current.CancellationToken);
+        await _cacheService.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(File.Exists(oldMks));
+        Assert.True(File.Exists(newerAss));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDataPath))

@@ -11,7 +11,10 @@ public enum SubtitleProcessingMode
     Subsetting = 0,
 
     /// <summary>Convert ASS to SUP (PGS) bitmap subtitle mode using libass rendering.</summary>
-    ConvertToSup = 1
+    ConvertToSup = 1,
+
+    /// <summary>Package rewritten ASS and subset fonts into MKS via Jellyfin FFmpeg.</summary>
+    GenerateMks = 2
 }
 
 /// <summary>

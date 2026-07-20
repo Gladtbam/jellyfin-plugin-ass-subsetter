@@ -184,7 +184,7 @@ internal static partial class LibassNative
                     }
 
                     // Strategy 1: Derive from ffmpeg path
-                    var ffmpegPath = FindFfmpegPath();
+                    var ffmpegPath = FfmpegLocator.FindPath();
                     if (!string.IsNullOrEmpty(ffmpegPath))
                     {
                         var ffmpegDir = Path.GetDirectoryName(ffmpegPath) ?? string.Empty;
@@ -236,50 +236,6 @@ internal static partial class LibassNative
 
             _resolverRegistered = true;
         }
-    }
-
-    private static string? FindFfmpegPath()
-    {
-        var ffmpegOpt = Environment.GetEnvironmentVariable("JELLYFIN_FFMPEG_OPT");
-        if (!string.IsNullOrEmpty(ffmpegOpt))
-        {
-            const string prefix = "--ffmpeg=";
-            var idx = ffmpegOpt.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-            if (idx >= 0)
-            {
-                var path = ffmpegOpt.Substring(idx + prefix.Length).Trim();
-                var spaceIdx = path.IndexOf(' ', StringComparison.Ordinal);
-                if (spaceIdx > 0)
-                {
-                    path = path.Substring(0, spaceIdx);
-                }
-
-                if (File.Exists(path))
-                {
-                    return path;
-                }
-            }
-        }
-
-        var args = Environment.GetCommandLineArgs();
-        foreach (var arg in args)
-        {
-            if (arg.StartsWith("--ffmpeg=", StringComparison.OrdinalIgnoreCase))
-            {
-                var path = arg.Substring("--ffmpeg=".Length);
-                if (File.Exists(path))
-                {
-                    return path;
-                }
-            }
-        }
-
-        if (File.Exists("/usr/lib/jellyfin-ffmpeg/ffmpeg"))
-        {
-            return "/usr/lib/jellyfin-ffmpeg/ffmpeg";
-        }
-
-        return null;
     }
 
     private static string GetPlatformLibName()

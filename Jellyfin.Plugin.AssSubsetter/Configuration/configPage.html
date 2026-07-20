@@ -15,6 +15,7 @@
                     <select id="SubtitleMode" name="SubtitleMode" is="emby-select">
                         <option value="0" data-i18n="optSubsetting">Font Subsetting</option>
                         <option value="1" data-i18n="optConvertSup">Convert to SUP/PGS</option>
+                        <option value="2" data-i18n="optGenerateMks">Generate MKS (Experimental)</option>
                     </select>
                     <div class="fieldDescription" data-i18n="descSubtitleMode">Choose the subtitle processing mode. Subsetting shrinks embedded fonts; SUP mode converts ASS to PGS bitmap subtitles via libass. These modes are mutually exclusive.</div>
                 </div>
@@ -104,7 +105,8 @@
                     saveBtn: '保存',
                     optSubsetting: '字体子集化',
                     optConvertSup: '转换为 SUP 位图字幕',
-                    descSubtitleMode: '选择字幕处理方式。子集化模式精简ASS内嵌字体；SUP模式通过libass渲染将ASS转为PGS位图字幕。两种模式互斥。',
+                    optGenerateMks: '生成 MKS（实验性）',
+                    descSubtitleMode: '选择字幕处理方式。MKS 生成为实验性功能，面向 mpv 等兼容播放器，必须手动启用，不会根据客户端自动选择。各模式互斥。',
                     descCustomFontDirs: '例如：/fonts/my_anime_fonts;/media/extra_fonts。多个路径请用分号 ; 隔开。(系统默认字体目录已被自动包含，无需填写)',
                     descFontCachePath: '本地字体解析索引 JSON 数据库存储路径。建议保持留空，插件会自动在内部数据目录生成 font_caches.json。',
                     descScanFrameRate: 'ASS 转 SUP 时的渲染采样帧率。值越高动画越流畅但文件越大（推荐值: 24）。视频分辨率从元数据自动获取。',
@@ -127,7 +129,8 @@
                     saveBtn: 'Save',
                     optSubsetting: 'Font Subsetting',
                     optConvertSup: 'Convert to SUP/PGS',
-                    descSubtitleMode: 'Choose the subtitle processing mode. Subsetting shrinks embedded fonts; SUP mode converts ASS to PGS bitmap subtitles via libass. These modes are mutually exclusive.',
+                    optGenerateMks: 'Generate MKS (Experimental)',
+                    descSubtitleMode: 'Choose the subtitle processing mode. MKS generation is experimental, targets compatible players such as mpv, must be enabled manually, and is never selected through client detection. The modes are mutually exclusive.',
                     descCustomFontDirs: 'E.g., /fonts/my_anime_fonts;/media/extra_fonts. Separate multiple paths with a semicolon (;). (System default font directories are automatically included)',
                     descFontCachePath: 'Path to store the local font parsing index JSON database. It is recommended to leave this empty; the plugin will automatically generate font_caches.json in the internal data directory.',
                     descScanFrameRate: 'Rendering sampling frame rate during ASS to SUP conversion. Higher values result in smoother animations but larger files (Recommended: 24). Video resolution is automatically fetched from metadata.',
@@ -181,6 +184,7 @@
                     var modeVal = config.SubtitleMode;
                     if (modeVal === 'Subsetting' || modeVal === 0) modeVal = '0';
                     if (modeVal === 'ConvertToSup' || modeVal === 1) modeVal = '1';
+                    if (modeVal === 'GenerateMks' || modeVal === 2) modeVal = '2';
 
                     document.querySelector('#SubtitleMode').value = modeVal || '0';
                     document.querySelector('#CustomFontDirectories').value = config.CustomFontDirectories || "";

@@ -58,8 +58,10 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
         Assert.True(_nextCalled);
     }
 
-    [Fact]
-    public async Task InvokeAsync_ShouldInterceptAndSetContentType_WhenRouteMatchesAndFileExists()
+    [Theory]
+    [InlineData("text/x-ssa", ".ass")]
+    [InlineData("video/x-matroska", ".mks")]
+    public async Task InvokeAsync_ShouldInterceptAndSetContentType_WhenRouteMatchesAndFileExists(string contentType, string extension)
     {
         var mockLogger = new Mock<ILogger<SubtitleInterceptorMiddleware>>();
         mockLogger.Setup(x => x.Log(
@@ -78,9 +80,14 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
         var context = new DefaultHttpContext();
         var mockServiceProvider = new Mock<IServiceProvider>();
         var mockExecutor = new Mock<Microsoft.AspNetCore.Mvc.Infrastructure.IActionResultExecutor<Microsoft.AspNetCore.Mvc.PhysicalFileResult>>();
+        Microsoft.AspNetCore.Mvc.PhysicalFileResult? executedResult = null;
         mockExecutor.Setup(x => x.ExecuteAsync(It.IsAny<Microsoft.AspNetCore.Mvc.ActionContext>(), It.IsAny<Microsoft.AspNetCore.Mvc.PhysicalFileResult>()))
                     .Returns(Task.CompletedTask)
-                    .Callback(() => context.Response.ContentType = "text/x-ssa"); // mimic the executor setting content type
+                    .Callback<Microsoft.AspNetCore.Mvc.ActionContext, Microsoft.AspNetCore.Mvc.PhysicalFileResult>((_, result) =>
+                    {
+                        executedResult = result;
+                        context.Response.ContentType = result.ContentType;
+                    });
         mockServiceProvider.Setup(x => x.GetService(typeof(Microsoft.AspNetCore.Mvc.Infrastructure.IActionResultExecutor<Microsoft.AspNetCore.Mvc.PhysicalFileResult>)))
                            .Returns(mockExecutor.Object);
         context.RequestServices = mockServiceProvider.Object;
@@ -89,7 +96,7 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
 
         string videoPath = Path.Join(_tempDataPath, "movie.mkv");
         string originalAssPath = Path.Join(_tempDataPath, "movie.ass");
-        string cachedAssPath = Path.Join(_tempDataPath, "movie_cached.ass");
+        string cachedAssPath = Path.Join(_tempDataPath, "movie_cached" + extension);
 
         await File.WriteAllTextAsync(videoPath, "dummy video", TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(originalAssPath, "dummy original sub", TestContext.Current.CancellationToken);
@@ -100,12 +107,14 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
 
         _mockCacheService
             .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SubtitleResult(cachedAssPath, "text/x-ssa", true));
+            .ReturnsAsync(new SubtitleResult(cachedAssPath, contentType, true));
 
         await middleware.InvokeAsync(context);
 
         Assert.False(_nextCalled, "Middleware should short-circuit the pipeline.");
-        Assert.Equal("text/x-ssa", context.Response.ContentType);
+        Assert.Equal(contentType, context.Response.ContentType);
+        Assert.NotNull(executedResult);
+        Assert.True(executedResult.EnableRangeProcessing);
     }
 
     public void Dispose()

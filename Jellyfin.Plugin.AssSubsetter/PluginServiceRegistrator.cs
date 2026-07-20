@@ -45,13 +45,16 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             return new AssToSupConverter(configFactory, logger);
         });
 
+        serviceCollection.AddSingleton<MksMuxer>();
+
         serviceCollection.AddSingleton(provider =>
         {
             var assProcessor = provider.GetRequiredService<AssProcessor>();
             var assToSupConverter = provider.GetRequiredService<AssToSupConverter>();
+            var mksMuxer = provider.GetRequiredService<MksMuxer>();
             var logger = provider.GetRequiredService<ILogger<SubtitleCacheService>>();
             var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
-            return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, string.Empty, logger);
+            return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, mksMuxer, string.Empty, logger);
         });
 
         serviceCollection.AddHostedService<LibraryScanTracker>();

@@ -53,111 +53,23 @@ public class AssProcessor
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are sanitized and guided by server side configurations.")]
     public async Task<bool> GenerateSubsetFontAsync(string inputAssPath, string outputCachePath, CancellationToken cancellationToken = default)
     {
+        SubsetArtifact? artifact = await GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+        if (artifact is null)
+        {
+            return false;
+        }
+
         try
         {
-            _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
-
-            // Parse ASS to get required characters per font
-            var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
-            if (usedChars.Count == 0)
-            {
-                _logger.LogInformation("[AssSubsetter] No font usage found in {File}. Copying as is.", inputAssPath);
-                File.Copy(inputAssPath, outputCachePath, true);
-                return true;
-            }
-
-            // Ensure font cache is loaded
-            await _fontCacheManager.EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-
-            // Prepare output directory
             string? outDir = Path.GetDirectoryName(outputCachePath);
             if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
             {
                 Directory.CreateDirectory(outDir);
             }
 
-            // Subset fonts, rename, and collect name mapping
-            // Key: original font name (case-insensitive) → Value: new random prefix name
-            var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var embeddedFonts = new List<(string EmbeddedName, byte[] Data)>();
-            int subsetCount = 0;
-
-            foreach (var kvp in usedChars)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                FontDescriptor desc = kvp.Key;
-                string fontName = desc.FontName;
-                var codepoints = kvp.Value;
-
-                // Skip if we already generated a prefix for this font family name
-                // (multiple variants like Bold/Italic share the same prefix)
-                if (!fontNameMap.TryGetValue(fontName, out string? newPrefix))
-                {
-                    newPrefix = FontNameRewriter.GenerateRandomPrefix();
-                    fontNameMap[fontName] = newPrefix;
-                }
-
-                var fontInfo = _fontCacheManager.FindFontFilePath(desc);
-                if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
-                {
-                    _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
-                    continue;
-                }
-
-                string physicalPath = fontInfo.Value.Path;
-                int faceIndex = fontInfo.Value.FaceIndex;
-
-                _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, codepoints.Count);
-
-                byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
-                byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, codepoints, _logger);
-
-                if (subsetData != null && subsetData.Length > 0)
-                {
-                    // Rename font family in the subsetted binary
-                    byte[]? renamedData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix);
-                    if (renamedData == null)
-                    {
-                        _logger.LogWarning("[AssSubsetter] Failed to rename font '{FontName}' to '{Prefix}'. Using subsetted font without renaming.", fontName, newPrefix);
-                        renamedData = subsetData;
-                    }
-                    else
-                    {
-                        _logger.LogDebug("[AssSubsetter] Renamed font '{FontName}' → '{Prefix}'", fontName, newPrefix);
-                    }
-
-                    string embeddedName = $"{newPrefix}.ttf";
-                    embeddedFonts.Add((embeddedName, renamedData));
-                    subsetCount++;
-                }
-            }
-
-            // Read original ASS content and rewrite font name references
-            string originalContent = await File.ReadAllTextAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
-            string rewrittenContent = RewriteAssFontNames(originalContent, fontNameMap);
-
-            // Write the modified ASS content + [Fonts] section to output
-            await File.WriteAllTextAsync(outputCachePath, rewrittenContent, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
-
-            using var writer = new StreamWriter(outputCachePath, true, new UTF8Encoding(false));
-            await writer.WriteLineAsync().ConfigureAwait(false);
-            await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
-
-            foreach (var (embeddedName, data) in embeddedFonts)
-            {
-                await writer.WriteLineAsync($"fontname: {embeddedName}").ConfigureAwait(false);
-
-                var encodedLines = EncodeFontToAssLines(data);
-                foreach (var line in encodedLines)
-                {
-                    await writer.WriteLineAsync(line).ConfigureAwait(false);
-                }
-
-                await writer.WriteLineAsync().ConfigureAwait(false);
-            }
-
-            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", subsetCount);
+            await File.WriteAllTextAsync(outputCachePath, artifact.AssContent, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
+            await AppendEncodedFontsAsync(outputCachePath, artifact.Fonts, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", artifact.Fonts.Count);
             return true;
         }
         catch (OperationCanceledException)
@@ -180,6 +92,118 @@ public class AssProcessor
         {
             _logger.LogError(ex, "[AssSubsetter] Unexpected exception occurred while generating subset font.");
             return false;
+        }
+    }
+
+    /// <summary>
+    ///     Generates a format-neutral ASS document and separate subset font attachments.
+    /// </summary>
+    /// <param name="inputAssPath">The physical path of the original ASS file.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The generated artifact, or <see langword="null" /> on failure.</returns>
+    public virtual async Task<SubsetArtifact?> GenerateSubsetArtifactAsync(string inputAssPath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
+
+            var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
+            string originalContent = await File.ReadAllTextAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+            if (usedChars.Count == 0)
+            {
+                _logger.LogInformation("[AssSubsetter] No font usage found in {File}. Returning plain ASS.", inputAssPath);
+                return new SubsetArtifact(originalContent, Array.Empty<SubsetFontAttachment>());
+            }
+
+            await _fontCacheManager.EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+            var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var fontPrefixMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var attachments = new List<SubsetFontAttachment>();
+
+            foreach (var kvp in usedChars)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                FontDescriptor desc = kvp.Key;
+                string fontName = desc.FontName;
+                if (!fontPrefixMap.TryGetValue(fontName, out string? newPrefix))
+                {
+                    newPrefix = FontNameRewriter.GenerateRandomPrefix();
+                    fontPrefixMap[fontName] = newPrefix;
+                }
+
+                var fontInfo = _fontCacheManager.FindFontFilePath(desc);
+                if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
+                {
+                    _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
+                    continue;
+                }
+
+                string physicalPath = fontInfo.Value.Path;
+                int faceIndex = fontInfo.Value.FaceIndex;
+                _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, kvp.Value.Count);
+
+                byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
+                byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, kvp.Value, _logger);
+                if (subsetData == null || subsetData.Length == 0)
+                {
+                    continue;
+                }
+
+                byte[] renamedData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix) ?? subsetData;
+                string extension = Path.GetExtension(physicalPath).Equals(".otf", StringComparison.OrdinalIgnoreCase) ? ".otf" : ".ttf";
+                string mimeType = extension == ".otf" ? "font/otf" : "font/ttf";
+                attachments.Add(new SubsetFontAttachment($"{newPrefix}{extension}", mimeType, renamedData));
+                fontNameMap[fontName] = newPrefix;
+            }
+
+            string rewrittenContent = RewriteAssFontNames(originalContent, fontNameMap);
+            return new SubsetArtifact(rewrittenContent, attachments);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] IO Exception occurred while generating subset artifact.");
+            return null;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Unauthorized access exception occurred while generating subset artifact.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Unexpected exception occurred while generating subset artifact.");
+            return null;
+        }
+    }
+
+    private static async Task AppendEncodedFontsAsync(string outputCachePath, IReadOnlyList<SubsetFontAttachment> fonts, CancellationToken cancellationToken)
+    {
+        if (fonts.Count == 0)
+        {
+            return;
+        }
+
+        using var writer = new StreamWriter(outputCachePath, true, new UTF8Encoding(false));
+        await writer.WriteLineAsync().ConfigureAwait(false);
+        await writer.WriteLineAsync("[Fonts]").ConfigureAwait(false);
+
+        foreach (SubsetFontAttachment font in fonts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await writer.WriteLineAsync($"fontname: {font.FileName}").ConfigureAwait(false);
+            foreach (string line in EncodeFontToAssLines(font.Data))
+            {
+                await writer.WriteLineAsync(line).ConfigureAwait(false);
+            }
+
+            await writer.WriteLineAsync().ConfigureAwait(false);
         }
     }
 
