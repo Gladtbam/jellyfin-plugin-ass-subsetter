@@ -1,9 +1,9 @@
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
@@ -23,12 +23,13 @@ namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 public class SubtitleInterceptorMiddleware
 {
     private static readonly Regex _subtitleRouteRegex = new(
-        @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/.*/Subtitles/\d+(?:/\d+)?/Stream\.ass$",
+        @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/(?<MediaSourceId>[^/]+)/Subtitles/(?<SubtitleIndex>\d+)(?:/\d+)?/Stream\.ass$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IHostApplicationLifetime _appLifetime;
     private readonly SubtitleCacheService _cacheService;
     private readonly ILibraryManager _libraryManager;
+    private readonly SubtitleStreamResolver _subtitleStreamResolver;
     private readonly ILogger<SubtitleInterceptorMiddleware> _logger;
     private readonly RequestDelegate _next;
 
@@ -38,18 +39,21 @@ public class SubtitleInterceptorMiddleware
     /// <param name="next">The next middleware in pipeline.</param>
     /// <param name="cacheService">The subtitle cache service.</param>
     /// <param name="libraryManager">The library manager to locate physical files.</param>
+    /// <param name="subtitleStreamResolver">The service that resolves the requested subtitle stream.</param>
     /// <param name="appLifetime">The application lifetime for background task cancellation.</param>
     /// <param name="logger">The logger instance.</param>
     public SubtitleInterceptorMiddleware(
         RequestDelegate next,
         SubtitleCacheService cacheService,
         ILibraryManager libraryManager,
+        SubtitleStreamResolver subtitleStreamResolver,
         IHostApplicationLifetime appLifetime,
         ILogger<SubtitleInterceptorMiddleware> logger)
     {
         _next = next;
         _cacheService = cacheService;
         _libraryManager = libraryManager;
+        _subtitleStreamResolver = subtitleStreamResolver;
         _appLifetime = appLifetime;
         _logger = logger;
     }
@@ -68,8 +72,11 @@ public class SubtitleInterceptorMiddleware
         if (match.Success)
         {
             string itemIdString = match.Groups["ItemId"].Value;
+            string mediaSourceId = match.Groups["MediaSourceId"].Value;
+            string subtitleIndexString = match.Groups["SubtitleIndex"].Value;
 
-            if (Guid.TryParse(itemIdString, out Guid itemId))
+            if (Guid.TryParse(itemIdString, out Guid itemId)
+                && int.TryParse(subtitleIndexString, NumberStyles.None, CultureInfo.InvariantCulture, out int subtitleIndex))
             {
                 _logger.LogDebug("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
 
@@ -77,9 +84,13 @@ public class SubtitleInterceptorMiddleware
                 {
                     if (_libraryManager.GetItemById(itemId) is Video video)
                     {
-                        string originalAssPath = AssPathHelper.GetOriginalAssPath(video.Path);
+                        string? originalAssPath = await _subtitleStreamResolver.ResolveExternalAssPathAsync(
+                            video,
+                            mediaSourceId,
+                            subtitleIndex,
+                            context.RequestAborted).ConfigureAwait(false);
 
-                        if (!string.IsNullOrEmpty(originalAssPath) && File.Exists(originalAssPath))
+                        if (originalAssPath is not null)
                         {
                             var result = await _cacheService.GetOrGenerateSubtitleAsync(
                                 itemId,

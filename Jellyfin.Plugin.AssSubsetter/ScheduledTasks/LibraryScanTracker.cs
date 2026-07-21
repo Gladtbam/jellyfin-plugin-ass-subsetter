@@ -125,12 +125,28 @@ public class LibraryScanTracker : IHostedService, IDisposable
         {
             try
             {
-                string originalAssPath = AssPathHelper.GetOriginalAssPath(video.Path);
-                if (!string.IsNullOrEmpty(originalAssPath))
+                foreach (string originalAssPath in AssPathHelper.GetAllOriginalAssPaths(video.Path))
                 {
                     _logger.LogDebug("[AssSubsetter] Auto-scan processing item: {ItemId}", video.Id);
 
-                    await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, video.Width, video.Height, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await _cacheService.GetOrGenerateSubtitleAsync(video.Id, originalAssPath, video.Width, video.Height, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+
+                    // codeql[cs/catch-of-all-exceptions] Justification: A failed subtitle must not prevent other subtitles for the same item from being processed.
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(
+                            ex,
+                            "[AssSubsetter] Unexpected error auto-generating subtitle {SubtitlePath} for item {ItemId}",
+                            originalAssPath,
+                            video.Id);
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

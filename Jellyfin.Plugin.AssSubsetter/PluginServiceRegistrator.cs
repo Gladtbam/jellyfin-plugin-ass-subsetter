@@ -46,6 +46,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         });
 
         serviceCollection.AddSingleton<MksMuxer>();
+        serviceCollection.AddSingleton<SubtitleStreamResolver>();
 
         serviceCollection.AddSingleton(provider =>
         {
