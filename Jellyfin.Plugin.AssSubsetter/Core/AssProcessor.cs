@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Native;
 using Jellyfin.Plugin.AssSubsetter.Services;
@@ -61,16 +62,23 @@ public class AssProcessor
 
         try
         {
-            string? outDir = Path.GetDirectoryName(outputCachePath);
-            if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
+            bool success = await AtomicCacheFile.WriteAsync(
+                outputCachePath,
+                async (partialPath, token) =>
+                {
+                    await File.WriteAllTextAsync(partialPath, artifact.AssContent, new UTF8Encoding(false), token).ConfigureAwait(false);
+                    await AppendEncodedFontsAsync(partialPath, artifact.Fonts, token).ConfigureAwait(false);
+                    return true;
+                },
+                _logger,
+                cancellationToken).ConfigureAwait(false);
+
+            if (success)
             {
-                Directory.CreateDirectory(outDir);
+                _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", artifact.Fonts.Count);
             }
 
-            await File.WriteAllTextAsync(outputCachePath, artifact.AssContent, new UTF8Encoding(false), cancellationToken).ConfigureAwait(false);
-            await AppendEncodedFontsAsync(outputCachePath, artifact.Fonts, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", artifact.Fonts.Count);
-            return true;
+            return success;
         }
         catch (OperationCanceledException)
         {

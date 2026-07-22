@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Native;
 using Microsoft.Extensions.Logging;
 
@@ -73,16 +74,20 @@ public class AssToSupConverter : IDisposable
                 return false;
             }
 
-            // Ensure output directory exists
-            string? outDir = Path.GetDirectoryName(outputSupPath);
-            if (!string.IsNullOrEmpty(outDir) && !Directory.Exists(outDir))
-            {
-                Directory.CreateDirectory(outDir);
-            }
+            bool result = await AtomicCacheFile.WriteAsync(
+                outputSupPath,
+                async (partialPath, token) =>
+                {
+                    // Run the CPU-intensive rendering on a thread pool thread
+                    bool rendered = await Task.Run(
+                        () => RenderAndEncode(inputAssPath, partialPath, videoWidth, videoHeight, events, token),
+                        token).ConfigureAwait(false);
 
-            // Run the CPU-intensive rendering on a thread pool thread
-            bool result = await Task.Run(
-                () => RenderAndEncode(inputAssPath, outputSupPath, videoWidth, videoHeight, events, cancellationToken),
+                    return rendered &&
+                           File.Exists(partialPath) &&
+                           new FileInfo(partialPath).Length > 0;
+                },
+                _logger,
                 cancellationToken).ConfigureAwait(false);
 
             if (result)
