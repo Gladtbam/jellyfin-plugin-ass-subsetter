@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Core;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -53,9 +54,10 @@ public class SubtitleCacheServiceTests : IDisposable
         // Arrange
         Guid itemId = Guid.NewGuid();
         string originalAssPath = Path.Join(_tempDataPath, "original.ass");
+        File.WriteAllText(originalAssPath, "mock source data");
 
-        string safeFileName = Path.GetFileName(originalAssPath);
-        string expectedCachePath = Path.Join(_customCachePath, $"{itemId:N}_{safeFileName}");
+        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
+        string expectedCachePath = Path.Join(_customCachePath, $"{itemId:N}_{fingerprint}.ass");
 
         File.WriteAllText(expectedCachePath, "mock cache data");
 
@@ -66,6 +68,25 @@ public class SubtitleCacheServiceTests : IDisposable
         Assert.Equal(expectedCachePath, result.Path);
         Assert.Equal("text/x-ssa", result.ContentType);
         Assert.True(result.IsReady);
+    }
+
+    [Fact]
+    public async Task GetOrGenerateSubtitleAsync_ShouldNotReuseCache_WhenSourceChanges()
+    {
+        Guid itemId = Guid.NewGuid();
+        string originalAssPath = Path.Join(_tempDataPath, "changing.ass");
+        File.WriteAllText(originalAssPath, "first source version");
+        string oldFingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
+        string oldCachePath = Path.Join(_customCachePath, $"{itemId:N}_{oldFingerprint}.ass");
+        File.WriteAllText(oldCachePath, "old cache data");
+
+        File.AppendAllText(originalAssPath, " with changed metadata");
+        var result = await _cacheService.GetOrGenerateSubtitleAsync(
+            itemId,
+            originalAssPath,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.NotEqual(oldCachePath, result.Path);
     }
 
     [Fact]

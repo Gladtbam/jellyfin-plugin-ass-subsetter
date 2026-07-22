@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -7,7 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Core;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Models;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Services;
@@ -15,16 +18,20 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// <summary>
 ///     Service responsible for managing subtitle cache and enforcing LRU capacity limits.
 /// </summary>
-public class SubtitleCacheService
+public class SubtitleCacheService : IHostedService, IDisposable
 {
     private readonly AssProcessor _assProcessor;
     private readonly AssToSupConverter? _assToSupConverter;
     private readonly Func<PluginConfiguration> _configFactory;
 
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fileLocks = new(StringComparer.Ordinal);
+    private readonly AsyncKeyedLocker<string> _fileLocks = new(StringComparer.Ordinal);
     private readonly ILogger<SubtitleCacheService> _logger;
     private readonly MksMuxer? _mksMuxer;
-    private readonly ConcurrentDictionary<Guid, byte> _pendingConversions = new();
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _backgroundConversions = new(StringComparer.Ordinal);
+    private readonly object _backgroundGate = new();
+    private readonly CancellationTokenSource _stoppingCts = new();
+    private bool _disposed;
+    private bool _stopping;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="SubtitleCacheService" /> class.
@@ -79,6 +86,66 @@ public class SubtitleCacheService
     public string CacheFolderPath { get; }
 
     /// <summary>
+    ///     Gets the number of SUP conversions currently tracked by the service.
+    /// </summary>
+    internal int ActiveBackgroundConversionCount => _backgroundConversions.Count;
+
+    /// <inheritdoc />
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        Task[] tasks;
+        lock (_backgroundGate)
+        {
+            _stopping = true;
+            tasks = _backgroundConversions.Values
+                .Where(static lazy => lazy.IsValueCreated)
+                .Select(static lazy => lazy.Value)
+                .ToArray();
+        }
+
+        await _stoppingCts.CancelAsync().ConfigureAwait(false);
+        await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    ///     Releases managed lifecycle resources.
+    /// </summary>
+    /// <param name="disposing"><c>true</c> to release managed resources.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            lock (_backgroundGate)
+            {
+                _stopping = true;
+            }
+
+            _stoppingCts.Cancel();
+            _stoppingCts.Dispose();
+        }
+
+        _disposed = true;
+    }
+
+    /// <summary>
     ///     Gets an existing subset subtitle file or generates one on-demand (JIT).
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
@@ -100,7 +167,7 @@ public class SubtitleCacheService
 
         if (Config.SubtitleMode == SubtitleProcessingMode.ConvertToSup)
         {
-            string supCachePath = GetSupCachePath(itemId, originalAssPath);
+            string supCachePath = GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight);
 
             if (File.Exists(supCachePath))
             {
@@ -109,9 +176,8 @@ public class SubtitleCacheService
                 return new SubtitleResult(supCachePath, "application/octet-stream", true);
             }
 
-            // Cache miss — trigger background conversion (fire-and-forget)
-            // Use CancellationToken.None because this background task must outlive the HTTP request.
-            TriggerBackgroundSupConversion(itemId, originalAssPath, videoWidth, videoHeight, CancellationToken.None);
+            // Cache miss — trigger a conversion owned by this hosted service rather than the HTTP request.
+            TriggerBackgroundSupConversion(supCachePath, itemId, originalAssPath, videoWidth, videoHeight);
 
             // Return original ASS as fallback
             return new SubtitleResult(originalAssPath, "text/x-ssa", false);
@@ -127,10 +193,7 @@ public class SubtitleCacheService
             return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
         }
 
-        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
-        await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        using (await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false))
         {
             if (File.Exists(cacheFilePath))
             {
@@ -167,10 +230,6 @@ public class SubtitleCacheService
             _logger.LogWarning("[AssSubsetter] JIT subsetting failed for item {ItemId}. Falling back.", itemId);
             return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
         }
-        finally
-        {
-            fileLock.Release();
-        }
     }
 
     /// <summary>
@@ -178,17 +237,24 @@ public class SubtitleCacheService
     /// </summary>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
+    /// <param name="videoWidth">The SUP rendering width.</param>
+    /// <param name="videoHeight">The SUP rendering height.</param>
     /// <returns>The expected cache file path for the SUP file.</returns>
-    private string GetSupCachePath(Guid itemId, string originalAssPath)
+    private string GetSupCachePath(Guid itemId, string originalAssPath, int videoWidth, int videoHeight)
     {
-        string safeFileName = Path.GetFileNameWithoutExtension(originalAssPath);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}.sup");
+        string fingerprint = SubtitleCacheFingerprint.Create(
+            originalAssPath,
+            SubtitleProcessingMode.ConvertToSup,
+            videoWidth,
+            videoHeight,
+            Math.Clamp(Config.AssToSupFrameRate, 10, 60));
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.sup");
     }
 
     private string GetMksCachePath(Guid itemId, string originalAssPath)
     {
-        string safeFileName = Path.GetFileNameWithoutExtension(originalAssPath);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}.mks");
+        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.GenerateMks);
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.mks");
     }
 
     /// <summary>
@@ -199,50 +265,84 @@ public class SubtitleCacheService
     /// <returns>The expected cache file path for the subsetted ASS file.</returns>
     private string GetSubsetCachePath(Guid itemId, string originalAssPath)
     {
-        string safeFileName = Path.GetFileName(originalAssPath);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{safeFileName}");
+        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
+        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.ass");
     }
 
     /// <summary>
     ///     Triggers a background ASS to SUP conversion if one is not already in progress for the given item.
     ///     This is a fire-and-forget operation; the conversion runs on a background thread.
     /// </summary>
+    /// <param name="conversionKey">The versioned cache output path used for deduplication.</param>
     /// <param name="itemId">The media item identifier.</param>
     /// <param name="originalAssPath">The physical path of the original ASS file.</param>
     /// <param name="videoWidth">Video frame width.</param>
     /// <param name="videoHeight">Video frame height.</param>
-    /// <param name="stoppingToken">A cancellation token tied to application lifetime, not HTTP requests.</param>
-    private void TriggerBackgroundSupConversion(Guid itemId, string originalAssPath, int videoWidth, int videoHeight, CancellationToken stoppingToken)
+    private void TriggerBackgroundSupConversion(string conversionKey, Guid itemId, string originalAssPath, int videoWidth, int videoHeight)
     {
-        if (!_pendingConversions.TryAdd(itemId, 0))
+        Lazy<Task>? candidate = null;
+        candidate = new Lazy<Task>(
+            () => Task.Run(
+                () => RunTrackedSupConversionAsync(
+                    conversionKey,
+                    candidate!,
+                    itemId,
+                    originalAssPath,
+                    videoWidth,
+                    videoHeight),
+                CancellationToken.None),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        Lazy<Task> tracked;
+        lock (_backgroundGate)
+        {
+            if (_stopping)
+            {
+                return;
+            }
+
+            tracked = _backgroundConversions.GetOrAdd(conversionKey, candidate);
+            if (ReferenceEquals(tracked, candidate))
+            {
+                _ = candidate.Value;
+            }
+        }
+
+        if (!ReferenceEquals(tracked, candidate))
         {
             _logger.LogInformation("[AssSubsetter] Background SUP conversion already in progress for item {ItemId}. Skipping.", itemId);
             return;
         }
 
         _logger.LogInformation("[AssSubsetter] Triggering background ASS to SUP conversion for item {ItemId}...", itemId);
+    }
 
-        _ = Task.Run(
-            async () =>
-            {
-                try
-                {
-                    await GetOrGenerateSupAsync(itemId, originalAssPath, videoWidth, videoHeight, stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.LogInformation("[AssSubsetter] Background SUP conversion cancelled for item {ItemId} (application stopping).", itemId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[AssSubsetter] Background SUP conversion failed for item {ItemId}.", itemId);
-                }
-                finally
-                {
-                    _pendingConversions.TryRemove(itemId, out _);
-                }
-            },
-            stoppingToken);
+    private async Task RunTrackedSupConversionAsync(
+        string conversionKey,
+        Lazy<Task> trackedTask,
+        Guid itemId,
+        string originalAssPath,
+        int videoWidth,
+        int videoHeight)
+    {
+        try
+        {
+            await GetOrGenerateSupAsync(itemId, originalAssPath, videoWidth, videoHeight, _stoppingCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_stoppingCts.IsCancellationRequested)
+        {
+            _logger.LogInformation("[AssSubsetter] Background SUP conversion cancelled for item {ItemId} (application stopping).", itemId);
+        }
+
+        // codeql[cs/catch-of-all-exceptions] Justification: Prevent an unobserved background task exception.
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Background SUP conversion failed for item {ItemId}.", itemId);
+        }
+        finally
+        {
+            ((ICollection<KeyValuePair<string, Lazy<Task>>>)_backgroundConversions)
+                .Remove(new KeyValuePair<string, Lazy<Task>>(conversionKey, trackedTask));
+        }
     }
 
     /// <summary>
@@ -257,7 +357,7 @@ public class SubtitleCacheService
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are guided by sanitized database-derived item IDs and hardcoded directories.")]
     protected virtual async Task<string> GetOrGenerateSupAsync(Guid itemId, string originalAssPath, int videoWidth, int videoHeight, CancellationToken cancellationToken = default)
     {
-        string cacheFilePath = GetSupCachePath(itemId, originalAssPath);
+        string cacheFilePath = GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight);
 
         if (File.Exists(cacheFilePath))
         {
@@ -272,10 +372,7 @@ public class SubtitleCacheService
             return string.Empty;
         }
 
-        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
-        await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        using (await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false))
         {
             if (File.Exists(cacheFilePath))
             {
@@ -310,10 +407,6 @@ public class SubtitleCacheService
             _logger.LogWarning("[AssSubsetter] ASS to SUP conversion failed for item {ItemId}. Falling back.", itemId);
             return Config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
         }
-        finally
-        {
-            fileLock.Release();
-        }
     }
 
     private static void TouchFile(string path)
@@ -342,17 +435,17 @@ public class SubtitleCacheService
             return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
         }
 
-        var fileLock = _fileLocks.GetOrAdd(GetGenerationKey(itemId, originalAssPath), _ => new SemaphoreSlim(1, 1));
+        IDisposable fileLock;
         try
         {
-            await fileLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            fileLock = await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             return CreateMksFallback(originalAssPath);
         }
 
-        try
+        using (fileLock)
         {
             if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
             {
@@ -395,20 +488,11 @@ public class SubtitleCacheService
 
             return CreateMksFallback(originalAssPath);
         }
-        finally
-        {
-            fileLock.Release();
-        }
     }
 
     private SubtitleResult CreateMksFallback(string originalAssPath)
     {
         return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
-    }
-
-    private static string GetGenerationKey(Guid itemId, string originalAssPath)
-    {
-        return $"{itemId:N}:{Path.GetFullPath(originalAssPath)}";
     }
 
     private void EnforceCapacityLimit(long requiredSpace)

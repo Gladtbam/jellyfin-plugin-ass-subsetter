@@ -349,6 +349,42 @@ public class PlaybackPrefetchServiceTests : IDisposable
             Times.Once());
     }
 
+    [Fact]
+    public async Task StopAsync_ShouldCancelAndAwaitActivePrefetch()
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken observedToken = default;
+        var currentEpisode = CreateEpisode(indexNumber: 1, runtimeTicks: 1000);
+        var nextEpisode = CreateEpisodeWithSubtitle(indexNumber: 2);
+        SetupNextEpisodeQuery(currentEpisode, nextEpisode);
+        _mockCacheService
+            .Setup(service => service.GetOrGenerateSubtitleAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<int>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (Guid id, string path, int width, int height, CancellationToken cancellationToken) =>
+            {
+                observedToken = cancellationToken;
+                started.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return null!;
+            });
+
+        await _service.StartAsync(TestContext.Current.CancellationToken);
+        _mockSessionManager.Raise(
+            manager => manager.PlaybackProgress += null,
+            this,
+            CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950));
+        await started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        await _service.StopAsync(TestContext.Current.CancellationToken);
+
+        Assert.True(observedToken.IsCancellationRequested);
+        Assert.Equal(0, _service.ActivePrefetchTaskCount);
+    }
+
     // --- Helper Methods ---
 
     private Episode CreateEpisode(int? indexNumber, long? runtimeTicks = 1000)

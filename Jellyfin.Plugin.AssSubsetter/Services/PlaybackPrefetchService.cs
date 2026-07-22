@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -34,8 +35,13 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     ///     to avoid redundant work. Key format: "{SessionId}_{ItemId}".
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _triggeredPrefetches = new();
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _prefetchTasks = new(StringComparer.Ordinal);
+    private readonly object _taskGate = new();
+    private readonly CancellationTokenSource _stoppingCts = new();
 
     private bool _disposed;
+    private bool _started;
+    private bool _stopping;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="PlaybackPrefetchService" /> class.
@@ -61,6 +67,11 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
     private PluginConfiguration Config => _configFactory();
 
+    /// <summary>
+    ///     Gets the number of currently tracked prefetch tasks.
+    /// </summary>
+    internal int ActivePrefetchTaskCount => _prefetchTasks.Count;
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -71,14 +82,20 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        if (_started)
+        {
+            return Task.CompletedTask;
+        }
+
         _sessionManager.PlaybackProgress += OnPlaybackProgress;
         _sessionManager.PlaybackStopped += OnPlaybackStopped;
+        _started = true;
         _logger.LogInformation("[AssSubsetter] PlaybackPrefetchService started.");
         return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -90,7 +107,18 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             // Ignore exceptions if the manager is already disposed during shutdown
         }
 
-        return Task.CompletedTask;
+        Task[] tasks;
+        lock (_taskGate)
+        {
+            _stopping = true;
+            tasks = _prefetchTasks.Values
+                .Where(static lazy => lazy.IsValueCreated)
+                .Select(static lazy => lazy.Value)
+                .ToArray();
+        }
+
+        await _stoppingCts.CancelAsync().ConfigureAwait(false);
+        await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
@@ -123,9 +151,26 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         string sessionId = e.Session?.Id ?? string.Empty;
         string prefetchKey = $"{sessionId}_{episode.Id}";
 
-        if (!_triggeredPrefetches.TryAdd(prefetchKey, 0))
+        Lazy<Task>? candidate = null;
+        candidate = new Lazy<Task>(
+            () => Task.Run(
+                () => RunTrackedPrefetchAsync(prefetchKey, candidate!, episode),
+                CancellationToken.None),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        lock (_taskGate)
         {
-            return;
+            if (_stopping || !_triggeredPrefetches.TryAdd(prefetchKey, 0))
+            {
+                return;
+            }
+
+            Lazy<Task> tracked = _prefetchTasks.GetOrAdd(prefetchKey, candidate);
+            if (!ReferenceEquals(tracked, candidate))
+            {
+                return;
+            }
+
+            _ = candidate.Value;
         }
 
         _logger.LogInformation(
@@ -134,20 +179,29 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             episode.ParentIndexNumber,
             episode.IndexNumber,
             progressPercent);
+    }
 
-        _ = Task.Run(async () =>
+    private async Task RunTrackedPrefetchAsync(string prefetchKey, Lazy<Task> trackedTask, Episode episode)
+    {
+        try
         {
-            try
-            {
-                await PrefetchNextEpisodeAsync(episode).ConfigureAwait(false);
-            }
+            await PrefetchNextEpisodeAsync(episode, _stoppingCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_stoppingCts.IsCancellationRequested)
+        {
+            _logger.LogInformation("[AssSubsetter] Prefetch cancelled because the application is stopping.");
+        }
 
-            // codeql[cs/catch-of-all-exceptions] Justification: Prevent background task loop termination.
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Error occurred while prefetching next episode subtitles.");
-            }
-        });
+        // codeql[cs/catch-of-all-exceptions] Justification: Prevent an unobserved background task exception.
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AssSubsetter] Error occurred while prefetching next episode subtitles.");
+        }
+        finally
+        {
+            ((ICollection<KeyValuePair<string, Lazy<Task>>>)_prefetchTasks)
+                .Remove(new KeyValuePair<string, Lazy<Task>>(prefetchKey, trackedTask));
+        }
     }
 
     private void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
@@ -164,7 +218,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     }
 
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are determined solely from trusted database objects.")]
-    private async Task PrefetchNextEpisodeAsync(Episode currentEpisode)
+    private async Task PrefetchNextEpisodeAsync(Episode currentEpisode, CancellationToken cancellationToken)
     {
         if (currentEpisode.IndexNumber is null)
         {
@@ -194,11 +248,12 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         foreach (string assPath in assPaths)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 _logger.LogInformation("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
 
-                await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, nextEpisode.Width, nextEpisode.Height, CancellationToken.None).ConfigureAwait(false);
+                await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, nextEpisode.Width, nextEpisode.Height, cancellationToken).ConfigureAwait(false);
             }
             catch (IOException ex)
             {
@@ -256,6 +311,14 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             {
                 // Ignore exceptions if the manager is already disposed during shutdown
             }
+
+            lock (_taskGate)
+            {
+                _stopping = true;
+            }
+
+            _stoppingCts.Cancel();
+            _stoppingCts.Dispose();
         }
 
         _disposed = true;

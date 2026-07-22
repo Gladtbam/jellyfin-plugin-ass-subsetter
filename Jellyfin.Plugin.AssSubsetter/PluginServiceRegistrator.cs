@@ -9,6 +9,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter;
@@ -57,6 +58,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
             return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, mksMuxer, string.Empty, logger);
         });
+        serviceCollection.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SubtitleCacheService>());
 
         serviceCollection.AddHostedService<LibraryScanTracker>();
 
