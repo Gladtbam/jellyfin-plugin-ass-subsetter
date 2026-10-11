@@ -12,27 +12,31 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.9">
-      <ExcludeAssets>runtime</ExcludeAssets>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Controller">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Jellyfin.Model" Version="10.11.9">
-      <ExcludeAssets>runtime</ExcludeAssets>
+    <PackageReference Include="Jellyfin.Model">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.11">
-      <ExcludeAssets>runtime</ExcludeAssets>
+    <PackageReference Include="Microsoft.Data.Sqlite">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.11">
-      <ExcludeAssets>runtime</ExcludeAssets>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
     </PackageReference>
-    <PackageReference Include="SkiaSharp" Version="3.116.1">
-      <ExcludeAssets>runtime</ExcludeAssets>
+    <PackageReference Include="SkiaSharp">
+      <ExcludeAssets>runtime; native</ExcludeAssets>
     </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="SerilogAnalyzer" Version="0.15.0" PrivateAssets="All" />
-    <PackageReference Include="StyleCop.Analyzers" Version="1.2.0-beta.556" PrivateAssets="All" />
-    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" Version="1.1.31" PrivateAssets="All" />
+    <PackageReference Include="SerilogAnalyzer" PrivateAssets="All" />
+    <PackageReference Include="StyleCop.Analyzers" PrivateAssets="All" />
+    <PackageReference Include="SmartAnalyzers.MultithreadingAnalyzer" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,15 +45,5 @@
     <None Remove="Configuration\configPage.js" />
     <EmbeddedResource Include="Configuration\configPage.js" />
   </ItemGroup>
-
-  <Target Name="ExcludeHostProvidedDatabaseRuntime" AfterTargets="ComputeFilesToPublish">
-    <ItemGroup>
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('Microsoft.EntityFrameworkCore', System.StringComparison.OrdinalIgnoreCase))" />
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('Microsoft.Data.Sqlite', System.StringComparison.OrdinalIgnoreCase))" />
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('SQLitePCLRaw', System.StringComparison.OrdinalIgnoreCase))" />
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').Equals('e_sqlite3', System.StringComparison.OrdinalIgnoreCase))" />
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').Equals('libe_sqlite3', System.StringComparison.OrdinalIgnoreCase))" />
-    </ItemGroup>
-  </Target>
 
 </Project>
