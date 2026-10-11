@@ -38,12 +38,11 @@ public class SubtitleCacheServiceSupTests : IDisposable
         _config = new PluginConfiguration
         {
             SubtitleMode = SubtitleProcessingMode.ConvertToSup,
-            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json"),
             MaxCacheSizeMB = 100,
             FallbackToOriginalOnError = true,
         };
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        var fontCacheManager = FontCacheManagerFixture.CreateManager();
         var assParser = new AssDocumentParser();
         var assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
 

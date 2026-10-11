@@ -1,0 +1,13 @@
+{
+  "Benchmarks": [
+    { "Method": "ExactLookup", "Statistics": { "Median": 100000.0, "Percentiles": { "P95": 900000.0 } }, "Memory": { "BytesAllocatedPerOperation": 32.0 } },
+    { "Method": "LooseLookup", "Statistics": { "Median": 2000000.0, "Percentiles": { "P95": 9000000.0 } }, "Memory": { "BytesAllocatedPerOperation": 64.0 } },
+    { "Method": "ConstructIndex", "Statistics": { "Median": 20000000.0, "Percentiles": { "P95": 25000000.0 } }, "Memory": { "BytesAllocatedPerOperation": 4096.0 } },
+    { "Method": "GenerateCandidates", "Statistics": { "Median": 30000000.0, "Percentiles": { "P95": 35000000.0 } }, "Memory": { "BytesAllocatedPerOperation": 8192.0 } },
+    { "Method": "NativeSubset", "Statistics": { "Median": 1000000.0, "Percentiles": { "P95": 1100000.0 } }, "Memory": { "BytesAllocatedPerOperation": 1024.0 } },
+    { "Method": "DirectResolver", "Statistics": { "Median": 10000.0, "Percentiles": { "P95": 11000.0 } }, "Memory": { "BytesAllocatedPerOperation": 24.0 } },
+    { "Method": "CatalogResolver", "Statistics": { "Median": 30000.0, "Percentiles": { "P95": 31000.0 } }, "Memory": { "BytesAllocatedPerOperation": 24.0 } },
+    { "Method": "DirectAssProcessorArtifactAsync", "Statistics": { "Median": 1000000.0, "Percentiles": { "P95": 1100000.0 } }, "Memory": { "BytesAllocatedPerOperation": 2048.0 } },
+    { "Method": "CatalogAssProcessorArtifactAsync", "Statistics": { "Median": 1005000.0, "Percentiles": { "P95": 1105000.0 } }, "Memory": { "BytesAllocatedPerOperation": 2080.0 } }
+  ]
+}

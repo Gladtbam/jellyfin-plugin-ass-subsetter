@@ -36,11 +36,39 @@ public class PluginTests
     [Fact]
     public void GetPages_ShouldReturnConfigurationPage()
     {
-        var pages = _plugin.GetPages().ToList();
+        var page = Assert.Single(_plugin.GetPages(), candidate => candidate.EnableInMainMenu);
 
-        Assert.Single(pages);
+        Assert.Equal("ASS Subsetter", page.Name);
+        Assert.Equal("Jellyfin.Plugin.AssSubsetter.Configuration.configPage.html", page.EmbeddedResourcePath);
+    }
 
-        Assert.Equal("ASS Subsetter", pages[0].Name);
-        Assert.Contains("configPage.html", pages[0].EmbeddedResourcePath);
+    [Fact]
+    public void GetPages_ShouldRegisterEmbeddedAdministratorManagementPage()
+    {
+        var page = Assert.Single(_plugin.GetPages(), candidate => candidate.EnableInMainMenu);
+
+        Assert.Equal("ASS Subsetter", page.Name);
+        Assert.Equal("Jellyfin.Plugin.AssSubsetter.Configuration.configPage.html", page.EmbeddedResourcePath);
+    }
+
+    [Fact]
+    public void GetPages_ShouldShowOnlyTheCombinedPageInDashboardSidebar()
+    {
+        var page = Assert.Single(_plugin.GetPages(), candidate => candidate.EnableInMainMenu);
+
+        Assert.True(page.EnableInMainMenu);
+        Assert.Equal("server", page.MenuSection);
+        Assert.Equal("ASS Subsetter", page.DisplayName);
+    }
+
+    [Fact]
+    public void GetPages_ShouldExposeClientScriptWithoutSidebarEntry()
+    {
+        var pages = _plugin.GetPages().ToArray();
+
+        Assert.Equal(2, pages.Length);
+        var script = Assert.Single(pages, page => page.Name == "ass-subsetter-config.js");
+        Assert.False(script.EnableInMainMenu);
+        Assert.Equal("Jellyfin.Plugin.AssSubsetter.Configuration.configPage.js", script.EmbeddedResourcePath);
     }
 }

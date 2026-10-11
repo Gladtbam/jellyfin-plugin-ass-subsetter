@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
@@ -28,7 +29,8 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         Instance = this;
 
-        PluginDataPath = applicationPaths.DataPath;
+        StoragePaths = FontStoragePaths.Create(applicationPaths.DataPath);
+        PluginDataPath = StoragePaths.RootPath;
         PluginCachePath = Path.Join(applicationPaths.CachePath, "ass-subsetter");
 
         // Initialize localization based on server UI culture
@@ -39,16 +41,21 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         };
     }
 
-    /// <inheritdoc />
+    /// <summary>Gets the plugin name displayed in the Jellyfin dashboard.</summary>
     public override string Name => "ASS Subsetter";
 
-    /// <inheritdoc />
+    /// <summary>Gets the stable plugin identifier used for configuration and scheduled-task ownership.</summary>
     public override Guid Id => Guid.Parse("7d13aa46-8b4a-ce85-9648-2cf4f52b8222");
 
     /// <summary>
     ///     Gets the Jellyfin program data path for storing persistent plugin files.
     /// </summary>
     public string PluginDataPath { get; }
+
+    /// <summary>
+    ///     Gets the fixed persistent storage paths for the font catalog and maintenance operations.
+    /// </summary>
+    public FontStoragePaths StoragePaths { get; }
 
     /// <summary>
     ///     Gets the plugin-specific cache folder under Jellyfin's cache directory.
@@ -60,12 +67,25 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// </summary>
     public static Plugin? Instance { get; private set; }
 
-    /// <inheritdoc />
+    /// <summary>Gets the combined settings and font management page.</summary>
+    /// <returns>The plugin's dashboard page registration.</returns>
     public IEnumerable<PluginPageInfo> GetPages()
     {
         return
         [
-            new PluginPageInfo { Name = Name, EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace) }
+            new PluginPageInfo
+            {
+                Name = Name,
+                DisplayName = "ASS Subsetter",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace),
+                EnableInMainMenu = true,
+                MenuSection = "server"
+            },
+            new PluginPageInfo
+            {
+                Name = "ass-subsetter-config.js",
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.js", GetType().Namespace)
+            }
         ];
     }
 }

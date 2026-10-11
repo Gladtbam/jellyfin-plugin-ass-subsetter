@@ -13,6 +13,24 @@ public static partial class HarfBuzzSubsetNative
 {
     private const string LibName = "libHarfBuzzSharp";
 
+    [LibraryImport(LibName, EntryPoint = "hb_version_string")]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    private static partial IntPtr HbVersionString();
+
+    /// <summary>Returns the loaded HarfBuzz native version used to invalidate deep evidence after a host upgrade.</summary>
+    /// <returns>The native version string, or <see langword="null"/> when unavailable.</returns>
+    internal static string? GetNativeVersion()
+    {
+        try
+        {
+            return Marshal.PtrToStringUTF8(HbVersionString());
+        }
+        catch (Exception exception) when (exception is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
+        {
+            return null;
+        }
+    }
+
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_blob_create")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]

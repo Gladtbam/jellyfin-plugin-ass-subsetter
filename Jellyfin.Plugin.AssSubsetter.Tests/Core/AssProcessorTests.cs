@@ -1,11 +1,17 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Core;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Services;
+using Jellyfin.Plugin.AssSubsetter.Tests.Services;
+using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -22,12 +28,9 @@ public class AssProcessorTests : IDisposable
         _tempDataPath = Path.Join(Path.GetTempPath(), "AssProcessorTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDataPath);
 
-        _config = new PluginConfiguration
-        {
-            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
-        };
+        _config = new PluginConfiguration();
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
+        var fontCacheManager = FontCacheManagerFixture.CreateManager();
         var assParser = new AssDocumentParser();
         _assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, NullLogger<AssProcessor>.Instance);
     }
@@ -96,7 +99,6 @@ public class AssProcessorTests : IDisposable
     [Fact]
     public async Task GenerateSubsetArtifactAsync_ShouldKeepOriginalName_WhenFontCannotBeFound()
     {
-        await File.WriteAllTextAsync(_config.FontCacheFilePath, "[]", TestContext.Current.CancellationToken);
         string inputAss = Path.Join(_tempDataPath, "missing-font.ass");
         const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
         await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
@@ -106,6 +108,58 @@ public class AssProcessorTests : IDisposable
         Assert.NotNull(result);
         Assert.Empty(result.Fonts);
         Assert.Contains("Style: Default,MissingFont,20", result.AssContent, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GenerateSubsetArtifactAsync_ShouldPassSubtitleCharactersToFontLookup()
+    {
+        string inputAss = Path.Join(_tempDataPath, "coverage.ass");
+        const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,ExampleFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,AB";
+        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        string? requestedName = null;
+        IReadOnlyCollection<uint>? requestedCharacters = null;
+        var processor = new AssProcessor(
+            () => _config,
+            (descriptor, characters, _) =>
+            {
+                requestedName = descriptor.FontName;
+                requestedCharacters = characters.ToArray();
+                return Task.FromResult<FontFileLease?>(null);
+            },
+            () => "PREFIX",
+            new AssDocumentParser(),
+            NullLogger<AssProcessor>.Instance);
+
+        SubsetArtifact? result = await processor.GenerateSubsetArtifactAsync(inputAss, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal("ExampleFont", requestedName);
+        Assert.NotNull(requestedCharacters);
+        Assert.Equal([65u, 66u], requestedCharacters.OrderBy(character => character).ToArray());
+        Assert.Empty(result.Fonts);
+    }
+
+    [Fact]
+    public async Task GenerateSubsetArtifactAsync_ShouldNotAccessRepositoryWhenRuntimeSnapshotIsCold()
+    {
+        string inputAss = Path.Join(_tempDataPath, "cold-snapshot.ass");
+        const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
+        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        var repository = new InMemoryFontRepository();
+        var scanner = new FontInventoryScanner(
+            repository,
+            () => new FontDirectoryPolicyResolver(null, null, null, includePlatformDefaults: false),
+            new PathPhysicalFileIdentityProvider(),
+            NullLogger<FontInventoryScanner>.Instance);
+        using var manager = new FontCacheManager(repository, scanner, new FontMaintenanceCoordinator());
+        var processor = new AssProcessor(() => _config, manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
+
+        SubsetArtifact? result = await processor.GenerateSubsetArtifactAsync(inputAss, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Empty(result.Fonts);
+        Assert.Equal(0, repository.InitializeCallCount);
+        Assert.Equal(0, repository.RuntimeSnapshotLoadCallCount);
     }
 
     public void Dispose()

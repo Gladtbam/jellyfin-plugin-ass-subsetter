@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using MediaBrowser.Model.Plugins;
 
 namespace Jellyfin.Plugin.AssSubsetter.Configuration;
@@ -32,8 +33,10 @@ public class PluginConfiguration : BasePluginConfiguration
         EnablePrefetchSubsetting = true;
         PrefetchTriggerPercent = 85;
         MaxCacheSizeMB = 1024;
-        FontCacheFilePath = string.Empty;
+        FontHistoryRetentionCount = 3;
         CustomFontDirectories = string.Empty;
+        ProtectedFontDirectories = string.Empty;
+        PreferredFontDirectories = string.Empty;
         FallbackToOriginalOnError = true;
         AssToSupFrameRate = 24;
     }
@@ -68,14 +71,33 @@ public class PluginConfiguration : BasePluginConfiguration
     public int MaxCacheSizeMB { get; set; }
 
     /// <summary>
-    ///     Gets or sets the font cache JSON file path.
+    ///     Gets or sets how many recent analysis reports and published inventory generations to retain. Zero retains all.
     /// </summary>
-    public string FontCacheFilePath { get; set; }
+    public int FontHistoryRetentionCount { get; set; }
+
+    /// <summary>Gets or sets the filename stem template; source extensions are appended in lowercase.</summary>
+    public string FontFileNameTemplate { get; set; } = FontNamingRules.DefaultFileNameTemplate;
+
+    /// <summary>Gets or sets the source-root-relative folder template; empty preserves the parent.</summary>
+    public string FontFolderTemplate { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets a value indicating whether empty source ancestors are removed.</summary>
+    public bool RemoveEmptyFontDirectories { get; set; }
 
     /// <summary>
     ///     Gets or sets custom font directories, separated by semicolons.
     /// </summary>
     public string CustomFontDirectories { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Gets or sets additional protected font directories, separated by semicolons.
+    /// </summary>
+    public string ProtectedFontDirectories { get; set; } = string.Empty;
+
+    /// <summary>
+    ///     Gets or sets preferred font directories, separated by semicolons.
+    /// </summary>
+    public string PreferredFontDirectories { get; set; } = string.Empty;
 
     /// <summary>
     ///     Gets or sets a value indicating whether to fallback to the original subtitle on error.

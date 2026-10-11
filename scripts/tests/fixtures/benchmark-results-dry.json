@@ -1,0 +1,13 @@
+{
+  "Benchmarks": [
+    { "Method": "ExactLookup" },
+    { "Method": "LooseLookup" },
+    { "Method": "ConstructIndex" },
+    { "Method": "GenerateCandidates" },
+    { "Method": "NativeSubset" },
+    { "Method": "DirectResolver" },
+    { "Method": "CatalogResolver" },
+    { "Method": "DirectAssProcessorArtifactAsync" },
+    { "Method": "CatalogAssProcessorArtifactAsync" }
+  ]
+}
