@@ -15,7 +15,10 @@ public class PluginConfigurationTests
         Assert.True(config.EnableAutoScanProcessing);
         Assert.Equal(SubtitleProcessingMode.Subsetting, config.SubtitleMode);
         Assert.Equal(1024, config.MaxCacheSizeMB);
-        Assert.Equal(string.Empty, config.FontCacheFilePath);
+        Assert.Equal(3, config.FontHistoryRetentionCount);
+        Assert.Equal(string.Empty, config.CustomFontDirectories);
+        Assert.Equal(string.Empty, config.ProtectedFontDirectories);
+        Assert.Equal(string.Empty, config.PreferredFontDirectories);
         Assert.True(config.FallbackToOriginalOnError);
     }
 

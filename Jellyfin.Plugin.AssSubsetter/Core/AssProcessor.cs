@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Native;
@@ -23,7 +24,8 @@ public class AssProcessor
 {
     private readonly AssDocumentParser _assParser;
     private readonly Func<PluginConfiguration> _configFactory;
-    private readonly FontCacheManager _fontCacheManager;
+    private readonly Func<FontDescriptor, IReadOnlyCollection<uint>, CancellationToken, Task<FontFileLease?>> _acquireFont;
+    private readonly Func<string> _generateFontPrefix;
     private readonly ILogger<AssProcessor> _logger;
 
     /// <summary>
@@ -34,10 +36,21 @@ public class AssProcessor
     /// <param name="assParser">The ASS document parser.</param>
     /// <param name="logger">The logger.</param>
     public AssProcessor(Func<PluginConfiguration> configFactory, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
+        : this(configFactory, fontCacheManager.AcquireFontAsync, FontNameRewriter.GenerateRandomPrefix, assParser, logger)
+    {
+    }
+
+    internal AssProcessor(
+        Func<PluginConfiguration> configFactory,
+        Func<FontDescriptor, IReadOnlyCollection<uint>, CancellationToken, Task<FontFileLease?>> acquireFont,
+        Func<string> generateFontPrefix,
+        AssDocumentParser assParser,
+        ILogger<AssProcessor> logger)
     {
         _logger = logger;
         _configFactory = configFactory;
-        _fontCacheManager = fontCacheManager;
+        _acquireFont = acquireFont;
+        _generateFontPrefix = generateFontPrefix;
         _assParser = assParser;
     }
 
@@ -124,8 +137,6 @@ public class AssProcessor
                 return new SubsetArtifact(originalContent, Array.Empty<SubsetFontAttachment>());
             }
 
-            await _fontCacheManager.EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
-
             var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var fontPrefixMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var attachments = new List<SubsetFontAttachment>();
@@ -138,19 +149,20 @@ public class AssProcessor
                 string fontName = desc.FontName;
                 if (!fontPrefixMap.TryGetValue(fontName, out string? newPrefix))
                 {
-                    newPrefix = FontNameRewriter.GenerateRandomPrefix();
+                    newPrefix = _generateFontPrefix();
                     fontPrefixMap[fontName] = newPrefix;
                 }
 
-                var fontInfo = _fontCacheManager.FindFontFilePath(desc);
-                if (fontInfo == null || string.IsNullOrEmpty(fontInfo.Value.Path))
+                FontFileLease? lease = await _acquireFont(desc, kvp.Value, cancellationToken).ConfigureAwait(false);
+                if (lease is null)
                 {
                     _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
                     continue;
                 }
 
-                string physicalPath = fontInfo.Value.Path;
-                int faceIndex = fontInfo.Value.FaceIndex;
+                await using var leaseScope = lease.ConfigureAwait(false);
+                string physicalPath = lease.Path;
+                int faceIndex = lease.FaceIndex;
                 _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, kvp.Value.Count);
 
                 byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);

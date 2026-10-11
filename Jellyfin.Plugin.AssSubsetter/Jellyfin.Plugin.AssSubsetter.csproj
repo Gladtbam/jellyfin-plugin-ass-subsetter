@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
@@ -18,6 +18,12 @@
     <PackageReference Include="Jellyfin.Model" Version="10.11.9">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.11">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.11">
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </PackageReference>
     <PackageReference Include="SkiaSharp" Version="3.116.1">
       <ExcludeAssets>runtime</ExcludeAssets>
     </PackageReference>
@@ -32,6 +38,18 @@
   <ItemGroup>
     <None Remove="Configuration\configPage.html" />
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <None Remove="Configuration\configPage.js" />
+    <EmbeddedResource Include="Configuration\configPage.js" />
   </ItemGroup>
+
+  <Target Name="ExcludeHostProvidedDatabaseRuntime" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('Microsoft.EntityFrameworkCore', System.StringComparison.OrdinalIgnoreCase))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('Microsoft.Data.Sqlite', System.StringComparison.OrdinalIgnoreCase))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').StartsWith('SQLitePCLRaw', System.StringComparison.OrdinalIgnoreCase))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').Equals('e_sqlite3', System.StringComparison.OrdinalIgnoreCase))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::Copy('%(ResolvedFileToPublish.Filename)').Equals('libe_sqlite3', System.StringComparison.OrdinalIgnoreCase))" />
+    </ItemGroup>
+  </Target>
 
 </Project>

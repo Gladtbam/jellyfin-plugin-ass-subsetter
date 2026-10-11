@@ -1,76 +1,46 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
-using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
-using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
-public class FontCacheUpdateTaskTests : IDisposable
+public sealed class FontCacheUpdateTaskTests
 {
-    private readonly string _tempDataPath;
-    private readonly PluginConfiguration _config;
-    private readonly FontCacheUpdateTask _task;
-
-    public FontCacheUpdateTaskTests()
+    [Fact]
+    public async Task ExecuteAsync_ShouldDelegateRefreshAndAnalysisAndReportBounds()
     {
-        _tempDataPath = Path.Join(Path.GetTempPath(), "FontCacheTaskTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_tempDataPath);
+        var executor = new RecordingTaskExecutor();
+        var reports = new List<double>();
+        var task = new FontCacheUpdateTask(executor, NullLogger<FontCacheUpdateTask>.Instance);
 
-        _config = new PluginConfiguration
-        {
-            FontCacheFilePath = Path.Join(_tempDataPath, "font_caches.json")
-        };
+        await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
-        var fontCacheManager = new FontCacheManager(NullLogger<FontCacheManager>.Instance, () => _config);
-        _task = new FontCacheUpdateTask(fontCacheManager, NullLogger<FontCacheUpdateTask>.Instance);
+        Assert.Equal(1, executor.RefreshAndAnalyzeCalls);
+        Assert.Equal(0, reports.First());
+        Assert.Equal(100, reports.Last());
+        Assert.All(reports, value => Assert.InRange(value, 0, 100));
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldCompleteSuccessfully()
+    public void GetDefaultTriggers_ShouldReturnDailyIntervalOnly()
     {
-        // Arrange
-        var progressMock = new Mock<IProgress<double>>();
+        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), NullLogger<FontCacheUpdateTask>.Instance);
 
-        // Act
-        await _task.ExecuteAsync(progressMock.Object, CancellationToken.None);
+        TaskTriggerInfo[] triggers = task.GetDefaultTriggers().ToArray();
 
-        // Assert
-        Assert.True(File.Exists(_config.FontCacheFilePath));
+        Assert.Single(triggers);
+        Assert.Equal(TaskTriggerInfoType.IntervalTrigger, triggers[0].Type);
+        Assert.Equal(TimeSpan.FromHours(24).Ticks, triggers[0].IntervalTicks);
     }
 
     [Fact]
-    public void GetDefaultTriggers_ShouldReturnStartupAndInterval()
+    public void Identity_ShouldRemainStableAndLocalized()
     {
-        // Arrange & Act
-        var triggers = _task.GetDefaultTriggers().ToList();
+        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), NullLogger<FontCacheUpdateTask>.Instance);
 
-        // Assert
-        Assert.Equal(2, triggers.Count);
-        Assert.Contains(triggers, t => t.Type == TaskTriggerInfoType.StartupTrigger);
-        Assert.Contains(triggers, t => t.Type == TaskTriggerInfoType.IntervalTrigger && t.IntervalTicks == TimeSpan.FromHours(24).Ticks);
-    }
-
-    [Fact]
-    public void Name_ShouldBeCorrect()
-    {
-        Assert.Equal(Jellyfin.Plugin.AssSubsetter.Helpers.LocalizationHelper.GetString("FontCacheTask_Name"), _task.Name);
-        Assert.Equal("LocalFontCacheUpdateTask", _task.Key);
-        Assert.Equal("Subtitles", _task.Category);
-    }
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_tempDataPath))
-        {
-            try { Directory.Delete(_tempDataPath, true); } catch (IOException) { /* Ignore */ } catch (UnauthorizedAccessException) { /* Ignore */ }
-        }
+        Assert.Equal("LocalFontCacheUpdateTask", task.Key);
+        Assert.Equal("Subtitles", task.Category);
+        Assert.Equal(Jellyfin.Plugin.AssSubsetter.Helpers.LocalizationHelper.GetString("FontAnalysisTask_Name"), task.Name);
+        Assert.Equal(Jellyfin.Plugin.AssSubsetter.Helpers.LocalizationHelper.GetString("FontAnalysisTask_Description"), task.Description);
     }
 }

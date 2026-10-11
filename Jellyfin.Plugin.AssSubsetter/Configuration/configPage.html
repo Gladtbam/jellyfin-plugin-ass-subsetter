@@ -5,9 +5,145 @@
     <title>ASS Subsetter Configuration</title>
 </head>
 <body>
-<div id="AssSubsetterConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+<div id="AssSubsetterConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox" data-controller="__plugin/ass-subsetter-config.js">
+    <style>
+        #AssSubsetterConfigPage [hidden] { display: none !important; }
+        #AssSubsetterConfigPage [data-font-view] { min-width: 0; }
+        #AssSubsetterConfigPage .fontSectionIntro { margin: -.25em 0 1.4em; opacity: .72; line-height: 1.5; }
+        #AssSubsetterConfigPage .fontSectionTitle { margin: 1.7em 0 .8em; font-size: 1.15em; }
+        #AssSubsetterConfigPage .fontMetricGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .85em; margin: 0 0 1.4em; }
+        #AssSubsetterConfigPage .fontMetricCard,
+        #AssSubsetterConfigPage .fontReportCard,
+        #AssSubsetterConfigPage .fontRenameCard,
+        #AssSubsetterConfigPage .fontQuarantineCard,
+        #AssSubsetterConfigPage .fontPanel { background: color-mix(in srgb, currentColor 5%, transparent); border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: .6em; }
+        #AssSubsetterConfigPage .fontMetricCard { min-width: 0; padding: 1.15em 1.25em; }
+        #AssSubsetterConfigPage .fontMetricCard dt { margin: 0 0 .55em; opacity: .72; font-size: .9em; }
+        #AssSubsetterConfigPage .fontMetricCard dd { margin: 0; font-size: 1.55em; font-weight: 600; line-height: 1.2; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+        #AssSubsetterConfigPage .fontMetricCard--wide { grid-column: 1 / -1; }
+        #AssSubsetterConfigPage .fontMetricCard--wide dd { font-size: 1em; font-weight: 400; line-height: 1.6; }
+        #AssSubsetterConfigPage .fontMetricCard--wide dd span { display: inline-block; margin: .2em .8em .2em 0; }
+        #AssSubsetterConfigPage .fontActionBar { display: flex; flex-wrap: wrap; gap: .7em; margin: 1.1em 0; }
+        #AssSubsetterConfigPage .fontActionBar button { margin: 0; }
+        #AssSubsetterConfigPage .fontFilterGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .8em 1em; align-items: end; margin: 1em 0 1.5em; }
+        #AssSubsetterConfigPage .fontFilterField { min-width: 0; }
+        #AssSubsetterConfigPage .fontFilterField label { display: block; margin-bottom: .35em; }
+        #AssSubsetterConfigPage .fontFilterField select,
+        #AssSubsetterConfigPage .fontFilterField input { width: 100%; box-sizing: border-box; }
+        #AssSubsetterConfigPage .fontRenameFilter { max-width: 320px; margin: 1em 0; }
+        #AssSubsetterConfigPage .fontFilterButton { align-self: end; }
+        #AssSubsetterConfigPage .fontReportList,
+        #AssSubsetterConfigPage .fontRenameList,
+        #AssSubsetterConfigPage .fontQuarantineList { display: grid; gap: .85em; margin: 1em 0; }
+        #AssSubsetterConfigPage .fontQuarantineTabs,
+        #AssSubsetterConfigPage .fontRenameStatusTabs { display: flex; flex-wrap: wrap; gap: .5em; margin: 0 0 1.2em; }
+        #AssSubsetterConfigPage .fontQuarantineTabs button,
+        #AssSubsetterConfigPage .fontRenameStatusTabs button { color: inherit; background: color-mix(in srgb, currentColor 6%, transparent); border: 1px solid color-mix(in srgb, currentColor 20%, transparent); border-radius: .4em; padding: .6em 1em; }
+        #AssSubsetterConfigPage .fontQuarantineTabs button[aria-pressed="true"],
+        #AssSubsetterConfigPage .fontRenameStatusTabs button[aria-selected="true"] { color: var(--theme-primary-color, #00a4dc); background: color-mix(in srgb, var(--theme-primary-color, #00a4dc) 12%, transparent); border-color: var(--theme-primary-color, #00a4dc); }
+        #AssSubsetterConfigPage .fontReportCard,
+        #AssSubsetterConfigPage .fontRenameCard,
+        #AssSubsetterConfigPage .fontQuarantineCard { min-width: 0; padding: 1em 1.2em; }
+        #AssSubsetterConfigPage .fontRenameCard--selectable { cursor: pointer; }
+        #AssSubsetterConfigPage .fontRenameCard--selected { outline: 2px solid var(--theme-primary-color, #00a4dc); outline-offset: 2px; }
+        #AssSubsetterConfigPage .fontRenameCard--selectable:not(.fontRenameCard--selected):focus-visible { outline: 1px dashed currentColor; outline-offset: 2px; }
+        #AssSubsetterConfigPage .fontQuarantineCard--attention { border-left: 3px solid #f4bd65; }
+        #AssSubsetterConfigPage .fontQuarantineMeta { display: flex; flex-wrap: wrap; gap: .45em 1.2em; margin: .85em 0 0; opacity: .8; font-size: .9em; }
+        #AssSubsetterConfigPage .fontCardHeader { display: flex; flex-wrap: wrap; align-items: center; gap: .5em .8em; margin-bottom: .9em; }
+        #AssSubsetterConfigPage .fontCardTitle { margin: 0; font-size: 1.05em; font-weight: 600; }
+        #AssSubsetterConfigPage .fontCardMeta { opacity: .68; font-size: .88em; }
+        #AssSubsetterConfigPage .fontBadge { display: inline-block; border-radius: 999px; padding: .25em .7em; background: color-mix(in srgb, currentColor 11%, transparent); font-size: .82em; line-height: 1.35; }
+        #AssSubsetterConfigPage .fontBadge--caution { color: #f4bd65; background: rgba(244, 189, 101, .12); }
+        #AssSubsetterConfigPage .fontBadge--success { color: #79d7aa; background: rgba(121, 215, 170, .12); }
+        #AssSubsetterConfigPage .fontPathGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: .7em; }
+        #AssSubsetterConfigPage .fontPathBlock { min-width: 0; padding: .7em .85em; border-radius: .4em; background: color-mix(in srgb, currentColor 5%, transparent); }
+        #AssSubsetterConfigPage .fontPathLabel,
+        #AssSubsetterConfigPage .fontDetailLabel { display: block; margin-bottom: .3em; opacity: .68; font-size: .84em; }
+        #AssSubsetterConfigPage .fontPathName { display: block; font-weight: 600; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontPathFull { display: block; margin-top: .3em; opacity: .7; font-size: .84em; overflow-wrap: anywhere; user-select: text; }
+        #AssSubsetterConfigPage .fontDisclosure { margin-top: .8em; border-top: 1px solid color-mix(in srgb, currentColor 13%, transparent); }
+        #AssSubsetterConfigPage .fontDisclosure summary { cursor: pointer; padding: .75em 0 .1em; color: var(--theme-primary-color, #00a4dc); }
+        #AssSubsetterConfigPage .fontDisclosure:focus-within summary { outline-offset: .2em; }
+        #AssSubsetterConfigPage .fontDetailContent { padding: .8em 0 .1em; }
+        #AssSubsetterConfigPage .fontDetailContent h4 { margin: 1em 0 .65em; font-size: .95em; }
+        #AssSubsetterConfigPage .fontDetailGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .7em; }
+        #AssSubsetterConfigPage .fontDetailItem { min-width: 0; padding: .55em .7em; border-radius: .3em; background: color-mix(in srgb, currentColor 5%, transparent); overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontDetailValue { display: block; line-height: 1.5; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontScoreGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .8em; }
+        #AssSubsetterConfigPage .fontScoreCard { padding: .8em; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: .4em; }
+        #AssSubsetterConfigPage .fontScoreCard h5 { margin: 0 0 .7em; font-size: .95em; }
+        #AssSubsetterConfigPage .fontScoreCard ul { display: flex; flex-wrap: wrap; gap: .4em .8em; margin: .7em 0 0; padding: 0; list-style: none; }
+        #AssSubsetterConfigPage .fontScoreCard li { font-size: .84em; }
+        #AssSubsetterConfigPage .fontScoreCard li[data-state="unknown"] { opacity: .55; }
+        #AssSubsetterConfigPage .fontScoreCard li[data-state="failed"] { color: #f4bd65; }
+        #AssSubsetterConfigPage .fontEvidenceNotes { margin: 0 0 1em; padding: .65em .9em; border-left: 3px solid var(--theme-primary-color, #00a4dc); background: color-mix(in srgb, currentColor 5%, transparent); border-radius: .2em; }
+        #AssSubsetterConfigPage .fontEvidenceNotes p { margin: .3em 0; line-height: 1.55; font-size: .91em; }
+        #AssSubsetterConfigPage .fontDeferredChecks { opacity: .72; line-height: 1.5; font-size: .85em; }
+        #AssSubsetterConfigPage .fontDeferredChecks { margin: .8em 0 0; }
+        #AssSubsetterConfigPage .fontDiagnostic { margin: .5em 0; padding: .65em .8em; border-left: 3px solid #f4bd65; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontPairSummary { margin-top: .8em; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        @media (max-width: 700px) { #AssSubsetterConfigPage .fontPairSummary { grid-template-columns: 1fr; } }
+        #AssSubsetterConfigPage .fontPairGuidance { margin: .75em 0 0; padding: .7em .9em; border-left: 3px solid #f4bd65; background: color-mix(in srgb, currentColor 5%, transparent); line-height: 1.55; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontPanel { padding: 1em 1.2em; margin: 1em 0; }
+        #AssSubsetterConfigPage .fontReportCard--replacement { border-left: 3px solid var(--theme-primary-color, #00a4dc); }
+        #AssSubsetterConfigPage .fontReportActions { align-items: center; padding: .9em 1em; border-radius: .5em; background: color-mix(in srgb, currentColor 5%, transparent); }
+        #AssSubsetterConfigPage #ReportSelectionStatus { flex: 1; min-width: 150px; font-size: .9em; opacity: .8; }
+        #AssSubsetterConfigPage .fontReplacementSummary { margin: -.2em 0 .75em; opacity: .8; }
+        #AssSubsetterConfigPage .fontReplacementKinds { display: flex; flex-wrap: wrap; gap: .4em; margin-bottom: 1em; }
+        #AssSubsetterConfigPage .fontReplacementGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1em; }
+        #AssSubsetterConfigPage .fontReplacementColumn { min-width: 0; }
+        #AssSubsetterConfigPage .fontReplacementColumn h4 { margin: 0 0 .65em; font-size: .95em; }
+        #AssSubsetterConfigPage .fontReplacementFiles { display: grid; gap: .7em; }
+        #AssSubsetterConfigPage .fontReplacementFile { padding: .8em; border: 1px solid color-mix(in srgb, currentColor 13%, transparent); border-radius: .4em; }
+        #AssSubsetterConfigPage .fontReplacementFile .fontPathBlock { margin-top: .4em; padding: .2em 0; background: transparent; }
+        #AssSubsetterConfigPage .fontReplacementFile .fontPathLabel:empty { display: none; }
+        #AssSubsetterConfigPage .fontFileSelection { display: flex; align-items: center; gap: .5em; cursor: pointer; min-height: 28px; font-size: .9em; }
+        #AssSubsetterConfigPage .fontFileSelection input { width: 1.2em; height: 1.2em; margin: 0; accent-color: var(--theme-primary-color, #00a4dc); }
+        @media (max-width: 750px) { #AssSubsetterConfigPage .fontReplacementGrid { grid-template-columns: 1fr; } }
+        #AssSubsetterConfigPage .fontGroupFileGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: .8em; margin: .8em 0 1.2em; }
+        #AssSubsetterConfigPage .fontGroupFileCard { min-width: 0; padding: .9em; border: 1px solid color-mix(in srgb, currentColor 13%, transparent); border-radius: .5em; }
+        #AssSubsetterConfigPage .fontGroupFileCard .fontPathBlock { margin: .65em 0; }
+        #AssSubsetterConfigPage .fontGroupFileMeta { margin: .45em 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontGroupPairList { display: grid; gap: .55em; margin: .8em 0 1em; }
+        #AssSubsetterConfigPage .fontGroupPair { margin: 0; padding: .25em .75em .65em; border: 1px solid color-mix(in srgb, currentColor 13%, transparent); border-radius: .45em; }
+        #AssSubsetterConfigPage .fontGroupPair summary { line-height: 1.5; overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontGroupSectionTitle { margin: 1.2em 0 .45em; font-size: 1em; }
+        #AssSubsetterConfigPage .fontGroupTechnical { margin-top: 1.2em; }
+        #AssSubsetterConfigPage .fontGroupTechnical ul { margin: .4em 0 0; padding-left: 1.3em; line-height: 1.6; }
+        #AssSubsetterConfigPage .fontTableScroll { max-width: 100%; overflow-x: auto; margin: 1em 0; }
+        #AssSubsetterConfigPage .fontTableScroll table { width: 100%; min-width: 640px; border-collapse: collapse; }
+        #AssSubsetterConfigPage .fontTableScroll th,
+        #AssSubsetterConfigPage .fontTableScroll td { padding: .75em .9em; text-align: left; border-bottom: 1px solid color-mix(in srgb, currentColor 13%, transparent); vertical-align: top; }
+        #AssSubsetterConfigPage .fontTableScroll th { opacity: .7; font-weight: 600; white-space: nowrap; }
+        #AssSubsetterConfigPage .fontTableScroll td { overflow-wrap: anywhere; }
+        #AssSubsetterConfigPage .fontPageControls { display: flex; align-items: center; flex-wrap: wrap; gap: .7em; margin: 1em 0; }
+        #AssSubsetterConfigPage .fontPageControls button { margin: 0; }
+        #AssSubsetterConfigPage .fontPageJump { display: flex; align-items: center; gap: .5em; margin: 0; }
+        #AssSubsetterConfigPage .fontPageJump select { width: auto; min-width: 7em; margin: 0; }
+        @media (max-width: 600px) {
+            #AssSubsetterConfigPage .fontMetricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            #AssSubsetterConfigPage .fontMetricCard { padding: .8em; }
+            #AssSubsetterConfigPage .fontMetricCard dd { font-size: 1.3em; }
+            #AssSubsetterConfigPage .fontFilterGrid { grid-template-columns: minmax(0, 1fr); }
+        }
+        #AssSubsetterConfigPage .fontRuleExpression { white-space: pre-wrap; overflow-wrap: anywhere; font-family: monospace; line-height: 1.5; }
+        #AssSubsetterConfigPage .fontNamingRule { width: 100%; box-sizing: border-box; min-height: 16em; font-family: monospace; line-height: 1.5; }
+        #AssSubsetterConfigPage #FontNamingValidation { white-space: pre-wrap; margin: .7em 0; }
+        #AssSubsetterConfigPage #RenameRulesValues .fontDetailValue,
+        #AssSubsetterConfigPage #FontRenameRows .fontDetailValue { white-space: pre-wrap; overflow-wrap: anywhere; }
+    </style>
     <div data-role="content">
         <div class="content-primary">
+            <div class="emby-tabs" role="tablist" aria-label="ASS Subsetter sections">
+                <button id="GeneralSettingsTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="true" aria-controls="GeneralSettingsPanel" data-main-tab="settings">
+                    <span data-i18n="generalSettingsTab">General Settings</span>
+                </button>
+                <button id="FontManagementTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="false" aria-controls="FontManagementPanel" data-main-tab="font-management">
+                    <span data-i18n="fontManagementTab">Font Management</span>
+                </button>
+            </div>
+
+            <section id="GeneralSettingsPanel" role="tabpanel" aria-labelledby="GeneralSettingsTab">
             <form id="AssSubsetterConfigForm">
 
                 <div class="inputContainer">
@@ -26,12 +162,16 @@
                     <div class="fieldDescription" data-i18n="descCustomFontDirs">E.g., /fonts/my_anime_fonts;/media/extra_fonts. Separate multiple paths with a semicolon (;). (System default font directories are automatically included)</div>
                 </div>
 
-                <div id="SubsettingOptions">
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="FontCacheFilePath" data-i18n="fontCachePath">Font Cache File Path</label>
-                        <input id="FontCacheFilePath" name="FontCacheFilePath" type="text" is="emby-input"/>
-                        <div class="fieldDescription" data-i18n="descFontCachePath">Path to store the local font parsing index JSON database. It is recommended to leave this empty; the plugin will automatically generate font_caches.json in the internal data directory.</div>
-                    </div>
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ProtectedFontDirectories" data-i18n="protectedFontDirs">Protected Font Directories</label>
+                    <input id="ProtectedFontDirectories" name="ProtectedFontDirectories" type="text" is="emby-input"/>
+                    <div class="fieldDescription" data-i18n="descProtectedFontDirs">Additional paths that duplicate cleanup and renaming must never modify.</div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="PreferredFontDirectories" data-i18n="preferredFontDirs">Preferred Font Directories</label>
+                    <input id="PreferredFontDirectories" name="PreferredFontDirectories" type="text" is="emby-input"/>
+                    <div class="fieldDescription" data-i18n="descPreferredFontDirs">Paths preferred for runtime lookup and duplicate retention.</div>
                 </div>
 
                 <div id="SupOptions" style="display:none">
@@ -47,6 +187,40 @@
                     <input id="MaxCacheSizeMB" name="MaxCacheSizeMB" type="number" is="emby-input" min="100" max="51200" required/>
                     <div class="fieldDescription" data-i18n="descMaxCacheSize">The maximum total volume of processed temporary subtitle cache files. Once the limit is reached, the oldest cache will be automatically cleared (Recommended: 1024).</div>
                 </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="FontHistoryRetentionCount" data-i18n="fontHistoryRetention">Analysis reports and inventory generations to retain</label>
+                    <input id="FontHistoryRetentionCount" name="FontHistoryRetentionCount" type="number" is="emby-input" min="0" max="2147483647" step="1" required/>
+                    <div class="fieldDescription" data-i18n="descFontHistoryRetention">Keep the latest N analysis reports and their published inventory generations. Set to 0 to retain all. The current inventory and data needed by active operations or plans remain protected.</div>
+                </div>
+
+                <h2 data-i18n="fontRenameTab">Filename Renaming</h2>
+                <p class="fieldDescription" data-i18n="ruleSettingsIntro">Metadata case is preserved and the source extension is appended in lowercase. Folders start at the owning custom source root.</p>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="txtFontFileNameTemplate" data-i18n="fileNameRule">Filename stem rule</label>
+                    <input id="txtFontFileNameTemplate" name="FontFileNameTemplate" type="text" is="emby-input" maxlength="16384" spellcheck="false" required/>
+                </div>
+                <div class="fontActionBar">
+                    <button id="CopyDefaultFontNameTemplateButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="copyDefaultRule">Copy default rule</span></button>
+                    <button id="ResetFontNameTemplateButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="resetDefaultRule">Reset filename rule</span></button>
+                </div>
+                <textarea id="DefaultFontNameTemplate" class="fontNamingRule" readonly hidden aria-label="Default filename rule"></textarea>
+                <div class="inputContainer">
+                    <label class="inputLabel" for="txtFontFolderTemplate" data-i18n="folderRule">Folder template</label>
+                    <input id="txtFontFolderTemplate" name="FontFolderTemplate" type="text" is="emby-input" maxlength="16384" spellcheck="false"/>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="chkRemoveEmptyFontDirectories" name="RemoveEmptyFontDirectories" type="checkbox" is="emby-checkbox"/>
+                        <span data-i18n="removeEmptyDirs">Remove empty ancestor directories</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription" data-i18n="removeEmptyHelp">Only remove empty ancestors of successfully moved files.</div>
+                </div>
+                <details class="fontDisclosure">
+                    <summary data-i18n="namingHelp">Template placeholders and examples</summary>
+                    <div id="FontNamingHelpContent" class="fontDetailContent fontDetailGrid"></div>
+                </details>
+                <div id="FontNamingValidation" role="status" aria-live="polite"></div>
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
                     <label class="emby-checkbox-label">
@@ -84,144 +258,159 @@
                     </button>
                 </div>
             </form>
+            </section>
+
+            <section id="FontManagementPanel" role="tabpanel" aria-labelledby="FontManagementTab" hidden>
+                <div class="emby-tabs" role="tablist" aria-label="Font management views">
+                    <button id="FontOverviewTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="true" aria-controls="FontOverviewView" data-font-tab="overview"><span data-i18n="fontOverviewTab">Overview</span></button>
+                    <button id="FontAnalysisTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="false" aria-controls="FontAnalysisView" data-font-tab="analysis"><span data-i18n="fontAnalysisTab">Analysis Reports</span></button>
+                    <button id="FontQuarantineTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="false" aria-controls="FontQuarantineView" data-font-tab="quarantine"><span data-i18n="fontQuarantineTab">Quarantine</span></button>
+                    <button id="FontRenameTab" type="button" is="emby-button" class="emby-tab-button emby-button" role="tab" aria-selected="false" aria-controls="FontRenameView" data-font-tab="rename"><span data-i18n="fontRenameTab">Filename Renaming</span></button>
+                </div>
+
+                <div id="FontOperationStatus" class="fieldDescription" role="status" aria-live="polite"></div>
+
+                <section id="FontOverviewView" data-font-view="overview" role="tabpanel" aria-labelledby="FontOverviewTab">
+                    <h2 id="FontOverviewHeading" data-i18n="fontOverviewTab">Overview</h2>
+                    <p class="fontSectionIntro" data-i18n="overviewIntro">Published inventory, latest analysis, database health and processing times.</p>
+                    <p class="fontSectionIntro" data-i18n="publicationHelp"></p>
+                    <div id="FontOverviewState" role="status" aria-live="polite"></div>
+                    <dl id="FontOverviewValues" class="fontMetricGrid"></dl>
+                    <div class="fontActionBar">
+                        <button id="AnalyzeFontsButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="analyzeFonts">Analyze Fonts</span></button>
+                        <button id="ExportAnalysisButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="exportReport">Export Report</span></button>
+                    </div>
+
+                    <div id="FontDatabaseSummary">
+                        <h3 id="FontDatabaseHeading" class="fontSectionTitle" data-i18n="fontDatabaseTab">Database Health</h3>
+                        <p class="fontSectionIntro" data-i18n="databaseIntro">Storage state and recent font processing times.</p>
+                        <dl id="FontDatabaseValues" class="fontMetricGrid"></dl>
+                        <h3 class="fontSectionTitle" data-i18n="performanceSamples">Performance Samples</h3>
+                        <div class="fontTableScroll"><table class="detailTable"><thead><tr><th data-i18n="phaseColumn">Phase</th><th data-i18n="durationColumn">Duration</th><th data-i18n="itemsColumn">Items</th><th data-i18n="reusedColumn">Reused</th><th data-i18n="recordedColumn">Recorded</th></tr></thead><tbody id="FontPerformanceRows"></tbody></table></div>
+                        <div class="fontActionBar"><button id="RebuildDerivedDataButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="rebuildDerivedData">Rebuild Derived Data</span></button></div>
+                    </div>
+                </section>
+
+                <section id="FontAnalysisView" data-font-view="analysis" role="tabpanel" aria-labelledby="FontAnalysisTab" hidden>
+                    <h2 id="FontAnalysisHeading" data-i18n="fontAnalysisTab">Analysis Reports</h2>
+                    <p class="fontSectionIntro" data-i18n="analysisIntro">Review verified replacements and individual findings in one list.</p>
+                    <div class="fontFilterField">
+                        <label class="inputLabel inputLabelUnfocused" for="AnalysisBatchSelect" data-i18n="analysisBatch">Analysis Batch</label>
+                        <select id="AnalysisBatchSelect" is="emby-select"></select>
+                    </div>
+                    <div class="fontFilterGrid" role="group" aria-label="Report filters">
+                        <div class="fontFilterField"><label for="ReportRelationshipFilter" data-i18n="relationshipFilter">Relationship</label>
+                        <select id="ReportRelationshipFilter" is="emby-select">
+                            <option value="" data-i18n="allValues">All</option>
+                            <option value="identicalFileHash">Identical file hash</option>
+                            <option value="strictFaceDuplicate">Strict Face duplicate</option>
+                            <option value="renderingAndLayoutEquivalent">Rendering and layout equivalent</option>
+                            <option value="metadataOnlyDifference">Metadata-only difference</option>
+                            <option value="coverageSuperset">Coverage superset</option>
+                            <option value="coverageVariant">Coverage variant</option>
+                            <option value="smallGlyphDifference">Small glyph difference</option>
+                            <option value="layoutOnlyDifference">Layout-only difference</option>
+                            <option value="hintingOnlyDifference">Hinting-only difference</option>
+                            <option value="versionConflict">Version conflict</option>
+                            <option value="sameIdentityContentConflict">Same-identity content conflict</option>
+                            <option value="postScriptNameConflict">PostScript-name conflict</option>
+                            <option value="crossNameConflict">Cross-name conflict</option>
+                            <option value="independent">Independent fonts</option>
+                            <option value="unclassifiable">Unclassifiable relationship</option>
+                        </select></div>
+                        <div class="fontFilterField"><label for="ReportUnclassifiableFilter" data-i18n="unclassifiableFilter">Unclassifiable State</label>
+                        <select id="ReportUnclassifiableFilter" is="emby-select"><option value="all" data-i18n="allValues">All</option><option value="only" data-i18n="onlyUnclassifiable">Only unclassifiable</option><option value="exclude" data-i18n="excludeUnclassifiable">Exclude unclassifiable</option></select></div>
+                        <div class="fontFilterField"><label for="ReportDirectoryFilter" data-i18n="directoryFilter">Exact Directory</label>
+                        <input id="ReportDirectoryFilter" is="emby-input" type="text" maxlength="4096" /></div>
+                        <div class="fontFilterField"><label for="ReportTechnologyFilter" data-i18n="technologyFilter">Technology</label>
+                        <select id="ReportTechnologyFilter" is="emby-select"><option value="" data-i18n="allValues">All</option><option value="TrueType">TrueType</option><option value="OpenType">OpenType</option><option value="OpenType CFF">OpenType CFF</option><option value="OpenType CFF2">OpenType CFF2</option></select></div>
+                        <div class="fontFilterField"><label for="ReportActionFilter" data-i18n="actionFilter">Action</label>
+                        <select id="ReportActionFilter" is="emby-select"><option value="" data-i18n="allValues">All</option><option value="retain">Retain</option><option value="quarantineCandidate">Quarantine candidate</option><option value="reportOnly">Report only</option><option value="conflict">Conflict</option></select></div>
+                        <button id="ReportApplyFilters" type="button" is="emby-button" class="raised emby-button fontFilterButton"><span data-i18n="applyFilters">Apply Filters</span></button>
+                    </div>
+                    <div class="fontActionBar fontReportActions">
+                        <button id="QuarantineSelectedButton" type="button" is="emby-button" class="raised emby-button" disabled><span data-i18n="quarantineSelected">Quarantine Selected</span></button>
+                        <button id="ClearReportSelectionButton" type="button" is="emby-button" class="raised emby-button" disabled><span data-i18n="clearSelection">Clear selection</span></button>
+                        <span id="ReportSelectionStatus" role="status" aria-live="polite"></span>
+                        <button id="QuarantineAllVerifiedButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="quarantineAllVerified">Quarantine All Verified</span></button>
+                    </div>
+                    <div id="FontReportState" role="status" aria-live="polite"></div>
+                    <div id="analysis-report-rows" class="fontReportList"></div>
+                    <div class="fontPageControls">
+                        <button id="ReportPreviousPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="previousPage">Previous</span></button>
+                        <span id="ReportPageStatus"></span>
+                        <label class="fontPageJump">
+                            <span data-i18n="jumpToPage">Go to page</span>
+                            <select id="ReportPageSelect" is="emby-select" disabled></select>
+                        </label>
+                        <button id="ReportNextPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="nextPage">Next</span></button>
+                    </div>
+                </section>
+
+                <section id="FontQuarantineView" data-font-view="quarantine" role="tabpanel" aria-labelledby="FontQuarantineTab" hidden>
+                    <h2 id="FontQuarantineHeading" data-i18n="fontQuarantineTab">Quarantine</h2>
+                    <p class="fontSectionIntro" data-i18n="quarantineIntro">Review each source font, outcome, and recovery state.</p>
+                    <div class="fontQuarantineTabs" role="group" aria-label="Quarantine status">
+                        <button id="QuarantineQuarantinedTab" type="button" is="emby-button" class="emby-button" aria-pressed="true" data-i18n="quarantineDone">Quarantined</button>
+                        <button id="QuarantinePendingTab" type="button" is="emby-button" class="emby-button" aria-pressed="false" data-i18n="quarantineWaiting">Pending</button>
+                        <button id="QuarantineFailedTab" type="button" is="emby-button" class="emby-button" aria-pressed="false" data-i18n="quarantineFailed">Failed</button>
+                    </div>
+                    <div id="FontQuarantineState" role="status" aria-live="polite"></div>
+                    <div id="FontQuarantineRows" class="fontQuarantineList"></div>
+                    <div class="fontPageControls">
+                        <button id="QuarantinePreviousPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="previousPage">Previous</span></button>
+                        <span id="QuarantinePageStatus"></span>
+                        <label class="fontPageJump">
+                            <span data-i18n="jumpToPage">Go to page</span>
+                            <select id="QuarantinePageSelect" is="emby-select" disabled></select>
+                        </label>
+                        <button id="QuarantineNextPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="nextPage">Next</span></button>
+                    </div>
+                    <button id="RefreshQuarantineButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="refreshQuarantine">Refresh</span></button>
+                    <button id="RestoreSelectedButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="restoreSelected">Restore Selected Fonts</span></button>
+                    <button id="PurgeExpiredButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="purgeExpired">Purge Expired</span></button>
+                </section>
+
+                <section id="FontRenameView" data-font-view="rename" role="tabpanel" aria-labelledby="FontRenameTab" hidden>
+                    <h2 id="FontRenameHeading" data-i18n="fontRenameTab">Filename Renaming</h2>
+                    <p class="fontSectionIntro" data-i18n="publicationHelp"></p>
+                    <p class="fontSectionIntro" data-i18n="renameIntro">Review current source paths and targets before execution.</p>
+                    <div class="fontActionBar">
+                        <button id="RefreshRenameCandidatesButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="refreshRenameCandidates">Refresh rename candidates</span></button>
+                        <span id="RenameContextValidity" role="status" aria-live="polite"></span>
+                    </div>
+                    <details class="fontDisclosure">
+                        <summary data-i18n="renameRules">Preview rules</summary>
+                        <div id="RenameRulesValues" class="fontDetailContent fontDetailGrid"></div>
+                    </details>
+                    <div class="fontActionBar fontRenameStatusTabs" role="tablist" aria-label="Rename status">
+                        <button id="RenameStatus-pending" type="button" is="emby-button" role="tab" aria-selected="true" class="emby-button"><span data-i18n="renamePendingFilter">Pending</span></button>
+                        <button id="RenameStatus-skipped" type="button" is="emby-button" role="tab" aria-selected="false" class="emby-button"><span data-i18n="renameSkippedFilter">Skipped</span></button>
+                        <button id="RenameStatus-failed" type="button" is="emby-button" role="tab" aria-selected="false" class="emby-button"><span data-i18n="renameFailedFilter">Failed</span></button>
+                        <button id="RenameStatus-renamed" type="button" is="emby-button" role="tab" aria-selected="false" class="emby-button"><span data-i18n="renameRenamedFilter">Renamed</span></button>
+                        <button id="RenameStatus-rolledback" type="button" is="emby-button" role="tab" aria-selected="false" class="emby-button"><span data-i18n="renameRolledbackFilter">Rolled back</span></button>
+                    </div>
+                    <div id="FontRenameState" role="status" aria-live="polite"></div>
+                    <div id="FontRenameRows" class="fontRenameList"></div>
+                    <div class="fontPageControls">
+                        <button id="RenameItemsPreviousPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="previousPage">Previous</span></button>
+                        <span id="RenameItemsPageStatus"></span>
+                        <label class="fontPageJump">
+                            <span data-i18n="jumpToPage">Go to page</span>
+                            <select id="RenameItemsPageSelect" is="emby-select" disabled></select>
+                        </label>
+                        <button id="RenameItemsNextPage" type="button" is="emby-button" class="raised emby-button"><span data-i18n="nextPage">Next</span></button>
+                    </div>
+                    <div class="fontActionBar">
+                        <button id="NormalizeSelectedButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="normalizeSelected">Rename Selected</span></button>
+                        <button id="RollbackSelectedButton" type="button" is="emby-button" class="raised emby-button"><span data-i18n="rollbackSelected">Rollback Selected</span></button>
+                    </div>
+                </section>
+
+            </section>
         </div>
     </div>
-    <script type="text/javascript">
-            var AssSubsetterConfig = {
-                pluginUniqueId: '7d13aa46-8b4a-ce85-9648-2cf4f52b8222'
-            };
 
-            var i18nStrings = {
-                zh: {
-                    subtitleMode: '字幕处理模式',
-                    customFontDirs: '自定义源字体目录',
-                    fontCachePath: '字体缓存文件路径',
-                    scanFrameRate: '扫描帧率',
-                    maxCacheSize: '最大缓存容量限制 (MB)',
-                    enableAutoScan: '开启自动扫描预处理',
-                    enablePrefetch: '开启播放时提前处理下一集',
-                    prefetchTrigger: '提前处理触发进度',
-                    fallbackOnError: '异常时回退至原版字幕',
-                    saveBtn: '保存',
-                    optSubsetting: '字体子集化',
-                    optConvertSup: '转换为 SUP 位图字幕',
-                    optGenerateMks: '生成 MKS（实验性）',
-                    descSubtitleMode: '选择字幕处理方式。MKS 生成为实验性功能，面向 mpv 等兼容播放器，必须手动启用，不会根据客户端自动选择。各模式互斥。',
-                    descCustomFontDirs: '例如：/fonts/my_anime_fonts;/media/extra_fonts。多个路径请用分号 ; 隔开。(系统默认字体目录已被自动包含，无需填写)',
-                    descFontCachePath: '本地字体解析索引 JSON 数据库存储路径。建议保持留空，插件会自动在内部数据目录生成 font_caches.json。',
-                    descScanFrameRate: 'ASS 转 SUP 时的渲染采样帧率。值越高动画越流畅但文件越大（推荐值: 24）。视频分辨率从元数据自动获取。',
-                    descMaxCacheSize: '处理后的临时字幕缓存文件的最大总体积。达到上限后将自动清理最旧的缓存（推荐值: 1024）。',
-                    descAutoScan: '开启后，媒体库添加入库新视频时将自动在后台预处理字幕缓存。',
-                    descPrefetch: '开启后，当检测到用户播放进度接近当前剧集结尾时，自动在后台提前处理下一集的所有 ASS 字幕。',
-                    descPrefetchTrigger: '当播放进度达到此百分比时触发下一集的提前处理（推荐值: 85）。',
-                    descFallback: '开启后，如果处理失败将无缝返回原始字幕，确保播放不中断。'
-                },
-                en: {
-                    subtitleMode: 'Subtitle Processing Mode',
-                    customFontDirs: 'Custom Font Directories',
-                    fontCachePath: 'Font Cache File Path',
-                    scanFrameRate: 'Scan Frame Rate',
-                    maxCacheSize: 'Max Cache Size (MB)',
-                    enableAutoScan: 'Enable Auto Scan Processing',
-                    enablePrefetch: 'Enable Prefetch Next Episode',
-                    prefetchTrigger: 'Prefetch Trigger Percent (%)',
-                    fallbackOnError: 'Fallback to Original on Error',
-                    saveBtn: 'Save',
-                    optSubsetting: 'Font Subsetting',
-                    optConvertSup: 'Convert to SUP/PGS',
-                    optGenerateMks: 'Generate MKS (Experimental)',
-                    descSubtitleMode: 'Choose the subtitle processing mode. MKS generation is experimental, targets compatible players such as mpv, must be enabled manually, and is never selected through client detection. The modes are mutually exclusive.',
-                    descCustomFontDirs: 'E.g., /fonts/my_anime_fonts;/media/extra_fonts. Separate multiple paths with a semicolon (;). (System default font directories are automatically included)',
-                    descFontCachePath: 'Path to store the local font parsing index JSON database. It is recommended to leave this empty; the plugin will automatically generate font_caches.json in the internal data directory.',
-                    descScanFrameRate: 'Rendering sampling frame rate during ASS to SUP conversion. Higher values result in smoother animations but larger files (Recommended: 24). Video resolution is automatically fetched from metadata.',
-                    descMaxCacheSize: 'The maximum total volume of processed temporary subtitle cache files. Once the limit is reached, the oldest cache will be automatically cleared (Recommended: 1024).',
-                    descAutoScan: 'When enabled, new videos added to the media library will automatically have their subtitles pre-processed in the background.',
-                    descPrefetch: 'When enabled, the plugin will automatically pre-process all ASS subtitles for the next episode in the background when the user\'s playback progress nears the end of the current episode.',
-                    descPrefetchTrigger: 'Triggers the pre-processing of the next episode when playback progress reaches this percentage (Recommended: 85).',
-                    descFallback: 'When enabled, if processing fails, the original subtitle will be seamlessly returned to ensure playback is not interrupted.'
-                }
-            };
-
-            function applyLocalization(locale) {
-                var lang = (locale && locale.toLowerCase().startsWith('zh')) ? 'zh' : 'en';
-                var strings = i18nStrings[lang];
-                if (!strings) return;
-                
-                document.querySelectorAll('[data-i18n]').forEach(function(el) {
-                    var key = el.getAttribute('data-i18n');
-                    if (strings[key]) {
-                        el.textContent = strings[key];
-                    }
-                });
-            }
-
-            function updateModeVisibility() {
-                var mode = document.querySelector('#SubtitleMode').value;
-                var subsettingOpts = document.querySelector('#SubsettingOptions');
-                var supOpts = document.querySelector('#SupOptions');
-                if (mode === '1') {
-                    subsettingOpts.style.display = 'none';
-                    supOpts.style.display = '';
-                } else {
-                    subsettingOpts.style.display = '';
-                    supOpts.style.display = 'none';
-                }
-            }
-
-            document.querySelector('#SubtitleMode').addEventListener('change', updateModeVisibility);
-
-            document.querySelector('#AssSubsetterConfigPage').addEventListener('pageshow', function () {
-                Dashboard.showLoadingMsg();
-                Promise.all([
-                    ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId),
-                    ApiClient.getServerConfiguration()
-                ]).then(function (results) {
-                    var config = results[0];
-                    var serverConfig = results[1];
-
-                    applyLocalization(serverConfig.UICulture);
-
-                    var modeVal = config.SubtitleMode;
-                    if (modeVal === 'Subsetting' || modeVal === 0) modeVal = '0';
-                    if (modeVal === 'ConvertToSup' || modeVal === 1) modeVal = '1';
-                    if (modeVal === 'GenerateMks' || modeVal === 2) modeVal = '2';
-
-                    document.querySelector('#SubtitleMode').value = modeVal || '0';
-                    document.querySelector('#CustomFontDirectories').value = config.CustomFontDirectories || "";
-                    document.querySelector('#FontCacheFilePath').value = config.FontCacheFilePath || "";
-                    document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
-                    document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false;
-                    document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false;
-                    document.querySelector('#PrefetchTriggerPercent').value = config.PrefetchTriggerPercent || 90;
-                    document.querySelector('#FallbackToOriginalOnError').checked = config.FallbackToOriginalOnError !== false;
-                    document.querySelector('#AssToSupFrameRate').value = config.AssToSupFrameRate || 24;
-                    updateModeVisibility();
-                    Dashboard.hideLoadingMsg();
-                });
-            });
-
-            document.querySelector('#AssSubsetterConfigForm').addEventListener('submit', function (e) {
-                e.preventDefault();
-                Dashboard.showLoadingMsg();
-
-                ApiClient.getPluginConfiguration(AssSubsetterConfig.pluginUniqueId).then(function (config) {
-                    config.SubtitleMode = parseInt(document.querySelector('#SubtitleMode').value || "0", 10);
-                    config.CustomFontDirectories = document.querySelector('#CustomFontDirectories').value;
-                    config.FontCacheFilePath = document.querySelector('#FontCacheFilePath').value;
-                    config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
-                    config.EnableAutoScanProcessing = document.querySelector('#EnableAutoScanProcessing').checked;
-                    config.EnablePrefetchSubsetting = document.querySelector('#EnablePrefetchSubsetting').checked;
-                    config.PrefetchTriggerPercent = parseInt(document.querySelector('#PrefetchTriggerPercent').value || "90", 10);
-                    config.FallbackToOriginalOnError = document.querySelector('#FallbackToOriginalOnError').checked;
-                    config.AssToSupFrameRate = parseInt(document.querySelector('#AssToSupFrameRate').value || "24", 10);
-
-                    ApiClient.updatePluginConfiguration(AssSubsetterConfig.pluginUniqueId, config).then(function (result) {
-                        Dashboard.processPluginConfigurationUpdateResult(result);
-                    });
-                });
-                return false;
-            });
-        </script>
 </div>
 </body>
 </html>

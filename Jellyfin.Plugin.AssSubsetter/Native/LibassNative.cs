@@ -109,6 +109,16 @@ internal static partial class LibassNative
         IntPtr library,
         string fontsDir);
 
+    /// <summary>Registers a font attachment supplied in memory.</summary>
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_add_font", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static unsafe partial void AssAddFont(IntPtr library, string name, byte* data, int dataSize);
+
+    /// <summary>Reads an ASS subtitle script from memory.</summary>
+    [LibraryImport(LibassLibrary, EntryPoint = "ass_read_memory", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    internal static unsafe partial IntPtr AssReadMemory(IntPtr library, byte* data, nuint dataSize, string? codepage);
+
     /// <summary>
     ///     Reads a subtitle file and creates an ASS_Track.
     /// </summary>
