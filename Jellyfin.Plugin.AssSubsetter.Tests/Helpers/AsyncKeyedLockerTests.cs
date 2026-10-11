@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
@@ -40,7 +41,7 @@ public class AsyncKeyedLockerTests
 
         for (int index = 0; index < 100; index++)
         {
-            using IDisposable lease = await locker.LockAsync(index.ToString(), TestContext.Current.CancellationToken);
+            using IDisposable lease = await locker.LockAsync(index.ToString(CultureInfo.InvariantCulture), TestContext.Current.CancellationToken);
         }
 
         Assert.Equal(0, locker.ActiveKeyCount);
@@ -54,7 +55,7 @@ public class AsyncKeyedLockerTests
         using var cancellation = new CancellationTokenSource();
         Task<IDisposable> waitingTask = locker.LockAsync("same", cancellation.Token).AsTask();
 
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waitingTask);
         Assert.Equal(1, locker.ActiveKeyCount);
 

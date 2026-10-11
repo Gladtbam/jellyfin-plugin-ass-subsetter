@@ -21,7 +21,7 @@ public class FilenameSanitizerTests
     {
         string name = FilenameSanitizer.LimitPath(new string('a', 300), ".ttf", "-a1b2c3d4", 80);
         Assert.True(name.Length <= 80);
-        Assert.EndsWith("-a1b2c3d4.ttf", name);
+        Assert.EndsWith("-a1b2c3d4.ttf", name, StringComparison.Ordinal);
     }
 
     [Fact]

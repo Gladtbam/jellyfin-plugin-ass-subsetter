@@ -26,7 +26,7 @@ public sealed class FontTaskProgressTests
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
         Assert.Equal(new[] { 0d, 40d, 99d, 100d }, reports);
-        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("ElapsedMs") && entry.Message.Contains("RequestId: 3"));
+        Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("ElapsedMs", StringComparison.Ordinal) && entry.Message.Contains("RequestId: 3", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -52,7 +52,7 @@ public sealed class FontTaskProgressTests
         Assert.Equal(4L, exception.Data[FontScheduledTaskExecution.OperationRequestIdDataKey]);
         Assert.Equal(9L, exception.Data[FontScheduledTaskExecution.BatchIdDataKey]);
         Assert.Equal(new[] { 0d, 60d }, reports);
-        Assert.Contains(logger.Entries, entry => entry.Message.Contains("ElapsedMs") && entry.Message.Contains("BatchId: 9"));
+        Assert.Contains(logger.Entries, entry => entry.Message.Contains("ElapsedMs", StringComparison.Ordinal) && entry.Message.Contains("BatchId: 9", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public sealed class FontTaskProgressTests
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
         var task = new FontCacheUpdateTask(executor.Object, NullLogger<FontCacheUpdateTask>.Instance);
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.ExecuteAsync(new InlineProgress(_ => { }), cancellation.Token));
 

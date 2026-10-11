@@ -100,7 +100,7 @@ public class FontFilenameNormalizerTests
         FontFileRecord[] files = [File(1, "a.ttf", Face(new string('a', 250) + "b", "Regular")), File(2, "b.ttf", Face(new string('a', 250) + "c", "Regular"))];
         var names = Resolve(files);
         Assert.NotEqual(names[1], names[2]);
-        Assert.EndsWith("-Regular-v2.003-00112233.ttf", names[2]);
+        Assert.EndsWith("-Regular-v2.003-00112233.ttf", names[2], StringComparison.Ordinal);
     }
 
     [Fact]
@@ -508,7 +508,7 @@ public class FontFilenameNormalizerTests
         var manifest = (await fixture.Manifests.LoadAllAsync(CancellationToken.None)).Single();
         Assert.Contains(manifest.Directories, item => item.Status == RenameDirectoryStatus.Warning);
         Assert.True(Directory.Exists(Path.GetDirectoryName(source.Path)));
-        Assert.Contains("Directories", batch.SummaryJson);
+        Assert.Contains("Directories", batch.SummaryJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -554,7 +554,7 @@ public class FontFilenameNormalizerTests
         Assert.False(Directory.Exists(Path.Combine(fixture.Root, "old")));
         var batch = (await fixture.Repository.GetMaintenanceBatchByOperationRequestAsync(request.Id, CancellationToken.None))!;
         Assert.Equal(RenameItemStatus.Renamed, batch.RenameItems.Single().Status);
-        Assert.Contains("RemoveEmpty", batch.SummaryJson);
+        Assert.Contains("RemoveEmpty", batch.SummaryJson, StringComparison.Ordinal);
     }
 
     [Fact]

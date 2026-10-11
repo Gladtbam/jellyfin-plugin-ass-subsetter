@@ -27,10 +27,10 @@ public sealed class FontMaintenanceTaskTests
         var previous = await repository.PublishAnalysisAsync(Analysis(old), CancellationToken.None);
         using var cancellation = new CancellationTokenSource();
         using var executor = CreateExecutor(repository,
-            prepare: (_, token) =>
+            prepare: async (_, token) =>
             {
-                cancellation.Cancel();
-                return Task.FromCanceled<FontRenameCandidatePreparation>(token);
+                await cancellation.CancelAsync();
+                return await Task.FromCanceled<FontRenameCandidatePreparation>(token);
             },
             validate: (_, _) => throw new InvalidOperationException("Validation must follow candidate preparation."),
             publish: (_, _) => throw new InvalidOperationException("Cancelled preparation must not publish."));
@@ -162,7 +162,7 @@ public sealed class FontMaintenanceTaskTests
                         await System.IO.File.WriteAllBytesAsync(path, [4, 3, 2, 1], CancellationToken.None);
                         System.IO.File.SetLastWriteTimeUtc(path, modified);
                     }
-                    if (drift == "cancel") cancellation.Cancel();
+                    if (drift == "cancel") await cancellation.CancelAsync();
                     if (drift == "superseded")
                     {
                         expectedGeneration = await repository.BeginGenerationAsync(scan.Input, [], CancellationToken.None);
@@ -171,8 +171,8 @@ public sealed class FontMaintenanceTaskTests
                     }
                     return scan;
                 },
-                analyze: (_, _) => throw new Exception("Unchanged input must not analyze"),
-                publish: (_, _) => throw new Exception("Unchanged input must not publish"),
+                analyze: (_, _) => throw new NotSupportedException("Unchanged input must not analyze"),
+                publish: (_, _) => throw new NotSupportedException("Unchanged input must not publish"),
                 validate: (scan, token) => scanner.ValidatePublicationInputsAsync(scan, token));
             if (drift == "cancel")
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.RefreshInventoryAndAnalyzeAsync(new InlineProgress(_ => { }), cancellation.Token));
@@ -523,10 +523,10 @@ public sealed class FontMaintenanceTaskTests
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.Analyze, "cancelled-analyze");
         using var cancellation = new CancellationTokenSource();
-        var executor = CreateExecutor(repository, refresh: (_, _, _) =>
+        var executor = CreateExecutor(repository, refresh: async (_, _, _) =>
         {
-            cancellation.Cancel();
-            return Task.FromCanceled<FontInventoryScanResult>(cancellation.Token);
+            await cancellation.CancelAsync();
+            return await Task.FromCanceled<FontInventoryScanResult>(cancellation.Token);
         });
 
         OperationCanceledException exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(
@@ -802,10 +802,10 @@ public sealed class FontMaintenanceTaskTests
         var repository = new InMemoryFontRepository();
         await CreateTaskRequestAsync(repository, FontOperationKind.Purge, "cancelled-purge");
         using var cancellation = new CancellationTokenSource();
-        var executor = CreateExecutor(repository, purge: _ =>
+        var executor = CreateExecutor(repository, purge: async _ =>
         {
-            cancellation.Cancel();
-            return Task.FromCanceled<int>(cancellation.Token);
+            await cancellation.CancelAsync();
+            return await Task.FromCanceled<int>(cancellation.Token);
         });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.PurgeExpiredQuarantineAsync(new InlineProgress(_ => { }), cancellation.Token));

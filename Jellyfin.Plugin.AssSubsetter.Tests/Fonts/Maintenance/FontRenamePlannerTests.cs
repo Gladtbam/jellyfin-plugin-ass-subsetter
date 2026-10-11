@@ -205,7 +205,7 @@ public sealed class FontRenamePlannerTests : IDisposable
         var first = Source(Path.Combine(_root, "a.ttf")) with { Faces = [FontNamingTestData.Face(names: [(1, "Family")]) with { Version = "1.004" }] };
         var second = Source(Path.Combine(_root, "b.ttf")) with { Id = 2, Faces = [FontNamingTestData.Face(0, 1, (1, "Family")) with { Version = "2.0" }] };
         var plan = Build([second, first], new("{family}", "", false));
-        Assert.All(plan.Items, item => Assert.DoesNotContain("-v", item.NewPath!));
+        Assert.All(plan.Items, item => Assert.DoesNotContain("-v", item.NewPath!, StringComparison.Ordinal));
         Assert.All(plan.Items, item => Assert.Contains(item.NamingEvidence.Fields, field => field.Name == "version"));
         Assert.Equal(1, plan.Items.Count(item => item.CollisionFingerprint is not null));
     }
@@ -228,8 +228,8 @@ public sealed class FontRenamePlannerTests : IDisposable
         var plan = Build([first, second], new(FontNamingRules.DefaultFileNameTemplate, "", false));
         Assert.All(plan.Items, item => Assert.Null(item.SkipReason));
         Assert.All(plan.Items, item => Assert.True(System.Text.Encoding.UTF8.GetByteCount(item.NewPath!) <= 240));
-        Assert.EndsWith("-Bold-v1.004.otf", plan.Items[0].NewPath);
-        Assert.EndsWith("-Bold-v1.004-abababab.otf", plan.Items[1].NewPath);
+        Assert.EndsWith("-Bold-v1.004.otf", plan.Items[0].NewPath, StringComparison.Ordinal);
+        Assert.EndsWith("-Bold-v1.004-abababab.otf", plan.Items[1].NewPath, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -299,7 +299,7 @@ public sealed class FontRenamePlannerTests : IDisposable
     {
         var source = Source(Path.Combine(_root, "old.ttf")) with { Faces = [FontNamingTestData.Face(names: [(1, "Family")]) with { StrictFingerprint = new byte[4] }] };
         Assert.Null(Build([source], new("{family}", "", false)).Items.Single().SkipReason);
-        Assert.Contains("invalid-fingerprint", Build([source], new("{fingerprint}", "", false)).Items.Single().SkipReason!);
+        Assert.Contains("invalid-fingerprint", Build([source], new("{fingerprint}", "", false)).Items.Single().SkipReason!, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -329,7 +329,7 @@ public sealed class FontRenamePlannerTests : IDisposable
         var rules = new FontNamingRules("{family}", "", false);
         var plan = Build([third, first, second], rules);
         Assert.Equal("fingerprint-collision", plan.Items.Single(item => item.File.Id == 3).SkipReason);
-        Assert.EndsWith("-aabbccdd.ttf", plan.Items.Single(item => item.File.Id == 2).NewPath);
+        Assert.EndsWith("-aabbccdd.ttf", plan.Items.Single(item => item.File.Id == 2).NewPath, StringComparison.Ordinal);
         Assert.Equal(plan.Items.Select(item => item.NewPath), Build([second, third, first], rules).Items.Select(item => item.NewPath));
     }
     public void Dispose()

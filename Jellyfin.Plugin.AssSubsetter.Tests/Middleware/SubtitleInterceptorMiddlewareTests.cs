@@ -22,7 +22,7 @@ using Xunit;
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Middleware;
 
 [Collection("PluginInstance")]
-public class SubtitleInterceptorMiddlewareTests : IDisposable
+public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly Mock<SubtitleCacheService> _mockCacheService;
@@ -168,7 +168,7 @@ public class SubtitleInterceptorMiddlewareTests : IDisposable
             It.IsAny<It.IsAnyType>(),
             It.IsAny<Exception>(),
             (Func<It.IsAnyType, Exception?, string>)It.IsAny<object>()))
-        .Callback((LogLevel l, EventId e, object v, Exception ex, object f) => throw new Exception("Middleware threw: " + ex));
+        .Callback((LogLevel l, EventId e, object v, Exception ex, object f) => throw new InvalidOperationException("Middleware threw: " + ex, ex));
 
         var middleware = CreateMiddleware(mockLogger.Object);
 

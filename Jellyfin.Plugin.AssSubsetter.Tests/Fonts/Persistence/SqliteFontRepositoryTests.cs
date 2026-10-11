@@ -1152,7 +1152,7 @@ public sealed partial class SqliteFontRepositoryTests
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = commandText;
         object? value = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
-        return Assert.IsType<T>(Convert.ChangeType(value, typeof(T)));
+        return Assert.IsType<T>(Convert.ChangeType(value, typeof(T), System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static FontFileRecord CreateFile(string path, string familyName)

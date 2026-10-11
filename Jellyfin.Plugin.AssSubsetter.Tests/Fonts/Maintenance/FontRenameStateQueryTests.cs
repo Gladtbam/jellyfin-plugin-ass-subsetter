@@ -10,6 +10,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 
 public sealed class FontRenameStateQueryTests : IDisposable
 {
+    private static readonly System.Text.Json.JsonSerializerOptions WebJsonOptions = new(System.Text.Json.JsonSerializerDefaults.Web);
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rename-state-" + Guid.NewGuid().ToString("N"));
     private readonly InMemoryFontRepository _repository = new();
     private readonly FontNamingRules _rules = new("{family}", "", false);
@@ -27,7 +28,7 @@ public sealed class FontRenameStateQueryTests : IDisposable
         _repository.ThrowOnFullRenameReads = true;
         int reads = _repository.InventoryLoadCallCount;
         var row = Assert.Single((await _query.GetPageAsync("skipped", 1, 50, CancellationToken.None)).Items);
-        var json = System.Text.Json.JsonSerializer.SerializeToElement(row.Item, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(row.Item, WebJsonOptions);
         Assert.Equal(error, json.GetProperty("inspectionError").GetString());
         Assert.Equal("unclassifiable-or-link", row.Item.Error);
         Assert.False(row.CanExecute);

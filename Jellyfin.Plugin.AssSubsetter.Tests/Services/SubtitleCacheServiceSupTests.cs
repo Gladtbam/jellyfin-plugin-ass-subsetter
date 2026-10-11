@@ -14,7 +14,7 @@ using Xunit;
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
 [Collection("PluginInstance")]
-public class SubtitleCacheServiceSupTests : IDisposable
+public sealed class SubtitleCacheServiceSupTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly string _customCachePath;
@@ -183,7 +183,7 @@ public class SubtitleCacheServiceSupTests : IDisposable
         await Task.Delay(300, TestContext.Current.CancellationToken);
 
         // Cancel to clean up
-        cts.Cancel();
+        await cts.CancelAsync();
 
         // Assert — GetOrGenerateSupAsync should be called at most once (second call deduped)
         mockCacheService.Protected().Verify(

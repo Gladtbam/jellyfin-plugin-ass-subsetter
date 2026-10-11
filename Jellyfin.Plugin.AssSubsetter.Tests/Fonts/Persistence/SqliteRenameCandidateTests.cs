@@ -7,6 +7,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 
 public sealed class SqliteRenameCandidateTests
 {
+    private static readonly System.Text.Json.JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+
     [Fact]
     public async Task Measure17543PhysicalCandidatesAndMixedDatabasePages()
     {
@@ -18,7 +20,7 @@ public sealed class SqliteRenameCandidateTests
             DirectoryPolicy = index % 7 == 0 ? FontDirectoryPolicy.Protected : FontDirectoryPolicy.Custom,
             Faces = [new FontFaceRecord { Id = item.File.Id * 10, FaceIndex = 0, StrictFingerprint = new byte[32], FamilyName = "Example", StyleName = "Regular", Names = ["Example"], Technology = "TrueType" }]
         }).ToArray();
-        foreach (var file in files) File.WriteAllBytes(file.Path, new byte[128]);
+        foreach (var file in files) await File.WriteAllBytesAsync(file.Path, new byte[128], TestContext.Current.CancellationToken);
         double setupMs = clock.Elapsed.TotalMilliseconds;
         var rules = new FontNamingRules("{originalName}-renamed", "", false);
         var requirements = fixture.Requirements with { RuleFingerprint = rules.GetFingerprint() };
@@ -66,7 +68,7 @@ public sealed class SqliteRenameCandidateTests
         }
 
         var details = new { environment = System.Runtime.InteropServices.RuntimeInformation.OSDescription, fileCount = files.Length, syntheticFontMetadata = true, realTemporaryFilesystem = true, setupMilliseconds = setupMs, generationMilliseconds = generationMs, persistenceMilliseconds = persistMs, pages };
-        string json = System.Text.Json.JsonSerializer.Serialize(details, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        string json = System.Text.Json.JsonSerializer.Serialize(details, IndentedJsonOptions);
         TestContext.Current.TestOutputHelper?.WriteLine(json);
         string? output = Environment.GetEnvironmentVariable("ASS_RENAME_MEASUREMENT_OUTPUT");
         if (output is not null) await File.WriteAllTextAsync(output, json, TestContext.Current.CancellationToken);
@@ -375,7 +377,7 @@ public sealed class SqliteRenameCandidateTests
         var second = await store.CreateRenameExecutionAsync(firstPayload with { Items = [CandidateItem(fixture.Items[1])] }, "other-source", CancellationToken.None);
         Assert.Equal(OperationRequestStatus.Pending, second.Status);
         var conflict = await Assert.ThrowsAsync<InvalidOperationException>(() => store.CreateRenameExecutionAsync(firstPayload, "same-source", CancellationToken.None));
-        Assert.Contains("active filename authorization", conflict.Message);
+        Assert.Contains("active filename authorization", conflict.Message, StringComparison.Ordinal);
     }
 
 
@@ -466,7 +468,7 @@ public sealed class SqliteRenameCandidateTests
             var repository = new SqliteFontRepository(database);
             await repository.InitializeAsync(CancellationToken.None);
             long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-            await repository.WriteInventoryAsync(generation, (count == 2 ? new[] { "a.ttf", "b.ttf" } : Enumerable.Range(0, count).Select(index => "source-" + index.ToString("D6") + ".ttf").ToArray()).Select(name => new FontFileRecord
+            await repository.WriteInventoryAsync(generation, (count == 2 ? new[] { "a.ttf", "b.ttf" } : Enumerable.Range(0, count).Select(index => "source-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf").ToArray()).Select(name => new FontFileRecord
             {
                 Path = Path.Combine(root, name), NormalizedPath = Path.Combine(root, name), PhysicalIdentity = name, Size = 128,
                 ModifiedUtc = DateTimeOffset.UnixEpoch, Sha256 = new byte[32], Health = FontFileHealth.Healthy, Faces = []
@@ -475,7 +477,7 @@ public sealed class SqliteRenameCandidateTests
             var files = await repository.LoadInventoryAsync(generation, CancellationToken.None);
             var rules = new FontNamingRules(FontNamingRules.DefaultFileNameTemplate, "", false);
             var state = new FontRenameCandidateState(generation, analysis.Id, rules, rules.GetFingerprint(), 1, FontRenameCandidateGenerationStatus.Ready, DateTimeOffset.UnixEpoch, null, null);
-            var items = files.Select((file, index) => new FontRenameCandidate { File = file, SourceRoot = root, NewPath = Path.Combine(root, count == 2 ? (index == 0 ? "Example.ttf" : "Second.ttf") : "Target-" + index.ToString("D6") + ".ttf"), SkipReason = count == 2 ? (index == 0 ? null : "test-skip") : (index % 7 == 0 ? "test-skip" : null) }).ToArray();
+            var items = files.Select((file, index) => new FontRenameCandidate { File = file, SourceRoot = root, NewPath = Path.Combine(root, count == 2 ? (index == 0 ? "Example.ttf" : "Second.ttf") : "Target-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf"), SkipReason = count == 2 ? (index == 0 ? null : "test-skip") : (index % 7 == 0 ? "test-skip" : null) }).ToArray();
             return new(paths, database, repository, state, items);
         }
 
