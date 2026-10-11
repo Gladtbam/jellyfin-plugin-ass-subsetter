@@ -106,7 +106,7 @@ dotnet publish Jellyfin.Plugin.AssSubsetter/Jellyfin.Plugin.AssSubsetter.csproj 
 运行测试：
 
 ```sh
-dotnet test Jellyfin.Plugin.AssSubsetter.Tests/Jellyfin.Plugin.AssSubsetter.Tests.csproj -c Release
+dotnet test --project Jellyfin.Plugin.AssSubsetter.Tests/Jellyfin.Plugin.AssSubsetter.Tests.csproj -c Release
 ```
 
 使用 PowerShell 检查发布包中是否误带宿主提供的数据库运行时：
