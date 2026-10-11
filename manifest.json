@@ -6,7 +6,16 @@
         "description": "全自动、零配置的外挂 ASS 字幕字体子集化流媒体优化插件",
         "overview": "字体子集化并嵌入 ASS 字幕文件",
         "owner": "Gladtbam",
+        "imageUrl": "https://gladtbam.github.io/jellyfin-plugin-ass-subsetter/poster.png",
         "versions": [
+            {
+                "version": "3.0.0.0",
+                "changelog": "feat: 引入字体库存分析、隔离恢复与文件名重命名管理",
+                "targetAbi": "10.11.9.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v3.0.0.0/Jellyfin.Plugin.AssSubsetter_3.0.0.0.zip",
+                "checksum": "866d18d29dd97ed202dea981628b24c1",
+                "timestamp": "2026-10-11T10:02:05.20Z"
+            },
             {
                 "version": "2.3.0.0",
                 "changelog": "feat: 实现计划任务与配置界面的极简多语言支持\n\nfeat: 添加实验性MKS字幕封装模式\n\nfix: 按媒体源和索引精确处理字幕流\n\nfix: 原子提交ASS和SUP缓存产物\n\nfix: 完善字幕缓存与后台任务生命周期",
