@@ -18,7 +18,7 @@ public sealed class FontDuplicateAnalyzerTests
             source,
             new FontRelationshipClassifier(),
             new FontRetentionSelector(),
-            new FixedTimeProvider(DateTimeOffset.Parse("2026-08-02T12:00:00Z")));
+            new FixedTimeProvider(DateTimeOffset.Parse("2026-08-02T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture)));
 
         AnalysisBatch result = await analyzer.AnalyzeAsync(42, null, CancellationToken.None);
 
@@ -130,7 +130,7 @@ public sealed class FontDuplicateAnalyzerTests
     {
         var repository = new InMemoryFontRepository();
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
         var analyzer = new FontDuplicateAnalyzer(
             new StubEvidenceSource(Snapshot()),
             new FontRelationshipClassifier(),

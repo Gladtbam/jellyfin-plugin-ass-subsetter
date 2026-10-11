@@ -15,7 +15,7 @@ using Xunit;
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
 [Collection("PluginInstance")]
-public class PlaybackPrefetchServiceTests : IDisposable
+public sealed class PlaybackPrefetchServiceTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly Mock<ISessionManager> _mockSessionManager;
@@ -62,8 +62,8 @@ public class PlaybackPrefetchServiceTests : IDisposable
         await _service.StartAsync(TestContext.Current.CancellationToken);
 
         // Assert: verify event handlers were attached by raising events without error
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, CreateProgressEventArgs(new Video()));
-        _mockSessionManager.Raise(m => m.PlaybackStopped += null, this, CreateStopEventArgs(new Video()));
+        RaisePlaybackProgressSynchronously(CreateProgressEventArgs(new Video()));
+        RaisePlaybackStoppedSynchronously(CreateStopEventArgs(new Video()));
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(episode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Assert
@@ -108,7 +108,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(video, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Assert
@@ -129,7 +129,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(episode, playbackPositionTicks: 500);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Assert
@@ -148,7 +148,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(episode, playbackPositionTicks: null);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Assert
@@ -167,7 +167,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(episode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
         // Assert
@@ -192,7 +192,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert
@@ -216,7 +216,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert: should be called 3 times (once for each ASS subtitle)
@@ -242,9 +242,9 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args2 = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950, session: session);
 
         // Act: fire progress twice for the same session+episode
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args1);
+        RaisePlaybackProgressSynchronously(args1);
         await Task.Delay(500, TestContext.Current.CancellationToken);
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args2);
+        RaisePlaybackProgressSynchronously(args2);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert: should only be called once despite two progress events
@@ -269,15 +269,15 @@ public class PlaybackPrefetchServiceTests : IDisposable
 
         // Act: first trigger
         var progressArgs = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950, session: session);
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, progressArgs);
+        RaisePlaybackProgressSynchronously(progressArgs);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Stop playback (clears triggered state)
         var stopArgs = CreateStopEventArgs(currentEpisode, session: session);
-        _mockSessionManager.Raise(m => m.PlaybackStopped += null, this, stopArgs);
+        RaisePlaybackStoppedSynchronously(stopArgs);
 
         // Re-trigger
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, progressArgs);
+        RaisePlaybackProgressSynchronously(progressArgs);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert: should be called twice total
@@ -302,7 +302,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert
@@ -323,9 +323,9 @@ public class PlaybackPrefetchServiceTests : IDisposable
         // Create next episode with both normal and subsetted ASS files
         string nextVideoName = "EP02";
         string nextVideoPath = Path.Join(_tempDataPath, nextVideoName + ".mkv");
-        File.WriteAllText(nextVideoPath, "video");
-        File.WriteAllText(Path.Join(_tempDataPath, nextVideoName + ".ass"), "normal sub");
-        File.WriteAllText(Path.Join(_tempDataPath, nextVideoName + ".subsetted.ass"), "subsetted sub");
+        await File.WriteAllTextAsync(nextVideoPath, "video", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Join(_tempDataPath, nextVideoName + ".ass"), "normal sub", TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(Path.Join(_tempDataPath, nextVideoName + ".subsetted.ass"), "subsetted sub", TestContext.Current.CancellationToken);
 
         var nextEpisode = new Episode
         {
@@ -340,7 +340,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
         var args = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950);
 
         // Act
-        _mockSessionManager.Raise(m => m.PlaybackProgress += null, this, args);
+        RaisePlaybackProgressSynchronously(args);
         await Task.Delay(500, TestContext.Current.CancellationToken);
 
         // Assert: should only be called once (normal sub only, not subsetted)
@@ -373,9 +373,7 @@ public class PlaybackPrefetchServiceTests : IDisposable
             });
 
         await _service.StartAsync(TestContext.Current.CancellationToken);
-        _mockSessionManager.Raise(
-            manager => manager.PlaybackProgress += null,
-            this,
+        RaisePlaybackProgressSynchronously(
             CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950));
         await started.Task.WaitAsync(TestContext.Current.CancellationToken);
 
@@ -386,6 +384,18 @@ public class PlaybackPrefetchServiceTests : IDisposable
     }
 
     // --- Helper Methods ---
+
+    // These void events must finish synchronous delivery before the test continues.
+    // Moq's RaiseAsync expects Task/ValueTask handlers and returns null for void handlers.
+    private void RaisePlaybackProgressSynchronously(PlaybackProgressEventArgs args)
+    {
+        _mockSessionManager.Raise(manager => manager.PlaybackProgress += null, this, args);
+    }
+
+    private void RaisePlaybackStoppedSynchronously(PlaybackStopEventArgs args)
+    {
+        _mockSessionManager.Raise(manager => manager.PlaybackStopped += null, this, args);
+    }
 
     private Episode CreateEpisode(int? indexNumber, long? runtimeTicks = 1000)
     {

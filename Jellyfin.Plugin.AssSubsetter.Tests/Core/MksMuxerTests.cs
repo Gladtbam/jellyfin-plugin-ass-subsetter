@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Core;
 
-public class MksMuxerTests : IDisposable
+public sealed class MksMuxerTests : IDisposable
 {
     private readonly string _tempPath = Path.Join(Path.GetTempPath(), "MksMuxerTests_" + Guid.NewGuid().ToString("N"));
 
@@ -38,7 +38,7 @@ public class MksMuxerTests : IDisposable
         Assert.Contains("-metadata:s:t:1", args);
         Assert.Contains("-f", args);
         Assert.Contains("matroska", args);
-        Assert.DoesNotContain(args, value => value.Contains('"'));
+        Assert.DoesNotContain(args, value => value.Contains('"', StringComparison.Ordinal));
     }
 
     [Fact]
@@ -46,16 +46,16 @@ public class MksMuxerTests : IDisposable
     {
         string output = Path.Join(_tempPath, "subtitle.mks");
         var artifact = CreateArtifact();
-        var muxer = CreateMuxer((startInfo, _) =>
+        var muxer = CreateMuxer(async (startInfo, token) =>
         {
-            File.WriteAllText(startInfo.ArgumentList[^1], "mks-data");
-            return Task.FromResult(0);
+            await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "mks-data", token);
+            return 0;
         });
 
         bool result = await muxer.MuxAsync(artifact, output, TestContext.Current.CancellationToken);
 
         Assert.True(result);
-        Assert.Equal("mks-data", File.ReadAllText(output));
+        Assert.Equal("mks-data", await File.ReadAllTextAsync(output, TestContext.Current.CancellationToken));
         AssertNoTemporaryFiles();
     }
 
@@ -63,10 +63,10 @@ public class MksMuxerTests : IDisposable
     public async Task MuxAsync_ShouldNotPromoteOutput_WhenRunnerFails()
     {
         string output = Path.Join(_tempPath, "subtitle.mks");
-        var muxer = CreateMuxer((startInfo, _) =>
+        var muxer = CreateMuxer(async (startInfo, token) =>
         {
-            File.WriteAllText(startInfo.ArgumentList[^1], "partial-data");
-            return Task.FromResult(1);
+            await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "partial-data", token);
+            return 1;
         });
 
         bool result = await muxer.MuxAsync(CreateArtifact(), output, TestContext.Current.CancellationToken);

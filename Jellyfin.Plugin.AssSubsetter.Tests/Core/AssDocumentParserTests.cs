@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Core;
 
-public class AssDocumentParserTests : IDisposable
+public sealed class AssDocumentParserTests : IDisposable
 {
     private readonly string _tempFile;
     private readonly AssDocumentParser _parser;

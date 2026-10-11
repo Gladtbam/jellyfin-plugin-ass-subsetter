@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Compares direct file/native subsetting with the production memory-index and file-lease path.</summary>
 [MemoryDiagnoser]
-public class LeasedSubsettingPathBenchmarks
+public class LeasedSubsettingPathBenchmarks : IAsyncDisposable
 {
     private string _root = null!;
     private string _fontPath = null!;
@@ -172,6 +172,10 @@ public class LeasedSubsettingPathBenchmarks
             Directory.Delete(_root, recursive: true);
         }
     }
+
+    /// <summary>Releases the resources owned by the benchmark fixture.</summary>
+    /// <returns>A value task representing cleanup.</returns>
+    public ValueTask DisposeAsync() => new(CleanupAsync());
 
     private async Task<byte[]> SubsetAsync(string path, int faceIndex)
     {

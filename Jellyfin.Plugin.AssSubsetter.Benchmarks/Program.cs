@@ -12,6 +12,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 /// <summary>Entry point for deterministic, filterable font-inventory benchmarks.</summary>
 public static class Program
 {
+    private static readonly JsonSerializerOptions _contractJsonOptions = new() { WriteIndented = true };
+
     /// <summary>Runs selected BenchmarkDotNet cases without an interactive menu.</summary>
     /// <param name="args">Optional BenchmarkDotNet filters.</param>
     public static void Main(string[] args)
@@ -19,7 +21,7 @@ public static class Program
         string artifactsPath = GetArtifactsPath(args);
         Directory.CreateDirectory(artifactsPath);
         string contractPath = Path.Combine(artifactsPath, "benchmark-contract.json");
-        File.WriteAllText(contractPath, JsonSerializer.Serialize(SubsettingBenchmarkContract.Create(), new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(contractPath, JsonSerializer.Serialize(SubsettingBenchmarkContract.Create(), _contractJsonOptions));
         (Job job, string[] benchmarkArgs) = GetJob(args);
         IConfig config = ManualConfig.CreateMinimumViable()
             .AddJob(job.WithToolchain(InProcessNoEmitToolchain.Instance))

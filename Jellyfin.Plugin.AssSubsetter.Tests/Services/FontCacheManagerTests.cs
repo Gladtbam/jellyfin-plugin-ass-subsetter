@@ -163,7 +163,7 @@ public sealed class FontCacheManagerTests
         {
             await AssertPreviousMemoryLookupAsync(manager, repository);
             Assert.False(waiter.IsCompleted);
-            cancellation.Cancel();
+            await cancellation.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
             subsequentPublication = manager.PublishAnalyzedGenerationAsync(analysis, TestContext.Current.CancellationToken);
             Assert.False(subsequentPublication.IsCompleted);
@@ -207,7 +207,7 @@ public sealed class FontCacheManagerTests
         await AssertPreviousMemoryLookupAsync(manager, repository);
         if (cancel)
         {
-            cancellation.Cancel();
+            await cancellation.CancelAsync();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => interrupted);
         }
         else

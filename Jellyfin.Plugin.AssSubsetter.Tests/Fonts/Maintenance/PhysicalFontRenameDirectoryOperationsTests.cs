@@ -13,7 +13,7 @@ public sealed class PhysicalFontRenameDirectoryOperationsTests : IDisposable
     {
         string directory = Path.Combine(_root, "old");
         Directory.CreateDirectory(directory);
-        File.WriteAllText(Path.Combine(directory, ".hidden"), "keep");
+        await File.WriteAllTextAsync(Path.Combine(directory, ".hidden"), "keep", TestContext.Current.CancellationToken);
         var policy = new FontDirectoryPolicyResolver(_root, null, null, false);
         var operations = new PhysicalFontRenameDirectoryOperations();
         var retained = await operations.TryRemoveEmptyAsync(directory, _root, policy, CancellationToken.None);

@@ -34,7 +34,7 @@ public sealed class FontRestorePhysicalIntegrationTests
                 StartedUtc = DateTimeOffset.UnixEpoch,
                 SummaryJson = "{}"
             }, TestContext.Current.CancellationToken);
-            string restoreStaging = Path.Combine(sourceRoot, ".ass-subsetter-restore-" + batch.Id.ToString("D20") + "-00000000000000000001");
+            string restoreStaging = Path.Combine(sourceRoot, ".ass-subsetter-restore-" + batch.Id.ToString("D20", System.Globalization.CultureInfo.InvariantCulture) + "-00000000000000000001");
             if (interrupted)
             {
                 await File.WriteAllBytesAsync(restoreStaging, bytes, TestContext.Current.CancellationToken);

@@ -21,7 +21,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     {
         var service = await PrepareAsync();
         await PersistCurrentAsync(service);
-        _duringProbe = () => throw new Exception("Persisted reads must not calculate or probe files");
+        _duringProbe = () => throw new NotSupportedException("Persisted reads must not calculate or probe files");
         int reads = _repository.InventoryLoadCallCount;
         Assert.Single((await service.GetCurrentAsync(CancellationToken.None)).Items);
         Assert.Equal(reads, _repository.InventoryLoadCallCount);
@@ -80,7 +80,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     {
         var service = await PrepareAsync();
         _rules = _rules with { FileNameTemplate = "{unknown}" };
-        _duringProbe = () => throw new Exception("Invalid rules reached file checks");
+        _duringProbe = () => throw new NotSupportedException("Invalid rules reached file checks");
         var analysis = (await _repository.GetLatestCompleteAnalysisAsync(CancellationToken.None))!;
         var prepared = await service.PrepareForPublicationAsync(analysis with { Id = 0 }, CancellationToken.None);
         Assert.Equal(FontRenameCandidateGenerationStatus.Failed, prepared.State.Status);
@@ -209,7 +209,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     {
         var service = await PrepareAsync();
         _rules = new(expression, "", false, version);
-        _duringProbe = () => throw new Exception("Invalid rules reached physical planning");
+        _duringProbe = () => throw new NotSupportedException("Invalid rules reached physical planning");
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetCurrentAsync(CancellationToken.None));
     }
 
@@ -302,7 +302,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     private sealed class ReadOnlyDirectories(Action probe) : IFontRenameDirectoryOperations
     {
         public FontRenameDirectoryProbe Probe(string file, string root, string target) { probe(); return new(true, true, null); }
-        public Task<FontRenameDirectoryResult> CreateDirectoryAsync(string path, string root, FontDirectoryPolicyResolver policy, CancellationToken token) => throw new Exception("Read must not create directories");
-        public Task<FontRenameDirectoryResult> TryRemoveEmptyAsync(string path, string root, FontDirectoryPolicyResolver policy, CancellationToken token) => throw new Exception("Read must not remove directories");
+        public Task<FontRenameDirectoryResult> CreateDirectoryAsync(string path, string root, FontDirectoryPolicyResolver policy, CancellationToken token) => throw new NotSupportedException("Read must not create directories");
+        public Task<FontRenameDirectoryResult> TryRemoveEmptyAsync(string path, string root, FontDirectoryPolicyResolver policy, CancellationToken token) => throw new NotSupportedException("Read must not remove directories");
     }
 }

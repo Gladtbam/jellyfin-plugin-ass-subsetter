@@ -80,7 +80,7 @@ public sealed class FontInterruptedTaskTests
         var finished = (await repository.GetOperationRequestAsync(request.Id, CancellationToken.None))!;
         Assert.Equal(OperationRequestStatus.Failed, finished.Status);
         Assert.NotNull(finished.CompletedUtc);
-        Assert.Contains("interrupted", finished.Error);
+        Assert.Contains("interrupted", finished.Error, StringComparison.Ordinal);
         Assert.DoesNotContain(100d, reports);
     }
 }

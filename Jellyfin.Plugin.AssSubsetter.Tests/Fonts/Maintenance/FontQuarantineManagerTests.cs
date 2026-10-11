@@ -780,7 +780,7 @@ public sealed class FontQuarantineManagerTests
 
         Task<MaintenanceBatch> pending = manager.QuarantineAsync(fixture.Request, null, cancellation.Token);
         Assert.False(pending.IsCompleted);
-        cancellation.Cancel();
+        await cancellation.CancelAsync();
         MaintenanceBatch result = await pending;
 
         Assert.Equal(QuarantineItemStatus.Cancelled, Assert.Single(result.Items).Status);
@@ -819,7 +819,7 @@ public sealed class FontQuarantineManagerTests
             using var cancellation = new CancellationTokenSource();
             Task<MaintenanceBatch> pending = manager.QuarantineAsync(fixture.Request, null, cancellation.Token);
             Assert.False(pending.IsCompleted);
-            cancellation.Cancel();
+            await cancellation.CancelAsync();
             Assert.Equal(QuarantineItemStatus.Cancelled, Assert.Single((await pending).Items).Status);
         }
 

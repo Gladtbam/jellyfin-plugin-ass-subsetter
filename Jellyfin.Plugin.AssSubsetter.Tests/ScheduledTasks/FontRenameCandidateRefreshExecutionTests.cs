@@ -41,10 +41,10 @@ public sealed class FontRenameCandidateRefreshExecutionTests
         var queue = new FontRenameCandidateRefreshQueue(fixture.Repository, () => fixture.State.Rules, () => fixture.Requirements, TimeProvider.System);
         var request = await queue.QueueAsync("cancel", CancellationToken.None);
         using var cancellation = new CancellationTokenSource();
-        using var executor = Executor(fixture.Repository, fixture.Requirements, (_, token) =>
+        using var executor = Executor(fixture.Repository, fixture.Requirements, async (_, token) =>
         {
-            cancellation.Cancel();
-            return Task.FromCanceled<FontRenameCandidateState>(token);
+            await cancellation.CancelAsync();
+            return await Task.FromCanceled<FontRenameCandidateState>(token);
         });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.ExecutePendingOperationAsync(FontOperationKind.RefreshRenameCandidates, new InlineProgress(_ => { }), cancellation.Token));
         var saved = (await fixture.Repository.GetOperationRequestAsync(request.Id, CancellationToken.None))!;

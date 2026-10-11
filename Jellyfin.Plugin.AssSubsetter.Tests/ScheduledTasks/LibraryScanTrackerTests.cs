@@ -14,7 +14,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
-public class LibraryScanTrackerTests : IDisposable
+public sealed class LibraryScanTrackerTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly Mock<ILibraryManager> _mockLibraryManager;
@@ -51,7 +51,7 @@ public class LibraryScanTrackerTests : IDisposable
 
         await _tracker.StartAsync(TestContext.Current.CancellationToken);
 
-        _mockLibraryManager.Raise(m => m.ItemAdded += null, this, new ItemChangeEventArgs { Item = video });
+        RaiseItemAddedSynchronously(new ItemChangeEventArgs { Item = video });
 
         await Task.Delay(100, TestContext.Current.CancellationToken);
 
@@ -87,10 +87,7 @@ public class LibraryScanTrackerTests : IDisposable
             .ReturnsAsync((Guid _, string path, int _, int _, CancellationToken _) => new SubtitleResult(path, "text/x-ssa", true));
 
         await _tracker.StartAsync(TestContext.Current.CancellationToken);
-        _mockLibraryManager.Raise(
-            manager => manager.ItemAdded += null,
-            this,
-            new ItemChangeEventArgs { Item = new Video { Id = itemId, Path = videoPath } });
+        RaiseItemAddedSynchronously(new ItemChangeEventArgs { Item = new Video { Id = itemId, Path = videoPath } });
 
         await allProcessed.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
@@ -125,10 +122,7 @@ public class LibraryScanTrackerTests : IDisposable
             .ReturnsAsync(new SubtitleResult(remainingPath, "text/x-ssa", true));
 
         await _tracker.StartAsync(TestContext.Current.CancellationToken);
-        _mockLibraryManager.Raise(
-            manager => manager.ItemAdded += null,
-            this,
-            new ItemChangeEventArgs { Item = new Video { Id = itemId, Path = videoPath } });
+        RaiseItemAddedSynchronously(new ItemChangeEventArgs { Item = new Video { Id = itemId, Path = videoPath } });
 
         await remainingProcessed.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
 
@@ -147,13 +141,17 @@ public class LibraryScanTrackerTests : IDisposable
 
         var video = new Video { Id = Guid.NewGuid(), Path = "dummy.mkv" };
 
-        _mockLibraryManager.Raise(m => m.ItemAdded += null, this, new ItemChangeEventArgs { Item = video });
+        RaiseItemAddedSynchronously(new ItemChangeEventArgs { Item = video });
 
         Thread.Sleep(50);
         _mockCacheService.Verify(
             s => s.GetOrGenerateSubtitleAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
+
+    // ItemAdded uses void handlers; Moq RaiseAsync only supports handlers returning Task or ValueTask.
+    private void RaiseItemAddedSynchronously(ItemChangeEventArgs args)
+        => _mockLibraryManager.Raise(manager => manager.ItemAdded += null, this, args);
 
     public void Dispose()
     {

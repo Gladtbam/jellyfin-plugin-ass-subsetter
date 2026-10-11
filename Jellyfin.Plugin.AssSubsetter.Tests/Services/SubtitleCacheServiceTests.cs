@@ -13,7 +13,7 @@ using Xunit;
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
 [Collection("PluginInstance")]
-public class SubtitleCacheServiceTests : IDisposable
+public sealed class SubtitleCacheServiceTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly string _customCachePath;
@@ -53,12 +53,12 @@ public class SubtitleCacheServiceTests : IDisposable
         // Arrange
         Guid itemId = Guid.NewGuid();
         string originalAssPath = Path.Join(_tempDataPath, "original.ass");
-        File.WriteAllText(originalAssPath, "mock source data");
+        await File.WriteAllTextAsync(originalAssPath, "mock source data", TestContext.Current.CancellationToken);
 
         string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
         string expectedCachePath = Path.Join(_customCachePath, $"{itemId:N}_{fingerprint}.ass");
 
-        File.WriteAllText(expectedCachePath, "mock cache data");
+        await File.WriteAllTextAsync(expectedCachePath, "mock cache data", TestContext.Current.CancellationToken);
 
         // Act
         var result = await _cacheService.GetOrGenerateSubtitleAsync(itemId, originalAssPath, 0, 0, TestContext.Current.CancellationToken);
@@ -74,12 +74,12 @@ public class SubtitleCacheServiceTests : IDisposable
     {
         Guid itemId = Guid.NewGuid();
         string originalAssPath = Path.Join(_tempDataPath, "changing.ass");
-        File.WriteAllText(originalAssPath, "first source version");
+        await File.WriteAllTextAsync(originalAssPath, "first source version", TestContext.Current.CancellationToken);
         string oldFingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
         string oldCachePath = Path.Join(_customCachePath, $"{itemId:N}_{oldFingerprint}.ass");
-        File.WriteAllText(oldCachePath, "old cache data");
+        await File.WriteAllTextAsync(oldCachePath, "old cache data", TestContext.Current.CancellationToken);
 
-        File.AppendAllText(originalAssPath, " with changed metadata");
+        await File.AppendAllTextAsync(originalAssPath, " with changed metadata", TestContext.Current.CancellationToken);
         var result = await _cacheService.GetOrGenerateSubtitleAsync(
             itemId,
             originalAssPath,
@@ -132,11 +132,11 @@ public class SubtitleCacheServiceTests : IDisposable
         var muxer = new MksMuxer(
             NullLogger<MksMuxer>.Instance,
             () => "ffmpeg",
-            (startInfo, _) =>
+            async (startInfo, token) =>
             {
                 invocationCount++;
-                File.WriteAllText(startInfo.ArgumentList[^1], "mks-data");
-                return Task.FromResult(0);
+                await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "mks-data", token);
+                return 0;
             });
         var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
         Guid itemId = Guid.NewGuid();
@@ -181,7 +181,7 @@ public class SubtitleCacheServiceTests : IDisposable
         await File.WriteAllTextAsync(originalAssPath, "plain", TestContext.Current.CancellationToken);
         var service = new SubtitleCacheService(() => _config, _assProcessor, null, null, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         var result = await service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), originalAssPath, cancellationToken: cts.Token);
 

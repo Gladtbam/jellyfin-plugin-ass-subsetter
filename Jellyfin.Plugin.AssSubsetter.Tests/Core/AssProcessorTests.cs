@@ -17,7 +17,7 @@ using Xunit;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Core;
 
-public class AssProcessorTests : IDisposable
+public sealed class AssProcessorTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly PluginConfiguration _config;
@@ -61,7 +61,7 @@ public class AssProcessorTests : IDisposable
     public async Task GenerateSubsetFontAsync_ShouldCatchCancellation()
     {
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         // Pass invalid paths; it should return false due to cancellation before doing anything major,
         // or during the first async wait if any.
@@ -89,7 +89,7 @@ public class AssProcessorTests : IDisposable
     public async Task GenerateSubsetArtifactAsync_ShouldReturnNull_WhenCancelled()
     {
         using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        await cts.CancelAsync();
 
         SubsetArtifact? result = await _assProcessor.GenerateSubsetArtifactAsync("dummy_input.ass", cts.Token);
 
