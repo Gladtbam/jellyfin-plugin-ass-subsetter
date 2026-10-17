@@ -14,7 +14,7 @@ public class GlyphDifferenceBenchmarks
     private FontFaceEvidence _right = null!;
 
     /// <summary>Gets or sets the number of changed glyphs in a 20,000-character font.</summary>
-    [Params(16, 20_000)]
+    [Params(0, 16, 20_000)]
     public int Differences { get; set; }
 
     /// <summary>Constructs complete evidence outside the timed operation.</summary>
@@ -38,11 +38,14 @@ public class GlyphDifferenceBenchmarks
             FileHash = changed,
             StrictFingerprint = changed,
             CharacterFingerprints = Enumerable.Range(0, 20_000).ToDictionary(index => (uint)index, index => index < Differences ? changed : original),
-            SemanticFingerprints = new Dictionary<FontSemanticGroup, ReadOnlyMemory<byte>> { [FontSemanticGroup.OutlinesAndMetrics] = changed }
+            SemanticFingerprints = new Dictionary<FontSemanticGroup, ReadOnlyMemory<byte>> { [FontSemanticGroup.OutlinesAndMetrics] = Differences == 0 ? original : changed }
         };
-        FontRelationshipKind expected = Differences == 16
-            ? FontRelationshipKind.SmallGlyphDifference
-            : FontRelationshipKind.SameIdentityContentConflict;
+        FontRelationshipKind expected = Differences switch
+        {
+            0 => FontRelationshipKind.RenderingAndLayoutEquivalent,
+            16 => FontRelationshipKind.SmallGlyphDifference,
+            _ => FontRelationshipKind.SameIdentityContentConflict
+        };
         if (_classifier.Classify(_left, _right).Kind != expected)
         {
             throw new InvalidOperationException("Benchmark input does not exercise the intended glyph-difference classification.");

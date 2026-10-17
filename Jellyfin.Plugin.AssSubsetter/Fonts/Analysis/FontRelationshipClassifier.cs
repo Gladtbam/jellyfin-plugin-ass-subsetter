@@ -129,20 +129,20 @@ public sealed class FontRelationshipClassifier
     private static bool RenderingAndLayoutEquivalent(FontFaceEvidence left, FontFaceEvidence right)
     {
         return StructuralFieldsEqual(left, right)
+            && SemanticGroupsEqual(left, right, Enum.GetValues<FontSemanticGroup>())
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right)
-            && CharacterEvidenceEqual(left, right)
-            && SemanticGroupsEqual(left, right, Enum.GetValues<FontSemanticGroup>());
+            && CharacterEvidenceEqual(left, right);
     }
 
     private static bool MetadataOnlyDifference(FontFaceEvidence left, FontFaceEvidence right)
     {
         return StructuralFieldsEqual(left, right)
+            && !SemanticGroupEqual(left, right, FontSemanticGroup.Metadata)
+            && SemanticGroupsEqual(left, right, FunctionalGroups)
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right)
-            && CharacterEvidenceEqual(left, right)
-            && SemanticGroupsEqual(left, right, FunctionalGroups)
-            && !SemanticGroupEqual(left, right, FontSemanticGroup.Metadata);
+            && CharacterEvidenceEqual(left, right);
     }
 
     private static FontRelationshipResult? CoverageSuperset(FontFaceEvidence left, FontFaceEvidence right)
@@ -208,23 +208,23 @@ public sealed class FontRelationshipClassifier
         uint[] differingGlyphs)
     {
         int comparable = left.CharacterFingerprints.Count;
-        return SameIdentity(left, right)
-            && CoverageEqual(left, right)
-            && SelectorsEqual(left, right)
-            && SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.OutlinesAndMetrics))
-            && differingGlyphs.Length is > 0 and <= MaxSmallGlyphDifferences
+        return differingGlyphs.Length is > 0 and <= MaxSmallGlyphDifferences
             && comparable > 0
-            && differingGlyphs.Length * 100L <= comparable;
+            && differingGlyphs.Length * 100L <= comparable
+            && SameIdentity(left, right)
+            && SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.OutlinesAndMetrics))
+            && CoverageEqual(left, right)
+            && SelectorsEqual(left, right);
     }
 
     private static bool OnlySemanticGroupDiffers(FontFaceEvidence left, FontFaceEvidence right, FontSemanticGroup differingGroup)
     {
         return SameIdentity(left, right)
+            && !SemanticGroupEqual(left, right, differingGroup)
+            && SemanticGroupsEqual(left, right, Enum.GetValues<FontSemanticGroup>().Where(group => group != differingGroup))
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right)
-            && CharacterEvidenceEqual(left, right)
-            && !SemanticGroupEqual(left, right, differingGroup)
-            && SemanticGroupsEqual(left, right, Enum.GetValues<FontSemanticGroup>().Where(group => group != differingGroup));
+            && CharacterEvidenceEqual(left, right);
     }
 
     private static bool SameIdentity(FontFaceEvidence left, FontFaceEvidence right)
