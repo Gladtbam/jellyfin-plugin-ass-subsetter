@@ -405,6 +405,34 @@ public sealed class FontRelationshipClassifierTests
         Assert.Equal<uint>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], result.DifferingCodePoints);
     }
 
+    [Fact]
+    public void Classify_ShouldVerifyGlyphsEvenWhenSemanticFingerprintsMatch()
+    {
+        FontFaceEvidence left = Face();
+        FontFaceEvidence right = GlyphVariant(Face(marker: "right"), 20) with
+        {
+            SemanticFingerprints = left.SemanticFingerprints
+        };
+
+        FontRelationshipResult result = _classifier.Classify(left, right);
+
+        Assert.Equal(FontRelationshipKind.SameIdentityContentConflict, result.Kind);
+        Assert.False(result.LeftCanReplaceRight);
+        Assert.False(result.RightCanReplaceLeft);
+    }
+
+    [Fact]
+    public void Classify_ShouldRejectIncompleteEvidenceBeforeSemanticConflicts()
+    {
+        FontFaceEvidence left = Face();
+        FontFaceEvidence right = SemanticVariant(Face(marker: "right"), FontSemanticGroup.Layout, "changed-layout") with
+        {
+            CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>()
+        };
+
+        Assert.Equal(FontRelationshipKind.Unclassifiable, _classifier.Classify(left, right).Kind);
+    }
+
     private static FontFaceEvidence Face(IReadOnlyList<UnicodeRange>? coverage = null, string marker = "left")
     {
         IReadOnlyList<UnicodeRange> actualCoverage = coverage ?? Range(0, 99);
