@@ -9,6 +9,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Classifies a Face pair with the approved strict first-match relationship chain.</summary>
 public sealed class FontRelationshipClassifier
 {
+    private const int MaxSmallGlyphDifferences = 16;
+
     private static readonly FontSemanticGroup[] FunctionalGroups =
     [
         FontSemanticGroup.Mapping,
@@ -210,7 +212,7 @@ public sealed class FontRelationshipClassifier
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right)
             && SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.OutlinesAndMetrics))
-            && differingGlyphs.Length is > 0 and <= 16
+            && differingGlyphs.Length is > 0 and <= MaxSmallGlyphDifferences
             && comparable > 0
             && differingGlyphs.Length * 100L <= comparable;
     }
@@ -276,12 +278,21 @@ public sealed class FontRelationshipClassifier
             return [];
         }
 
-        return left.CharacterFingerprints
+        // Only small differences are reported. One extra match proves the limit was exceeded;
+        // later rules inspect the original evidence rather than this bounded list.
+        uint[] result = left.CharacterFingerprints
             .Where(pair => !right.CharacterFingerprints.TryGetValue(pair.Key, out ReadOnlyMemory<byte> value)
                 || !Equal(pair.Value, value))
             .Select(pair => pair.Key)
-            .OrderBy(value => value)
+            .Take(MaxSmallGlyphDifferences + 1)
             .ToArray();
+        if (result.Length > MaxSmallGlyphDifferences)
+        {
+            return [];
+        }
+
+        Array.Sort(result);
+        return result;
     }
 
     private static bool CommonCharactersEqual(FontFaceEvidence left, FontFaceEvidence right)
