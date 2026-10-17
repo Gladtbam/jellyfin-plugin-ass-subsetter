@@ -351,6 +351,30 @@ public sealed class FontRetentionSelectorTests
         Assert.Empty(plan.QuarantineFiles);
     }
 
+    [Fact]
+    public void Select_ShouldRetainEarliestEquivalentCollectionAtExactSearchLimit()
+    {
+        FontRetentionFile[] files = Enumerable.Range(1, 18)
+            .Select(index => File(index, $"copy-{index:D2}.ttc", 100, Face((index * 2) - 1), Face(index * 2)))
+            .ToArray();
+        var relations = new List<FontRelationRecord>();
+        for (int left = 0; left < files.Length; left++)
+        {
+            for (int right = left + 1; right < files.Length; right++)
+            {
+                relations.Add(BothDirections(files[left].Faces[0].FaceId, files[right].Faces[0].FaceId));
+                relations.Add(BothDirections(files[left].Faces[1].FaceId, files[right].Faces[1].FaceId));
+            }
+        }
+
+        DirectoryPolicySnapshot snapshot = Snapshot(files);
+        RetentionPlan plan = _selector.Select(relations, snapshot);
+
+        Assert.Equal(1, Assert.Single(plan.RetainedFiles).FileId);
+        Assert.Equal(17, plan.QuarantineFiles.Count);
+        Assert.Equal(1_700, plan.ReclaimableBytes);
+    }
+
     private static DirectoryPolicySnapshot Snapshot(params FontRetentionFile[] files) => new(files);
 
     private static FontRetentionFile File(

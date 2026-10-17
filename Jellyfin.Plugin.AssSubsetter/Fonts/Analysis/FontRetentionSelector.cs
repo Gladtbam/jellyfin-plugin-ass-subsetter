@@ -337,9 +337,17 @@ public sealed class FontRetentionSelector
                     continue;
                 }
 
-                if (faceReplacements[targetIndex].Any(candidateMask => (candidateMask & retainedMask) == 0))
+                foreach (int candidateMask in faceReplacements[targetIndex])
                 {
-                    valid = false;
+                    if ((candidateMask & retainedMask) == 0)
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+
+                if (!valid)
+                {
                     break;
                 }
 
