@@ -42,6 +42,37 @@ public sealed class FontCandidateGeneratorTests
         Assert.True(result.BucketPairCount > result.DeepComparisonCount);
     }
 
+    [Fact]
+    public void Generate_ShouldPreservePairsFromPartiallyOverlappingBuckets()
+    {
+        FontFaceEvidence[] faces =
+        [
+            Face(4, "FOUR", "strict-four"),
+            Face(3, "THREE", "shared-strict"),
+            Face(2, "SHARED", "shared-strict"),
+            Face(1, "SHARED", "strict-one")
+        ];
+
+        FontCandidateGenerationResult result = FontCandidateGenerator.Generate(faces);
+
+        Assert.Equal([new FontCandidatePair(1, 2), new FontCandidatePair(2, 3)], result.Pairs);
+        Assert.Equal(5, result.BucketPairCount);
+    }
+
+    [Fact]
+    public void Generate_ShouldPreserveBucketWorkCountForIdenticalMemberships()
+    {
+        FontFaceEvidence template = Face(1, "EXAMPLE", "shared-strict");
+        FontFaceEvidence[] faces = [template with { FaceId = 7 }, template with { FaceId = 3 }, template];
+
+        FontCandidateGenerationResult result = FontCandidateGenerator.Generate(faces);
+
+        Assert.Equal([new FontCandidatePair(1, 3), new FontCandidatePair(1, 7), new FontCandidatePair(3, 7)], result.Pairs);
+        // Hash, strict fingerprint, identity, PostScript, two names and coverage: seven buckets.
+        Assert.Equal(21, result.BucketPairCount);
+        Assert.Equal(result.Pairs, FontCandidateGenerator.Generate(faces.Reverse().ToArray()).Pairs);
+    }
+
     private static FontFaceEvidence Face(long faceId, string identity, string strict)
     {
         uint scalar = checked((uint)(0x1000 + faceId));

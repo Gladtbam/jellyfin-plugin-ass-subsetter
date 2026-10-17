@@ -32,10 +32,18 @@ public static class FontCandidateGenerator
 
         long bucketPairCount = 0;
         var uniquePairs = new HashSet<(long Left, long Right)>();
+        var expandedBuckets = new HashSet<List<long>>(BucketMembershipComparer.Instance);
         foreach (List<long> bucket in buckets.Values.Where(values => values.Count > 1))
         {
             bucket.Sort();
             bucketPairCount = checked(bucketPairCount + ((long)bucket.Count * (bucket.Count - 1) / 2));
+            // Independent evidence often selects exactly the same Faces. Keep the original
+            // work counter, but expand each membership only once. Buckets are now immutable.
+            if (!expandedBuckets.Add(bucket))
+            {
+                continue;
+            }
+
             for (int leftIndex = 0; leftIndex < bucket.Count - 1; leftIndex++)
             {
                 for (int rightIndex = leftIndex + 1; rightIndex < bucket.Count; rightIndex++)
@@ -142,5 +150,25 @@ public static class FontCandidateGenerator
         }
 
         bucket.Add(faceId);
+    }
+
+    private sealed class BucketMembershipComparer : IEqualityComparer<List<long>>
+    {
+        public static BucketMembershipComparer Instance { get; } = new();
+
+        public bool Equals(List<long>? left, List<long>? right)
+            => ReferenceEquals(left, right)
+                || (left is not null && right is not null && left.SequenceEqual(right));
+
+        public int GetHashCode(List<long> bucket)
+        {
+            HashCode hash = default;
+            foreach (long faceId in bucket)
+            {
+                hash.Add(faceId);
+            }
+
+            return hash.ToHashCode();
+        }
     }
 }
