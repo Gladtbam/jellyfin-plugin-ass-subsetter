@@ -375,6 +375,36 @@ public sealed class FontRelationshipClassifierTests
         Assert.False(result.RightCanReplaceLeft);
     }
 
+    [Fact]
+    public void Classify_ShouldBoundAllocationsForManyDifferingGlyphs()
+    {
+        FontFaceEvidence left = Face(coverage: Range(0, 19_999));
+        FontFaceEvidence right = GlyphVariant(Face(coverage: Range(0, 19_999), marker: "right"), 20_000);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        FontRelationshipResult result = _classifier.Classify(left, right);
+
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(FontRelationshipKind.SameIdentityContentConflict, result.Kind);
+        Assert.Empty(result.DifferingCodePoints);
+        Assert.False(result.LeftCanReplaceRight);
+        Assert.False(result.RightCanReplaceLeft);
+        Assert.True(allocated < 16_384, $"Classification allocated {allocated:N0} bytes for a bounded difference decision.");
+    }
+
+    [Fact]
+    public void Classify_ShouldSortSmallGlyphDifferencesRegardlessOfEvidenceOrder()
+    {
+        FontFaceEvidence left = Face(coverage: Range(0, 1_599));
+        left = left with { CharacterFingerprints = left.CharacterFingerprints.Reverse().ToDictionary(pair => pair.Key, pair => pair.Value) };
+        FontFaceEvidence right = GlyphVariant(Face(coverage: Range(0, 1_599), marker: "right"), 16);
+
+        FontRelationshipResult result = _classifier.Classify(left, right);
+
+        Assert.Equal(FontRelationshipKind.SmallGlyphDifference, result.Kind);
+        Assert.Equal<uint>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], result.DifferingCodePoints);
+    }
+
     private static FontFaceEvidence Face(IReadOnlyList<UnicodeRange>? coverage = null, string marker = "left")
     {
         IReadOnlyList<UnicodeRange> actualCoverage = coverage ?? Range(0, 99);
