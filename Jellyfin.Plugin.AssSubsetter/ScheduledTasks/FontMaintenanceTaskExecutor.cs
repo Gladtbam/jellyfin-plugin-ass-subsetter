@@ -7,7 +7,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
-
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
@@ -23,16 +22,11 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IFontRepository _repository;
+    private readonly FontAnalysisWorkflow _workflow;
     private readonly ILogger<FontMaintenanceTaskExecutor> _logger;
     private readonly FontOperationRequestStore _requestStore;
     private readonly TimeProvider _timeProvider;
     private readonly IFontFilenameNormalizationExecutor _filenameNormalizer;
-    private readonly Func<IProgress<double>?, bool, CancellationToken, Task<FontInventoryScanResult>> _refresh;
-    private readonly Func<long, IProgress<double>?, CancellationToken, Task<AnalysisBatch>> _analyze;
-    private readonly Func<AnalysisBatch, FontRenameCandidatePreparation?, CancellationToken, Task<AnalysisBatch>> _publish;
-    private readonly Func<FontInventoryScanResult, IProgress<double>?, CancellationToken, Task> _validate;
-    private readonly Func<AnalysisBatch, CancellationToken, Task<FontRenameCandidatePreparation>>? _prepare;
-    private readonly Func<long, CancellationToken, Task>? _repairCandidates;
     private readonly Func<OperationRequest, IProgress<double>?, CancellationToken, Task<MaintenanceBatch>> _quarantine;
     private readonly Func<OperationRequest, CancellationToken, Task<MaintenanceBatch>> _restore;
     private readonly Func<IProgress<double>?, CancellationToken, Task<int>> _purge;
@@ -47,21 +41,19 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     /// <summary>Initializes a new instance of the <see cref="FontMaintenanceTaskExecutor"/> class.</summary>
     /// <param name="repository">The durable font catalog and operation queue.</param>
     /// <param name="requestStore">The immutable idempotent request factory.</param>
-    /// <param name="fontCacheManager">The published inventory and runtime-index owner.</param>
-    /// <param name="analyzer">The duplicate analysis module.</param>
-    /// <param name="quarantineManager">The recoverable quarantine lifecycle module.</param>
-    /// <param name="filenameNormalizer">The explicit filename-normalization executor.</param>
-    /// <param name="timeProvider">The UTC clock used for terminal operation states.</param>
-    /// <param name="candidateQueue">Accepts candidate refreshes after context drift.</param>
-    /// <param name="refreshService">Signals candidate repair after task completion.</param>
-    /// <param name="candidateService">Prepares current persisted rename candidates.</param>
-    /// <param name="logger">Records task stages, identities and file outcomes.</param>
-    /// <param name="requestDispatcher">Signals durable operation scheduling after the current task releases.</param>
+    /// <param name="workflow">The analysis and publication workflow.</param>
+    /// <param name="quarantineManager">The recoverable quarantine lifecycle.</param>
+    /// <param name="filenameNormalizer">The filename maintenance executor.</param>
+    /// <param name="timeProvider">The request clock.</param>
+    /// <param name="requestDispatcher">Signals pending requests.</param>
+    /// <param name="candidateService">The candidate lifecycle.</param>
+    /// <param name="candidateQueue">Queues candidate repairs.</param>
+    /// <param name="refreshService">Signals candidate refresh.</param>
+    /// <param name="logger">The task logger.</param>
     public FontMaintenanceTaskExecutor(
         IFontRepository repository,
         FontOperationRequestStore requestStore,
-        FontCacheManager fontCacheManager,
-        FontDuplicateAnalyzer analyzer,
+        FontAnalysisWorkflow workflow,
         FontQuarantineManager quarantineManager,
         IFontFilenameNormalizationExecutor filenameNormalizer,
         TimeProvider timeProvider,
@@ -70,46 +62,19 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         FontRenameCandidateRefreshQueue candidateQueue,
         FontRenameCandidateRefreshService refreshService,
         ILogger<FontMaintenanceTaskExecutor> logger)
-        : this(
-            repository,
-            requestStore,
-            timeProvider,
-            filenameNormalizer,
-            fontCacheManager.StageInventoryAsync,
-            analyzer.AnalyzeAsync,
-            quarantineManager.QuarantineAsync,
-            quarantineManager.RestoreAsync,
-            (progress, token) => quarantineManager.PurgeExpiredAsync(token, progress),
-            publish: (batch, prepared, token) => fontCacheManager.PublishAnalyzedGenerationAsync(batch, token, prepared),
-            validate: (scan, progress, token) => fontCacheManager.ValidatePublicationInputsAsync(scan, token, progress),
-            prepare: candidateService.PrepareForPublicationAsync,
-            repairCandidates: async (requestId, token) =>
-            {
-                var context = await repository.GetRenameCandidateContextAsync(candidateService.ReadRequirements(), token).ConfigureAwait(false);
-                if (!context.IsCurrent && !(context.State?.Status is FontRenameCandidateGenerationStatus.Pending or FontRenameCandidateGenerationStatus.Running
-                    && context.State.OperationRequestId > requestId))
-                {
-                    try
-                    {
-                        await candidateService.RebuildCurrentAsync(requestId, token).ConfigureAwait(false);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                        var latest = await repository.GetRenameCandidateContextAsync(candidateService.ReadRequirements(), token).ConfigureAwait(false);
-                        if (latest.State?.OperationRequestId > requestId)
-                        {
-                            return;
-                        }
-
-                        throw;
-                    }
-                }
-            },
-            rebuildCandidates: candidateService.RebuildCurrentAsync,
-            candidateRequirements: candidateService.ReadRequirements,
-            ensureCandidates: candidateQueue.EnsureCurrentAsync,
-            logger: logger)
     {
+        _repository = repository;
+        _requestStore = requestStore;
+        _workflow = workflow;
+        _logger = logger;
+        _timeProvider = timeProvider;
+        _filenameNormalizer = filenameNormalizer;
+        _quarantine = quarantineManager.QuarantineAsync;
+        _restore = quarantineManager.RestoreAsync;
+        _purge = (progress, token) => quarantineManager.PurgeExpiredAsync(token, progress);
+        _rebuildCandidates = candidateService.RebuildCurrentAsync;
+        _candidateRequirements = candidateService.ReadRequirements;
+        _ensureCandidates = candidateQueue.EnsureCurrentAsync;
         _signalPendingRequests = () =>
         {
             requestDispatcher.Signal();
@@ -142,12 +107,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         _requestStore = requestStore ?? throw new ArgumentNullException(nameof(requestStore));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _filenameNormalizer = filenameNormalizer ?? throw new ArgumentNullException(nameof(filenameNormalizer));
-        _refresh = refresh ?? throw new ArgumentNullException(nameof(refresh));
-        _analyze = analyze ?? throw new ArgumentNullException(nameof(analyze));
-        _publish = publish ?? throw new ArgumentNullException(nameof(publish));
-        _validate = validate ?? ((_, _, _) => Task.CompletedTask);
-        _prepare = prepare;
-        _repairCandidates = repairCandidates;
+        _workflow = new FontAnalysisWorkflow(repository, refresh, analyze, publish, validate, prepare, repairCandidates, _logger);
         _rebuildCandidates = rebuildCandidates;
         _candidateRequirements = candidateRequirements;
         _ensureCandidates = ensureCandidates;
@@ -251,62 +211,15 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
             try
             {
-                var stopwatch = Stopwatch.StartNew();
-                LogStage(request, "inventory-scan", stopwatch);
-                FontInventoryScanResult scan = await _refresh(new ScaledProgress(progress, 0, 60), request.Kind == FontOperationKind.RebuildDerivedData, cancellationToken).ConfigureAwait(false);
+                FontAnalysisWorkflowResult result = await _workflow.RunAsync(request.Id, request.Kind == FontOperationKind.RebuildDerivedData, progress, cancellationToken).ConfigureAwait(false);
+                AnalysisBatch batch = result.Batch;
+                FontInventoryScanResult scan = result.Scan;
                 long generationId = scan.GenerationId;
-                if (!scan.HasChanges)
-                {
-                    LogStage(request, "validate-reused-inputs", stopwatch);
-                    await _validate(scan, new ScaledProgress(progress, 60, 95), cancellationToken).ConfigureAwait(false);
-                    AnalysisBatch current = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false)
-                        ?? throw new InvalidOperationException("The reused analysis is no longer available.");
-                    var health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
-                    var publishedInput = await _repository.GetPublishedAnalysisInputAsync(cancellationToken).ConfigureAwait(false);
-                    if (current.GenerationId != generationId || health.PublishedGenerationId != generationId
-                        || current.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion || publishedInput != scan.Input)
-                    {
-                        throw new InvalidOperationException("The publication changed before its analysis could be reused.");
-                    }
-
-                    if (_repairCandidates is not null)
-                    {
-                        LogStage(request, "repair-rename-candidates", stopwatch);
-                        await _repairCandidates(request.Id, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-                    FontScanOutcome outcome = new(generationId, current.Id, false, scan.ChangeReasons);
-                    await CompleteRequestAsync(request with { ResultJson = JsonSerializer.Serialize(outcome, JsonOptions) }, OperationRequestStatus.Complete, null).ConfigureAwait(false);
-                    _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", request.Id, generationId, current.Id, stopwatch.ElapsedMilliseconds);
-                    progress.Report(100);
-                    return new FontTaskExecutionResult(current.Id, "no-changes", request.Id) { ScanResult = outcome };
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                progress.Report(60);
-                LogStage(request, "duplicate-analysis", stopwatch);
-                AnalysisBatch batch = await _analyze(generationId, new ScaledProgress(progress, 60, 85), cancellationToken).ConfigureAwait(false);
-                if (batch.Status == AnalysisBatchStatus.Complete)
-                {
-                    progress.Report(85);
-                    LogStage(request, "prepare-rename-candidates", stopwatch);
-                    var prepared = _prepare is null ? null : await _prepare(batch, cancellationToken).ConfigureAwait(false);
-                    progress.Report(90);
-                    LogStage(request, "validate-publication-inputs", stopwatch);
-                    await _validate(scan, new ScaledProgress(progress, 90, 97), cancellationToken).ConfigureAwait(false);
-                    progress.Report(97);
-                    LogStage(request, "publish-analysis", stopwatch);
-                    batch = await _publish(batch, prepared, cancellationToken).ConfigureAwait(false);
-                    progress.Report(99);
-                    _logger.LogInformation("[AssSubsetter] Analysis published. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ChangeReasons: {ChangeReasons}; Relations: {RelationCount}; RenameCandidates: {CandidateCount}; ElapsedMs: {ElapsedMs}.", request.Id, generationId, batch.Id, string.Join(",", scan.ChangeReasons), batch.Relations.Count, prepared?.Items.Count ?? 0, stopwatch.ElapsedMilliseconds);
-                }
-
                 OperationRequestStatus status = batch.Status == AnalysisBatchStatus.Complete
                     ? OperationRequestStatus.Complete
                     : OperationRequestStatus.Failed;
                 await CompleteRequestAsync(
-                    request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, true, scan.ChangeReasons), JsonOptions) : null },
+                    request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), JsonOptions) : null },
                     status,
                     status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
                 if (status == OperationRequestStatus.Complete)
@@ -316,8 +229,8 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
                 return new FontTaskExecutionResult(
                     batch.Id,
-                    status == OperationRequestStatus.Complete ? "analyzed" : batch.Status.ToString(),
-                    request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, true, scan.ChangeReasons) : null };
+                    status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batch.Status.ToString(),
+                    request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons) : null };
             }
             catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
             {

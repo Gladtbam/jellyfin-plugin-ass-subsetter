@@ -2,8 +2,8 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;

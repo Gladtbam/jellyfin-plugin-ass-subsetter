@@ -122,6 +122,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<ILogger<FontRenameCandidateRefreshService>>()));
         serviceCollection.AddSingleton<IHostedService>(provider => provider.GetRequiredService<FontRenameCandidateRefreshService>());
 
+        serviceCollection.AddSingleton<FontAnalysisWorkflow>();
         serviceCollection.AddSingleton<IFontMaintenanceTaskExecutor, FontMaintenanceTaskExecutor>();
         serviceCollection.AddSingleton(provider => new FontOperationRequestScheduler(
             provider.GetRequiredService<IFontRepository>(),
