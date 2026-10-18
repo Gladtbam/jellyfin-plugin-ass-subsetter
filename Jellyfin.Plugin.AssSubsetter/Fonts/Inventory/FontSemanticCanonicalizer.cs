@@ -65,7 +65,12 @@ internal static class FontSemanticCanonicalizer
 
     private static byte[] CanonicalMappings(InspectedFontFace inspected)
     {
-        using var stream = new MemoryStream();
+        // Three counts, ordinary (uint, ushort) pairs, variation (uint, uint, ushort)
+        // entries, and uint selectors. Keep BinaryWriter's existing little-endian format.
+        int length = checked(12 + (inspected.UnicodeMappings.Count * 6)
+            + (inspected.VariationMappings.Count * 10) + (inspected.VariationSelectors.Count * 4));
+        byte[] data = new byte[length];
+        using var stream = new MemoryStream(data);
         using var writer = new BinaryWriter(stream);
         writer.Write(inspected.UnicodeMappings.Count);
         foreach (KeyValuePair<uint, ushort> mapping in inspected.UnicodeMappings.OrderBy(pair => pair.Key))
@@ -88,7 +93,7 @@ internal static class FontSemanticCanonicalizer
             writer.Write(selector);
         }
 
-        return stream.ToArray();
+        return data;
     }
 
     private static void Add(List<KeyValuePair<FontSemanticGroup, OpenTypeTable>> result, FontSemanticGroup group, OpenTypeTable table, ReadOnlyMemory<byte> data)

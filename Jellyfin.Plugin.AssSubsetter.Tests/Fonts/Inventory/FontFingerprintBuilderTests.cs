@@ -5,6 +5,63 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Inventory;
 
 public sealed class FontFingerprintBuilderTests
 {
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(20000, true)]
+    public void BuildFace_ShouldPreserveCanonicalMappingByteFormat(int count, bool variations)
+    {
+        byte[] bytes = TestFontBuilder.Sfnt().WithName("Mapping")
+            .WithCmapFormat12And14(0, (uint)(count - 1), 0xfe0f).Build();
+        OpenTypeFace face = OpenTypeFontReader.Read(bytes).Faces[0];
+        if (variations)
+        {
+            byte[] cmap = new byte[86];
+            face.Tables[OpenTypeTag.FromString("cmap")].Data.Span.CopyTo(cmap);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(cmap.AsSpan(50), 38);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(cmap.AsSpan(61), 21);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(cmap.AsSpan(65), 29);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(cmap.AsSpan(69), 1);
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(cmap.AsSpan(77), 1);
+            cmap[83] = 1;
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(cmap.AsSpan(84), 2);
+            bytes = TestFontBuilder.Sfnt().WithName("Mapping").WithTable("cmap", cmap).Build();
+            face = OpenTypeFontReader.Read(bytes).Faces[0];
+        }
+
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        writer.Write(count);
+        for (uint index = 0; index < count; index++)
+        {
+            writer.Write(index);
+            writer.Write((ushort)(index + 1));
+        }
+
+        writer.Write(variations ? 2 : 0);
+        if (variations)
+        {
+            for (uint index = 0; index < 2; index++)
+            {
+                writer.Write(0xfe0fU);
+                writer.Write(index);
+                writer.Write((ushort)(index + 1));
+            }
+        }
+
+        writer.Write(1); // One variation selector.
+        writer.Write(0xfe0fU);
+        byte[] canonical = stream.ToArray();
+        byte[] hashInput = new byte[8 + canonical.Length];
+        "cmap"u8.CopyTo(hashInput);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(hashInput.AsSpan(4), canonical.Length);
+        canonical.CopyTo(hashInput, 8);
+
+        FontFaceFingerprints result = FontFingerprintBuilder.BuildFace(face);
+
+        Assert.True(result.IsSemanticEvidenceComplete);
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData(hashInput), result.SemanticFingerprints[FontSemanticGroup.Mapping].ToArray());
+    }
+
     [Fact]
     public void BuildFace_ShouldNotAllocateInProportionToUnmodifiedTableSize()
     {
