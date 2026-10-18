@@ -19,26 +19,32 @@ internal static class FontSemanticCanonicalizer
         foreach (OpenTypeTable table in face.Tables.Values.OrderBy(table => table.Tag))
         {
             string tag = OpenTypeTag.ToString(table.Tag);
-            byte[] data = table.Data.ToArray();
+            ReadOnlyMemory<byte> data = table.Data;
             switch (tag)
             {
                 case "head" when data.Length >= 54:
-                    Add(result, FontSemanticGroup.Metadata, table, data.AsSpan(4, 4).ToArray().Concat(data.AsSpan(20, 16).ToArray()).ToArray());
-                    data.AsSpan(4, 8).Clear();
-                    data.AsSpan(20, 16).Clear();
+                    byte[] head = data.ToArray();
+                    Add(result, FontSemanticGroup.Metadata, table, head.AsSpan(4, 4).ToArray().Concat(head.AsSpan(20, 16).ToArray()).ToArray());
+                    head.AsSpan(4, 8).Clear();
+                    head.AsSpan(20, 16).Clear();
                     if (canonicalGlyphs)
                     {
-                        data.AsSpan(50, 2).Clear();
+                        head.AsSpan(50, 2).Clear();
                     }
 
+                    data = head;
                     break;
                 case "OS/2" when data.Length >= 62:
-                    Add(result, FontSemanticGroup.Metadata, table, data.AsSpan(58, 4).ToArray());
-                    data.AsSpan(58, 4).Clear();
+                    byte[] os2 = data.ToArray();
+                    Add(result, FontSemanticGroup.Metadata, table, os2.AsSpan(58, 4).ToArray());
+                    os2.AsSpan(58, 4).Clear();
+                    data = os2;
                     break;
-                case "maxp" when canonicalGlyphs && data.Length == 32 && BinaryPrimitives.ReadUInt32BigEndian(data) == 0x10000:
-                    Add(result, FontSemanticGroup.Hinting, table, data.AsSpan(14, 14).ToArray());
-                    data.AsSpan(14, 14).Clear();
+                case "maxp" when canonicalGlyphs && data.Length == 32 && BinaryPrimitives.ReadUInt32BigEndian(data.Span) == 0x10000:
+                    byte[] maxp = data.ToArray();
+                    Add(result, FontSemanticGroup.Hinting, table, maxp.AsSpan(14, 14).ToArray());
+                    maxp.AsSpan(14, 14).Clear();
+                    data = maxp;
                     break;
                 case "glyf" when canonicalGlyphs:
                     Add(result, FontSemanticGroup.Hinting, table, instructions);
@@ -85,6 +91,6 @@ internal static class FontSemanticCanonicalizer
         return stream.ToArray();
     }
 
-    private static void Add(List<KeyValuePair<FontSemanticGroup, OpenTypeTable>> result, FontSemanticGroup group, OpenTypeTable table, byte[] data)
+    private static void Add(List<KeyValuePair<FontSemanticGroup, OpenTypeTable>> result, FontSemanticGroup group, OpenTypeTable table, ReadOnlyMemory<byte> data)
         => result.Add(new KeyValuePair<FontSemanticGroup, OpenTypeTable>(group, table with { Data = data, Length = data.Length }));
 }

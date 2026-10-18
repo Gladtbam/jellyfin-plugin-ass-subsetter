@@ -6,6 +6,41 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Inventory;
 public sealed class FontFingerprintBuilderTests
 {
     [Fact]
+    public void BuildFace_ShouldNotAllocateInProportionToUnmodifiedTableSize()
+    {
+        byte[] bytes = TestFontBuilder.Sfnt().WithTable("GPOS", new byte[1024 * 1024]).Build();
+        OpenTypeFace face = OpenTypeFontReader.Read(bytes).Faces[0];
+        FontFaceFingerprints expected = FontFingerprintBuilder.BuildFace(face);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        FontFaceFingerprints actual = FontFingerprintBuilder.BuildFace(face);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Equal(expected.StrictFingerprint.ToArray(), actual.StrictFingerprint.ToArray());
+        Assert.Equal(actual.StrictFingerprint.ToArray(), actual.SemanticFingerprints[FontSemanticGroup.Layout].ToArray());
+        Assert.True(allocated < 64 * 1024, $"Fingerprinting allocated {allocated} bytes for an unchanged table.");
+    }
+
+    [Fact]
+    public void BuildFace_ShouldPreserveInputWhenNormalizingMetadata()
+    {
+        byte[] bytes = TestFontBuilder.Sfnt().WithHead(123)
+            .WithStyleMetadata(400, 5, false, false).WithName("Example").Build();
+        byte[] original = bytes.ToArray();
+        OpenTypeFace face = OpenTypeFontReader.Read(bytes).Faces[0];
+
+        FontFaceFingerprints first = FontFingerprintBuilder.BuildFace(face);
+        FontFaceFingerprints second = FontFingerprintBuilder.BuildFace(face);
+
+        Assert.Equal(original, bytes);
+        Assert.Equal(first.StrictFingerprint.ToArray(), second.StrictFingerprint.ToArray());
+        foreach (var group in first.SemanticFingerprints)
+        {
+            Assert.Equal(group.Value.ToArray(), second.SemanticFingerprints[group.Key].ToArray());
+        }
+    }
+
+    [Fact]
     public void BuildFace_ShouldIgnoreContainerOffsetsAndHeadChecksumAdjustment()
     {
         byte[] first = TestFontBuilder.Sfnt().WithHead(1).WithName("Example").Build();
