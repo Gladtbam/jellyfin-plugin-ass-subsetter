@@ -17,7 +17,7 @@ using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
-public sealed class FontMaintenanceTaskTests
+public sealed partial class FontMaintenanceTaskTests
 {
     [Fact]
     public async Task CancellationDuringPreparationKeepsOldSet()
@@ -1066,6 +1066,12 @@ public sealed class FontMaintenanceTaskTests
 
 internal sealed class RecordingTaskExecutor : IFontMaintenanceTaskExecutor
 {
+    public Task<FontTaskExecutionResult> RefreshAnalyzeAndPruneAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
+        => RefreshInventoryAndAnalyzeAsync(progress, cancellationToken);
+
+    public Task<FontTaskExecutionResult> QuarantineAndPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken)
+        => QuarantineDuplicatesAsync(progress, cancellationToken);
+
     public Task<FontTaskExecutionResult> ExecutePendingOperationAsync(FontOperationKind kind, IProgress<double> progress, CancellationToken cancellationToken)
         => Task.FromResult(new FontTaskExecutionResult(null, "request-missing"));
 

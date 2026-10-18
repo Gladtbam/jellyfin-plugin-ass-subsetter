@@ -25,6 +25,8 @@ internal sealed class InMemoryFontRepository : IFontRepository
     private FontRenameCandidateState? _renameCandidateState;
     private IReadOnlyList<FontRenameCandidate> _renameCandidates = [];
 
+    public Action<int>? BeforePrune { get; set; }
+
     public bool ThrowOnFullRenameReads { get; set; }
 
     public Task<FontRenameStatePage> LoadRenameStatePageAsync(string status, int page, int pageSize, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
@@ -556,6 +558,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
     public Task<int> PruneAnalysisBatchesAsync(int retentionCount, CancellationToken cancellationToken)
     {
+        BeforePrune?.Invoke(retentionCount);
         ArgumentOutOfRangeException.ThrowIfNegative(retentionCount);
         cancellationToken.ThrowIfCancellationRequested();
         if (retentionCount == 0)

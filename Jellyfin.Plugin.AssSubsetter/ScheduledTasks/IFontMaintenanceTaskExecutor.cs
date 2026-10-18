@@ -11,6 +11,19 @@ public interface IFontMaintenanceTaskExecutor
     /// <summary>Gets a value indicating whether any font task holds the shared execution slot.</summary>
     bool IsBusy { get; }
 
+    /// <summary>Analyzes inventory and then prunes history within one execution slot.</summary>
+    /// <param name="retentionCount">Number of reports and generations to retain; zero retains all.</param>
+    /// <param name="progress">Receives combined task progress.</param>
+    /// <param name="cancellationToken">Cancels either stage.</param>
+    /// <returns>The primary analysis result.</returns>
+    Task<FontTaskExecutionResult> RefreshAnalyzeAndPruneAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken);
+
+    /// <summary>Quarantines candidates and then safely purges expired copies within one execution slot.</summary>
+    /// <param name="progress">Receives combined task progress.</param>
+    /// <param name="cancellationToken">Cancels either stage.</param>
+    /// <returns>The primary quarantine result.</returns>
+    Task<FontTaskExecutionResult> QuarantineAndPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken);
+
     /// <summary>Consumes existing durable authorization without synthesizing scheduled work.</summary>
     /// <param name="kind">The pending operation kind.</param>
     /// <param name="progress">Receives execution progress.</param>

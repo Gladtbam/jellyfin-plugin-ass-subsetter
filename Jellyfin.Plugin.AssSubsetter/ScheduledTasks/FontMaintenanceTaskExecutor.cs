@@ -166,22 +166,27 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            _logger.LogInformation("[AssSubsetter] History pruning reports. RetentionCount: {RetentionCount}.", retentionCount);
-            int batches = await _repository.PruneAnalysisBatchesAsync(retentionCount, cancellationToken).ConfigureAwait(false);
-            progress.Report(3);
-            _logger.LogInformation("[AssSubsetter] History pruning inventory. DeletedBatches: {DeletedBatches}.", batches);
-            DateTimeOffset abandonedBeforeUtc = _timeProvider.GetUtcNow().AddDays(-1);
-            int generations = await _repository.PruneObsoleteGenerationsAsync(
-                retentionCount,
-                abandonedBeforeUtc,
-                new ScaledProgress(progress, 3, 99),
-                cancellationToken).ConfigureAwait(false);
-            return new FontHistoryPruneResult(batches, generations, false);
+            return await PruneHistoryCoreAsync(retentionCount, progress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             ReleaseTask();
         }
+    }
+
+    private async Task<FontHistoryPruneResult> PruneHistoryCoreAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("[AssSubsetter] History pruning reports. RetentionCount: {RetentionCount}.", retentionCount);
+        int batches = await _repository.PruneAnalysisBatchesAsync(retentionCount, cancellationToken).ConfigureAwait(false);
+        progress.Report(3);
+        _logger.LogInformation("[AssSubsetter] History pruning inventory. DeletedBatches: {DeletedBatches}.", batches);
+        DateTimeOffset abandonedBeforeUtc = _timeProvider.GetUtcNow().AddDays(-1);
+        int generations = await _repository.PruneObsoleteGenerationsAsync(
+            retentionCount,
+            abandonedBeforeUtc,
+            new ScaledProgress(progress, 3, 99),
+            cancellationToken).ConfigureAwait(false);
+        return new FontHistoryPruneResult(batches, generations, false);
     }
 
     /// <summary>Stages inventory, analyzes that exact generation, and publishes only a complete result.</summary>
@@ -202,52 +207,57 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            await _filenameNormalizer.ReconcileAsync(cancellationToken).ConfigureAwait(false);
-            OperationRequest? request = await ClaimAnalysisOrRebuildRequestAsync(allowScheduledWork, cancellationToken).ConfigureAwait(false);
-            if (request is null)
-            {
-                return new FontTaskExecutionResult(null, "request-missing");
-            }
-
-            try
-            {
-                FontAnalysisWorkflowResult result = await _workflow.RunAsync(request.Id, request.Kind == FontOperationKind.RebuildDerivedData, progress, cancellationToken).ConfigureAwait(false);
-                AnalysisBatch batch = result.Batch;
-                FontInventoryScanResult scan = result.Scan;
-                long generationId = scan.GenerationId;
-                OperationRequestStatus status = batch.Status == AnalysisBatchStatus.Complete
-                    ? OperationRequestStatus.Complete
-                    : OperationRequestStatus.Failed;
-                await CompleteRequestAsync(
-                    request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), JsonOptions) : null },
-                    status,
-                    status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
-                if (status == OperationRequestStatus.Complete)
-                {
-                    progress.Report(100);
-                }
-
-                return new FontTaskExecutionResult(
-                    batch.Id,
-                    status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batch.Status.ToString(),
-                    request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons) : null };
-            }
-            catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
-            {
-                await CompleteRequestAsync(request, OperationRequestStatus.Cancelled, "The scheduled task was cancelled.").ConfigureAwait(false);
-                AddOperationRequestIdentifiers(exception, request);
-                throw;
-            }
-            catch (Exception exception)
-            {
-                await CompleteRequestAsync(request, OperationRequestStatus.Failed, exception.Message).ConfigureAwait(false);
-                AddOperationRequestIdentifiers(exception, request);
-                throw;
-            }
+            return await RunAnalysisCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             ReleaseTask();
+        }
+    }
+
+    private async Task<FontTaskExecutionResult> RunAnalysisCoreAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    {
+        await _filenameNormalizer.ReconcileAsync(cancellationToken).ConfigureAwait(false);
+        OperationRequest? request = await ClaimAnalysisOrRebuildRequestAsync(allowScheduledWork, cancellationToken).ConfigureAwait(false);
+        if (request is null)
+        {
+            return new FontTaskExecutionResult(null, "request-missing");
+        }
+
+        try
+        {
+            FontAnalysisWorkflowResult result = await _workflow.RunAsync(request.Id, request.Kind == FontOperationKind.RebuildDerivedData, progress, cancellationToken).ConfigureAwait(false);
+            AnalysisBatch batch = result.Batch;
+            FontInventoryScanResult scan = result.Scan;
+            long generationId = scan.GenerationId;
+            OperationRequestStatus status = batch.Status == AnalysisBatchStatus.Complete
+                ? OperationRequestStatus.Complete
+                : OperationRequestStatus.Failed;
+            await CompleteRequestAsync(
+                request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), JsonOptions) : null },
+                status,
+                status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
+            if (status == OperationRequestStatus.Complete)
+            {
+                progress.Report(100);
+            }
+
+            return new FontTaskExecutionResult(
+                batch.Id,
+                status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batch.Status.ToString(),
+                request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons) : null };
+        }
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            await CompleteRequestAsync(request, OperationRequestStatus.Cancelled, "The scheduled task was cancelled.").ConfigureAwait(false);
+            AddOperationRequestIdentifiers(exception, request);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await CompleteRequestAsync(request, OperationRequestStatus.Failed, exception.Message).ConfigureAwait(false);
+            AddOperationRequestIdentifiers(exception, request);
+            throw;
         }
     }
 
@@ -268,82 +278,87 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            OperationRequest? request = await _repository.ClaimNextOperationAsync(
-                FontOperationKind.Quarantine,
-                cancellationToken).ConfigureAwait(false);
-            if (request is null)
-            {
-                if (!allowScheduledWork)
-                {
-                    return new FontTaskExecutionResult(null, "request-missing");
-                }
-
-                AnalysisBatch? analysis = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
-                if (analysis is null)
-                {
-                    return new FontTaskExecutionResult(null, "analysis-missing");
-                }
-
-                IReadOnlyList<FontFileRecord> inventory = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
-                if (!IsCurrent(analysis, inventory))
-                {
-                    return new FontTaskExecutionResult(analysis.Id, "analysis-stale");
-                }
-
-                long[] selectedFileIds = analysis.Groups
-                    .SelectMany(group => group.Members)
-                    .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-                    .Select(member => member.FileId)
-                    .Distinct()
-                    .Order()
-                    .ToArray();
-                if (selectedFileIds.Length == 0)
-                {
-                    return new FontTaskExecutionResult(analysis.Id, "no-candidates");
-                }
-
-                OperationRequest scheduled = await _requestStore.CreateAsync(
-                    FontOperationKind.Quarantine,
-                    analysis.Id,
-                    selectedFileIds,
-                    "scheduled-quarantine:" + analysis.Id.ToString(CultureInfo.InvariantCulture),
-                    cancellationToken).ConfigureAwait(false);
-                if (scheduled.Status != OperationRequestStatus.Pending)
-                {
-                    string outcome = scheduled.Status == OperationRequestStatus.Running
-                        ? "request-active"
-                        : "request-already-processed";
-                    return new FontTaskExecutionResult(analysis.Id, outcome);
-                }
-
-                request = await _repository.ClaimNextOperationAsync(
-                    FontOperationKind.Quarantine,
-                    cancellationToken).ConfigureAwait(false);
-                if (request is null)
-                {
-                    return new FontTaskExecutionResult(analysis.Id, "request-active");
-                }
-            }
-
-            if (!await IsCurrentRequestAnalysisAsync(request, cancellationToken).ConfigureAwait(false))
-            {
-                const string error = "The request analysis is missing, stale, or no longer matches the published inventory.";
-                await CompleteRequestAsync(request, OperationRequestStatus.Failed, error).ConfigureAwait(false);
-                var exception = new InvalidOperationException(error);
-                AddOperationRequestIdentifiers(exception, request);
-                throw exception;
-            }
-
-            progress.Report(5);
-            return await ExecuteRequestAsync(
-                request,
-                (operationRequest, token) => _quarantine(operationRequest, new ScaledProgress(progress, 5, 95), token),
-                cancellationToken).ConfigureAwait(false);
+            return await RunQuarantineCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             ReleaseTask();
         }
+    }
+
+    private async Task<FontTaskExecutionResult> RunQuarantineCoreAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    {
+        OperationRequest? request = await _repository.ClaimNextOperationAsync(
+            FontOperationKind.Quarantine,
+            cancellationToken).ConfigureAwait(false);
+        if (request is null)
+        {
+            if (!allowScheduledWork)
+            {
+                return new FontTaskExecutionResult(null, "request-missing");
+            }
+
+            AnalysisBatch? analysis = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
+            if (analysis is null)
+            {
+                return new FontTaskExecutionResult(null, "analysis-missing");
+            }
+
+            IReadOnlyList<FontFileRecord> inventory = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
+            if (!IsCurrent(analysis, inventory))
+            {
+                return new FontTaskExecutionResult(analysis.Id, "analysis-stale");
+            }
+
+            long[] selectedFileIds = analysis.Groups
+                .SelectMany(group => group.Members)
+                .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
+                .Select(member => member.FileId)
+                .Distinct()
+                .Order()
+                .ToArray();
+            if (selectedFileIds.Length == 0)
+            {
+                return new FontTaskExecutionResult(analysis.Id, "no-candidates");
+            }
+
+            OperationRequest scheduled = await _requestStore.CreateAsync(
+                FontOperationKind.Quarantine,
+                analysis.Id,
+                selectedFileIds,
+                "scheduled-quarantine:" + analysis.Id.ToString(CultureInfo.InvariantCulture),
+                cancellationToken).ConfigureAwait(false);
+            if (scheduled.Status != OperationRequestStatus.Pending)
+            {
+                string outcome = scheduled.Status == OperationRequestStatus.Running
+                    ? "request-active"
+                    : "request-already-processed";
+                return new FontTaskExecutionResult(analysis.Id, outcome);
+            }
+
+            request = await _repository.ClaimNextOperationAsync(
+                FontOperationKind.Quarantine,
+                cancellationToken).ConfigureAwait(false);
+            if (request is null)
+            {
+                return new FontTaskExecutionResult(analysis.Id, "request-active");
+            }
+        }
+
+        if (!await IsCurrentRequestAnalysisAsync(request, cancellationToken).ConfigureAwait(false))
+        {
+            const string error = "The request analysis is missing, stale, or no longer matches the published inventory.";
+            await CompleteRequestAsync(request, OperationRequestStatus.Failed, error).ConfigureAwait(false);
+            var exception = new InvalidOperationException(error);
+            AddOperationRequestIdentifiers(exception, request);
+            throw exception;
+        }
+
+        progress.Report(5);
+        return await ExecuteRequestAsync(
+            request,
+            (operationRequest, token) => _quarantine(operationRequest, new ScaledProgress(progress, 5, 95), token),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Consumes at most one explicit restore request.</summary>
@@ -387,42 +402,47 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            OperationRequest? request = allowScheduledWork
-                ? await ClaimOrSynthesizeTaskRequestAsync(FontOperationKind.Purge, cancellationToken).ConfigureAwait(false)
-                : await _repository.ClaimNextOperationAsync(FontOperationKind.Purge, cancellationToken).ConfigureAwait(false);
-            if (request is null)
-            {
-                return new FontTaskExecutionResult(null, "request-missing");
-            }
-
-            try
-            {
-                _logger.LogInformation("[AssSubsetter] Quarantine purge verification started. RequestId: {RequestId}.", request.Id);
-                progress.Report(5);
-                int purged = await _purge(new ScaledProgress(progress, 5, 95), cancellationToken).ConfigureAwait(false);
-                progress.Report(95);
-                await CompleteRequestAsync(request, OperationRequestStatus.Complete, null).ConfigureAwait(false);
-                return new FontTaskExecutionResult(
-                    null,
-                    "purged:" + purged.ToString(CultureInfo.InvariantCulture),
-                    request.Id);
-            }
-            catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
-            {
-                await CompleteRequestAsync(request, OperationRequestStatus.Cancelled, "The scheduled task was cancelled.").ConfigureAwait(false);
-                AddOperationRequestIdentifiers(exception, request);
-                throw;
-            }
-            catch (Exception exception)
-            {
-                await CompleteRequestAsync(request, OperationRequestStatus.Failed, exception.Message).ConfigureAwait(false);
-                AddOperationRequestIdentifiers(exception, request);
-                throw;
-            }
+            return await RunPurgeCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             ReleaseTask();
+        }
+    }
+
+    private async Task<FontTaskExecutionResult> RunPurgeCoreAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    {
+        OperationRequest? request = allowScheduledWork
+            ? await ClaimOrSynthesizeTaskRequestAsync(FontOperationKind.Purge, cancellationToken).ConfigureAwait(false)
+            : await _repository.ClaimNextOperationAsync(FontOperationKind.Purge, cancellationToken).ConfigureAwait(false);
+        if (request is null)
+        {
+            return new FontTaskExecutionResult(null, "request-missing");
+        }
+
+        try
+        {
+            _logger.LogInformation("[AssSubsetter] Quarantine purge verification started. RequestId: {RequestId}.", request.Id);
+            progress.Report(5);
+            int purged = await _purge(new ScaledProgress(progress, 5, 95), cancellationToken).ConfigureAwait(false);
+            progress.Report(95);
+            await CompleteRequestAsync(request, OperationRequestStatus.Complete, null).ConfigureAwait(false);
+            return new FontTaskExecutionResult(
+                null,
+                "purged:" + purged.ToString(CultureInfo.InvariantCulture),
+                request.Id);
+        }
+        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        {
+            await CompleteRequestAsync(request, OperationRequestStatus.Cancelled, "The scheduled task was cancelled.").ConfigureAwait(false);
+            AddOperationRequestIdentifiers(exception, request);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await CompleteRequestAsync(request, OperationRequestStatus.Failed, exception.Message).ConfigureAwait(false);
+            AddOperationRequestIdentifiers(exception, request);
+            throw;
         }
     }
 
