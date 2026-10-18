@@ -411,7 +411,11 @@ public sealed class FontManagementQuery
     internal static QuarantineItemDto ToDto(QuarantineItemRecord item) => new(item.Id, item.MaintenanceBatchId, item.FileId, item.Status, item.SourcePath, item.QuarantinePath, item.QuarantinedUtc, item.ExpiresUtc, item.RestoredUtc, item.Error);
 
     private static FontScanOutcomeDto? ReadScanResult(OperationRequest? request)
-        => request?.ResultJson is string json ? JsonSerializer.Deserialize<FontScanOutcomeDto>(json, JsonSerializerOptions.Web) : null;
+        {
+        FontScanOutcome? result = request?.ResultJson is string json
+            ? JsonSerializer.Deserialize<FontScanOutcome>(json, JsonSerializerOptions.Web) : null;
+        return result is null ? null : new FontScanOutcomeDto(result.GenerationId, result.AnalysisBatchId, result.Changed, result.ChangeReasons);
+    }
 
     internal static OperationRequestDto ToDto(OperationRequest request) => new(request.Id, request.Kind, request.Status, request.AnalysisBatchId, request.CreatedUtc, request.ClaimedUtc, request.CompletedUtc, request.Error) { ScanResult = ReadScanResult(request) };
 

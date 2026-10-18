@@ -1,4 +1,4 @@
-using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
@@ -9,5 +9,5 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 public sealed record FontTaskExecutionResult(long? BatchId, string Outcome, long? OperationRequestId = null)
 {
     /// <summary>Gets the successful scan result when this invocation analyzed inventory.</summary>
-    public FontScanOutcomeDto? ScanResult { get; init; }
+    public FontScanOutcome? ScanResult { get; init; }
 }

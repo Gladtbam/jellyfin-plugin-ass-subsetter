@@ -2,11 +2,11 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
+namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 
 /// <summary>Maps one consistent database status page without calculating or accessing files.</summary>
 public sealed class FontRenameStateQuery

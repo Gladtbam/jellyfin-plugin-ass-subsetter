@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
-using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
+
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
@@ -276,7 +276,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    FontScanOutcomeDto outcome = new(generationId, current.Id, false, scan.ChangeReasons);
+                    FontScanOutcome outcome = new(generationId, current.Id, false, scan.ChangeReasons);
                     await CompleteRequestAsync(request with { ResultJson = JsonSerializer.Serialize(outcome, JsonOptions) }, OperationRequestStatus.Complete, null).ConfigureAwait(false);
                     _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", request.Id, generationId, current.Id, stopwatch.ElapsedMilliseconds);
                     progress.Report(100);
@@ -306,7 +306,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                     ? OperationRequestStatus.Complete
                     : OperationRequestStatus.Failed;
                 await CompleteRequestAsync(
-                    request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcomeDto(generationId, batch.Id, true, scan.ChangeReasons), JsonOptions) : null },
+                    request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, true, scan.ChangeReasons), JsonOptions) : null },
                     status,
                     status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
                 if (status == OperationRequestStatus.Complete)
@@ -317,7 +317,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                 return new FontTaskExecutionResult(
                     batch.Id,
                     status == OperationRequestStatus.Complete ? "analyzed" : batch.Status.ToString(),
-                    request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcomeDto(generationId, batch.Id, true, scan.ChangeReasons) : null };
+                    request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, true, scan.ChangeReasons) : null };
             }
             catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
             {

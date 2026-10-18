@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 using System.Security.Cryptography;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
@@ -6,7 +7,7 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 
-namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
+namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Api;
 
 public sealed class FontRenameStateQueryTests : IDisposable
 {
