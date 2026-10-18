@@ -333,7 +333,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                 string outcome = scheduled.Status == OperationRequestStatus.Running
                     ? "request-active"
                     : "request-already-processed";
-                return new FontTaskExecutionResult(analysis.Id, outcome);
+                return new FontTaskExecutionResult(analysis.Id, outcome, scheduled.Id);
             }
 
             request = await _repository.ClaimNextOperationAsync(

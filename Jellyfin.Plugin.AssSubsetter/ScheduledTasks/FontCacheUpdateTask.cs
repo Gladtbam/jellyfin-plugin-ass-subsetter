@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
@@ -12,16 +13,20 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 public sealed class FontCacheUpdateTask : IScheduledTask
 {
     private readonly IFontMaintenanceTaskExecutor _executor;
+    private readonly Func<PluginConfiguration> _configuration;
     private readonly ILogger<FontCacheUpdateTask> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="FontCacheUpdateTask"/> class.</summary>
     /// <param name="executor">The serialized font task executor.</param>
+    /// <param name="configuration">Provides the current history retention setting.</param>
     /// <param name="logger">The concise scheduled-task log sink.</param>
     public FontCacheUpdateTask(
         IFontMaintenanceTaskExecutor executor,
+        Func<PluginConfiguration> configuration,
         ILogger<FontCacheUpdateTask> logger)
     {
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -47,7 +52,7 @@ public sealed class FontCacheUpdateTask : IScheduledTask
             _logger,
             "inventory-analysis",
             progress,
-            _executor.RefreshInventoryAndAnalyzeAsync,
+            (taskProgress, token) => _executor.RefreshAnalyzeAndPruneAsync(_configuration().FontHistoryRetentionCount, taskProgress, token),
             cancellationToken);
     }
 

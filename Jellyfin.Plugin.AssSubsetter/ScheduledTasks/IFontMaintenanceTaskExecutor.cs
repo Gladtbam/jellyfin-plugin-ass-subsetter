@@ -5,7 +5,7 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
-/// <summary>Coordinates the durable work behind the five discoverable Jellyfin font tasks.</summary>
+/// <summary>Coordinates the durable work behind the three discoverable Jellyfin font tasks.</summary>
 public interface IFontMaintenanceTaskExecutor
 {
     /// <summary>Gets a value indicating whether any font task holds the shared execution slot.</summary>

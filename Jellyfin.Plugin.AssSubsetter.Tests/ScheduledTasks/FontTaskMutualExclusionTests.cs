@@ -28,11 +28,9 @@ public sealed class FontTaskMutualExclusionTests
             OperationRequest[] before = fixture.Repository.OperationRequests.ToArray();
             IScheduledTask[] tasks =
             [
-                new FontCacheUpdateTask(fixture.Executor, NullLogger<FontCacheUpdateTask>.Instance),
+                new FontCacheUpdateTask(fixture.Executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance),
                 new FontDuplicateQuarantineTask(fixture.Executor, NullLogger<FontDuplicateQuarantineTask>.Instance),
-                new FontQuarantinePurgeTask(fixture.Executor, NullLogger<FontQuarantinePurgeTask>.Instance),
-                new FontFilenameNormalizationTask(fixture.Executor, NullLogger<FontFilenameNormalizationTask>.Instance),
-                new FontAnalysisBatchRetentionTask(fixture.Executor, () => new PluginConfiguration(), NullLogger<FontAnalysisBatchRetentionTask>.Instance)
+                new FontFilenameNormalizationTask(fixture.Executor, NullLogger<FontFilenameNormalizationTask>.Instance)
             ];
 
             await Task.WhenAll(tasks.Select(task => Assert.ThrowsAnyAsync<OperationCanceledException>(

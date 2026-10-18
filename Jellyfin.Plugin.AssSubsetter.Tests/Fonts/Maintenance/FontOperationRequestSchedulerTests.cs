@@ -211,9 +211,8 @@ public sealed class FontOperationRequestSchedulerTests
     }
 
     private static IScheduledTaskWorker[] Workers(IFontMaintenanceTaskExecutor executor)
-        => [Worker(new FontCacheUpdateTask(executor, NullLogger<FontCacheUpdateTask>.Instance)),
+        => [Worker(new FontCacheUpdateTask(executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance)),
             Worker(new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance)),
-            Worker(new FontQuarantinePurgeTask(executor, NullLogger<FontQuarantinePurgeTask>.Instance)),
             Worker(new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance))];
 
     private static IScheduledTaskWorker Worker(IScheduledTask task)

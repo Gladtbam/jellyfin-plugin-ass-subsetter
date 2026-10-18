@@ -47,7 +47,7 @@ public sealed class FontDuplicateQuarantineTask : IScheduledTask
             _logger,
             "duplicate-quarantine",
             progress,
-            _executor.QuarantineDuplicatesAsync,
+            _executor.QuarantineAndPurgeAsync,
             cancellationToken);
     }
 

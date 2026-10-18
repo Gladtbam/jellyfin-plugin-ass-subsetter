@@ -5,24 +5,24 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
-public sealed class FontAnalysisBatchRetentionTaskTests
+public sealed class FontCacheUpdateRetentionTests
 {
     [Fact]
     public async Task ExecuteAsync_UsesCurrentConfigurationAndReportsCompletion()
     {
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.PruneHistoryAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FontHistoryPruneResult(3, 5, false));
+        executor.Setup(item => item.RefreshAnalyzeAndPruneAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FontTaskExecutionResult(1, "analyzed"));
         var configuration = new PluginConfiguration { FontHistoryRetentionCount = 2 };
         var progress = new List<double>();
-        var task = new FontAnalysisBatchRetentionTask(
+        var task = new FontCacheUpdateTask(
             executor.Object,
             () => configuration,
-            NullLogger<FontAnalysisBatchRetentionTask>.Instance);
+            NullLogger<FontCacheUpdateTask>.Instance);
 
         await task.ExecuteAsync(new InlineProgress(progress.Add), CancellationToken.None);
 
-        executor.Verify(item => item.PruneHistoryAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()), Times.Once);
+        executor.Verify(item => item.RefreshAnalyzeAndPruneAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()), Times.Once);
         Assert.Equal(new double[] { 0, 100 }, progress);
     }
 
@@ -30,15 +30,15 @@ public sealed class FontAnalysisBatchRetentionTaskTests
     public async Task ExecuteAsync_ZeroHistoryRetentionKeepsReportsAndGenerations()
     {
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.PruneHistoryAsync(0, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FontHistoryPruneResult(0, 0, false));
-        var task = new FontAnalysisBatchRetentionTask(
+        executor.Setup(item => item.RefreshAnalyzeAndPruneAsync(0, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FontTaskExecutionResult(1, "analyzed"));
+        var task = new FontCacheUpdateTask(
             executor.Object,
             () => new PluginConfiguration { FontHistoryRetentionCount = 0 },
-            NullLogger<FontAnalysisBatchRetentionTask>.Instance);
+            NullLogger<FontCacheUpdateTask>.Instance);
 
         await task.ExecuteAsync(new InlineProgress(_ => { }), CancellationToken.None);
 
-        executor.Verify(item => item.PruneHistoryAsync(0, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()), Times.Once);
+        executor.Verify(item => item.RefreshAnalyzeAndPruneAsync(0, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

@@ -11,7 +11,7 @@ public sealed class FontCacheUpdateTaskTests
     {
         var executor = new RecordingTaskExecutor();
         var reports = new List<double>();
-        var task = new FontCacheUpdateTask(executor, NullLogger<FontCacheUpdateTask>.Instance);
+        var task = new FontCacheUpdateTask(executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
 
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
@@ -24,7 +24,7 @@ public sealed class FontCacheUpdateTaskTests
     [Fact]
     public void GetDefaultTriggers_ShouldReturnDailyIntervalOnly()
     {
-        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), NullLogger<FontCacheUpdateTask>.Instance);
+        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
 
         TaskTriggerInfo[] triggers = task.GetDefaultTriggers().ToArray();
 
@@ -36,7 +36,7 @@ public sealed class FontCacheUpdateTaskTests
     [Fact]
     public void Identity_ShouldRemainStableAndLocalized()
     {
-        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), NullLogger<FontCacheUpdateTask>.Instance);
+        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
 
         Assert.Equal("LocalFontCacheUpdateTask", task.Key);
         Assert.Equal("Subtitles", task.Category);

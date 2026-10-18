@@ -113,7 +113,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
             {
                 FontOperationKind.Analyze or FontOperationKind.RebuildDerivedData or FontOperationKind.RefreshRenameCandidates => typeof(FontCacheUpdateTask),
                 FontOperationKind.Quarantine => typeof(FontDuplicateQuarantineTask),
-                FontOperationKind.Purge => typeof(FontQuarantinePurgeTask),
+                FontOperationKind.Purge => typeof(FontDuplicateQuarantineTask),
                 FontOperationKind.NormalizeNames or FontOperationKind.RollbackNames => typeof(FontFilenameNormalizationTask),
                 _ => null
             };

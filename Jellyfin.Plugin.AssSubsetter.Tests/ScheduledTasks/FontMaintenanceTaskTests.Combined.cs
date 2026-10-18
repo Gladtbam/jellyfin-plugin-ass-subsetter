@@ -129,4 +129,34 @@ public sealed partial class FontMaintenanceTaskTests
             (await repository.GetOperationRequestAsync(request.Id, CancellationToken.None))!.Status);
         Assert.False(executor.IsBusy);
     }
+
+    [Theory]
+    [InlineData(MaintenanceBatchStatus.Complete)]
+    [InlineData(MaintenanceBatchStatus.Failed)]
+    [InlineData(MaintenanceBatchStatus.Cancelled)]
+    [InlineData(MaintenanceBatchStatus.Partial)]
+    public async Task RepeatedCombinedQuarantineCleansOnlyPreviouslySuccessfulWork(MaintenanceBatchStatus status)
+    {
+        var repository = new InMemoryFontRepository();
+        long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
+        await repository.WriteInventoryAsync(generation, [File(10, generation)], CancellationToken.None);
+        await repository.PublishAnalysisAsync(Analysis(generation) with
+        {
+            Groups = [new DuplicateGroupRecord
+            {
+                EvidenceJson = "{}", Members = [new DuplicateGroupMemberRecord
+                {
+                    FaceId = 100, FileId = 10, Decision = DuplicateGroupMemberDecision.QuarantineCandidate, ScoreJson = "{}", Reason = "duplicate"
+                }]
+            }]
+        }, CancellationToken.None);
+        int quarantines = 0, purges = 0;
+        using var executor = CreateExecutor(repository,
+            quarantine: (request, _, _) => { quarantines++; return repository.SaveMaintenanceBatchAsync(Maintenance(1, request.Id) with { Status = status }, CancellationToken.None); },
+            purge: _ => { purges++; return Task.FromResult(0); });
+        await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None);
+        await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None);
+        Assert.Equal(1, quarantines);
+        Assert.Equal(status == MaintenanceBatchStatus.Complete ? 2 : 0, purges);
+    }
 }

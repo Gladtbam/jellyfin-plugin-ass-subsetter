@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
@@ -47,7 +48,11 @@ public sealed partial class FontMaintenanceTaskExecutor
         try
         {
             FontTaskExecutionResult result = await RunQuarantineCoreAsync(new ScaledProgress(progress, 0, 90), true, cancellationToken).ConfigureAwait(false);
-            if (result.Outcome is "Complete" or "no-candidates")
+            bool completedEarlier = result.Outcome == "request-already-processed"
+                && result.OperationRequestId is long requestId
+                && (await _repository.GetOperationRequestAsync(requestId, cancellationToken).ConfigureAwait(false))?.Status == OperationRequestStatus.Complete
+                && (await _repository.GetMaintenanceBatchByOperationRequestAsync(requestId, cancellationToken).ConfigureAwait(false))?.Status == MaintenanceBatchStatus.Complete;
+            if (result.Outcome is "Complete" or "no-candidates" || completedEarlier)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 FontTaskExecutionResult cleanup = await RunPurgeCoreAsync(new ScaledProgress(progress, 90, 99), true, cancellationToken).ConfigureAwait(false);

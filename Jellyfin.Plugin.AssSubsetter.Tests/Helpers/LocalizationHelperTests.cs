@@ -16,6 +16,8 @@ public class LocalizationHelperTests
         Assert.Contains("分析重复字体", LocalizationHelper.GetString("FontAnalysisTask_Name"), StringComparison.Ordinal);
         Assert.Contains("扫描字体目录", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
         Assert.Contains("隔离", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
+        Assert.Contains("清理旧分析报告", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
+        Assert.Contains("30 天", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontPurgeTask_Description"), StringComparison.Ordinal);
@@ -40,6 +42,8 @@ public class LocalizationHelperTests
         Assert.Contains("Scan font directories", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
         Assert.Contains("analysis report", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
         Assert.Contains("Quarantine", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
+        Assert.Contains("prune old reports", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
+        Assert.Contains("at least 30 days", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontAnalysisTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontQuarantineTask_Description"), StringComparison.Ordinal);
         Assert.DoesNotContain("24", LocalizationHelper.GetString("FontPurgeTask_Description"), StringComparison.Ordinal);
