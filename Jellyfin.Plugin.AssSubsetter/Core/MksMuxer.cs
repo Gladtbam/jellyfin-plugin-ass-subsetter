@@ -82,7 +82,9 @@ public class MksMuxer
                     return false;
                 }
 
-                string fontPath = Path.Join(workspacePath, safeName);
+                // Attachment metadata is independent of its private workspace path.
+                // An ordinal also protects against duplicate names and subtitle.ass collisions.
+                string fontPath = Path.Join(workspacePath, $"attachment-{fontPaths.Count}.font");
                 await File.WriteAllBytesAsync(fontPath, font.Data, cancellationToken).ConfigureAwait(false);
                 fontPaths.Add(fontPath);
             }

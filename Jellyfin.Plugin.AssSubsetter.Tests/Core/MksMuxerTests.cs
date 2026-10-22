@@ -89,6 +89,55 @@ public sealed class MksMuxerTests : IDisposable
         AssertNoTemporaryFiles();
     }
 
+    [Theory]
+    [InlineData("SAME.ttf", "SAME.ttf")]
+    [InlineData("Same.ttf", "same.ttf")]
+    [InlineData("subtitle.ass", "attachment-0.font")]
+    public async Task MuxAsync_ShouldPreserveEveryPayloadAndMetadata_WhenAttachmentNamesCollide(string firstName, string secondName)
+    {
+        var artifact = new SubsetArtifact("[Script Info]\nScriptType: v4.00+",
+        [
+            new SubsetFontAttachment(firstName, "font/ttf", [1, 2, 3]),
+            new SubsetFontAttachment(secondName, "font/otf", [4, 5, 6])
+        ]);
+        var paths = new List<string>();
+        var payloads = new List<byte[]>();
+        string? assContent = null;
+        string[] arguments = [];
+        var muxer = CreateMuxer(async (startInfo, token) =>
+        {
+            arguments = startInfo.ArgumentList.ToArray();
+            assContent = await File.ReadAllTextAsync(arguments[Array.IndexOf(arguments, "-i") + 1], token);
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                if (arguments[index] == "-attach")
+                {
+                    paths.Add(arguments[index + 1]);
+                    payloads.Add(await File.ReadAllBytesAsync(arguments[index + 1], token));
+                }
+            }
+
+            await File.WriteAllTextAsync(arguments[^1], "mks-data", token);
+            return 0;
+        });
+
+        Assert.True(await muxer.MuxAsync(artifact, Path.Join(_tempPath, "subtitle.mks"), TestContext.Current.CancellationToken));
+        Assert.Equal(artifact.AssContent, assContent);
+        Assert.Equal(2, paths.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+        Assert.Equal(2, payloads.Count);
+        for (int index = 0; index < artifact.Fonts.Count; index++)
+        {
+            Assert.Equal(artifact.Fonts[index].Data, payloads[index]);
+            int metadataIndex = Array.IndexOf(arguments, $"-metadata:s:t:{index}");
+            Assert.True(metadataIndex >= 0);
+            Assert.Equal($"filename={artifact.Fonts[index].FileName}", arguments[metadataIndex + 1]);
+            Assert.Equal($"-metadata:s:t:{index}", arguments[metadataIndex + 2]);
+            Assert.Equal($"mimetype={artifact.Fonts[index].MimeType}", arguments[metadataIndex + 3]);
+        }
+
+        AssertNoTemporaryFiles();
+    }
+
     private static SubsetArtifact CreateArtifact()
     {
         return new SubsetArtifact(

@@ -175,7 +175,7 @@ public class AssProcessor
                 byte[] renamedData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix) ?? subsetData;
                 string extension = Path.GetExtension(physicalPath).Equals(".otf", StringComparison.OrdinalIgnoreCase) ? ".otf" : ".ttf";
                 string mimeType = extension == ".otf" ? "font/otf" : "font/ttf";
-                attachments.Add(new SubsetFontAttachment($"{newPrefix}{extension}", mimeType, renamedData));
+                attachments.Add(new SubsetFontAttachment($"{newPrefix}_{attachments.Count}{extension}", mimeType, renamedData));
                 fontNameMap[fontName] = newPrefix;
             }
 
