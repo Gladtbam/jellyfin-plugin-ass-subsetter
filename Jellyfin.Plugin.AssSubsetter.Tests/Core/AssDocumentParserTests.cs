@@ -153,6 +153,79 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\p1}m 0 0 l 100 100{\p0}Hello
         Assert.Contains((uint)'H', codepoints);
     }
 
+    [Theory]
+    [InlineData(@"{\bord2\b1}A", "Arial", true, false, null)]
+    [InlineData(@"{\r\b1}A", "Arial", true, false, null)]
+    [InlineData(@"{\b1\r}A", "Arial", false, false, null)]
+    [InlineData(@"{\b0\b1\b0\b1}A", "Arial", true, false, null)]
+    [InlineData(@"{\b1\b600}A", "Arial", false, false, 600)]
+    [InlineData(@"{\b600\b0}A", "Arial", false, false, null)]
+    [InlineData(@"{\iclip(0,0,10,10)\i1}A", "Arial", false, true, null)]
+    [InlineData(@"{\i1\i0\i1}A", "Arial", false, true, null)]
+    [InlineData(@"{\fnFirst\fn@Comic Sans MS}A", "Comic Sans MS", false, false, null)]
+    [InlineData(@"{\fnFont (Display)}A", "Font (Display)", false, false, null)]
+    [InlineData(@"{\fnFirst\fn}A", "Arial", false, false, null)]
+    [InlineData(@"{\rAlt\b0\i0}A", "Times New Roman", false, false, null)]
+    [InlineData(@"{\rAlt\r\b1}A", "Arial", true, false, null)]
+    [InlineData(@"{\fnFirst\rMissing}A", "Arial", false, false, null)]
+    [InlineData(@"{\blur1\bord2\be1\ishad1\pbo3\pos(1,2)}A", "Arial", false, false, null)]
+    [InlineData(@"{\b1\t(0,100,\fnOther\i1\b0)}A", "Arial", true, false, null)]
+    [InlineData(@"{\t(0,100,\t(\fnOther)\i1)\b1}A", "Arial", true, false, null)]
+    [InlineData(@"{\t(\clip(0,0,10,10)\fnOther)\fnActual}A", "Actual", false, false, null)]
+    [InlineData(@"{\t(\fnOther\b1}A", "Arial", false, false, null)]
+    public void ExtractUsedCharacters_ShouldApplyTopLevelOverridesInOrder(string text, string fontName,
+        bool bold, bool italic, int? weight)
+    {
+        WriteOverrideAss(text);
+
+        var result = _parser.ExtractUsedCharacters(_tempFile);
+
+        var entry = Assert.Single(result);
+        Assert.Equal(new FontDescriptor(fontName, weight, bold, italic), entry.Key);
+        Assert.Equal(new uint[] { 'A' }, entry.Value);
+    }
+
+    [Theory]
+    [InlineData(@"{\p1\p0}A")]
+    [InlineData(@"{\p0\p1}m 0 0 l 1 1{\p0}A")]
+    [InlineData(@"{\p01}m 0 0{\p0}A")]
+    [InlineData(@"{\p 1}m 0 0{\p0}A")]
+    [InlineData(@"{\p1}m 0 0{\r}A")]
+    [InlineData(@"{\p1\r}A")]
+    [InlineData(@"{\r\p1}m 0 0{\p0}A")]
+    [InlineData(@"{\t(\p1)}A")]
+    public void ExtractUsedCharacters_ShouldTrackDrawingTransitionsInOrder(string text)
+    {
+        WriteOverrideAss(text);
+
+        var result = _parser.ExtractUsedCharacters(_tempFile);
+
+        var entry = Assert.Single(result);
+        Assert.Equal(new FontDescriptor("Arial", null, false, false), entry.Key);
+        Assert.Equal(new uint[] { 'A' }, entry.Value);
+    }
+
+    [Fact]
+    public void ExtractUsedCharacters_ShouldAssignCharactersAcrossOverrideBlocks()
+    {
+        WriteOverrideAss(@"A{\bord2\b1}B{\r\i1}C{\rAlt}D{\r}E");
+
+        var result = _parser.ExtractUsedCharacters(_tempFile);
+
+        Assert.Equal(4, result.Count);
+        Assert.True(result[new FontDescriptor("Arial", null, false, false)].SetEquals(new uint[] { 'A', 'E' }));
+        Assert.Equal(new uint[] { 'B' }, result[new FontDescriptor("Arial", null, true, false)]);
+        Assert.Equal(new uint[] { 'C' }, result[new FontDescriptor("Arial", null, false, true)]);
+        Assert.Equal(new uint[] { 'D' }, result[new FontDescriptor("Times New Roman", null, true, true)]);
+    }
+
+    private void WriteOverrideAss(string text)
+    {
+        WriteAss("[V4+ Styles]\nFormat: Name, Fontname, Bold, Italic\n" +
+                 "Style: Default,Arial,0,0\nStyle: Alt,Times New Roman,-1,-1\n" +
+                 "[Events]\nFormat: Style, Text\nDialogue: Default," + text);
+    }
+
     [Fact]
     public void ExtractUsedCharacters_ShouldParseSurrogatePairsCorrectly()
     {

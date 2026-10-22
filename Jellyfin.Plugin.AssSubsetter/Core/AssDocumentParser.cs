@@ -178,124 +178,10 @@ public class AssDocumentParser
 
                 string tagContent = text.Substring(i + 1, endTag - i - 1);
 
-                int fnIndex = tagContent.IndexOf("\\fn", StringComparison.OrdinalIgnoreCase);
-                if (fnIndex != -1)
+                ApplyOverrideTags(tagContent, ref currentFont, defaultFont, styles, ref inDrawingMode);
+                if (!usedChars.ContainsKey(currentFont))
                 {
-                    int start = fnIndex + 3;
-                    int end = start;
-                    while (end < tagContent.Length && tagContent[end] != '\\')
-                    {
-                        end++;
-                    }
-
-                    string newFont = tagContent.Substring(start, end - start).Trim();
-                    if (newFont.StartsWith('@'))
-                    {
-                        newFont = newFont.Substring(1);
-                    }
-
-                    if (!string.IsNullOrEmpty(newFont))
-                    {
-                        currentFont = currentFont with { FontName = newFont };
-                        if (!usedChars.ContainsKey(currentFont))
-                        {
-                            usedChars[currentFont] = new HashSet<uint>();
-                        }
-                    }
-                }
-
-                int bIndex = tagContent.IndexOf("\\b", StringComparison.OrdinalIgnoreCase);
-                if (bIndex != -1)
-                {
-                    int start = bIndex + 2;
-                    int end = start;
-                    while (end < tagContent.Length && tagContent[end] != '\\')
-                    {
-                        end++;
-                    }
-
-                    string bVal = tagContent.Substring(start, end - start).Trim();
-                    if (bVal == "1")
-                    {
-                        currentFont = currentFont with { IsBoldRequest = true, RequestedWeight = null };
-                    }
-                    else if (bVal == "0")
-                    {
-                        currentFont = currentFont with { IsBoldRequest = false, RequestedWeight = null };
-                    }
-                    else if (int.TryParse(bVal, out int w))
-                    {
-                        currentFont = currentFont with { RequestedWeight = w, IsBoldRequest = false };
-                    }
-
-                    if (!usedChars.ContainsKey(currentFont))
-                    {
-                        usedChars[currentFont] = new HashSet<uint>();
-                    }
-                }
-
-                int iIndex = tagContent.IndexOf("\\i", StringComparison.OrdinalIgnoreCase);
-                if (iIndex != -1)
-                {
-                    int start = iIndex + 2;
-                    int end = start;
-                    while (end < tagContent.Length && tagContent[end] != '\\')
-                    {
-                        end++;
-                    }
-
-                    string iVal = tagContent.Substring(start, end - start).Trim();
-                    if (iVal == "1")
-                    {
-                        currentFont = currentFont with { IsItalic = true };
-                    }
-                    else if (iVal == "0")
-                    {
-                        currentFont = currentFont with { IsItalic = false };
-                    }
-
-                    if (!usedChars.ContainsKey(currentFont))
-                    {
-                        usedChars[currentFont] = new HashSet<uint>();
-                    }
-                }
-
-                int rIndex = tagContent.IndexOf("\\r", StringComparison.OrdinalIgnoreCase);
-                if (rIndex != -1)
-                {
-                    int start = rIndex + 2;
-                    int end = start;
-                    while (end < tagContent.Length && tagContent[end] != '\\')
-                    {
-                        end++;
-                    }
-
-                    string overrideStyle = NormalizeStyleName(tagContent.Substring(start, end - start).Trim());
-                    if (string.IsNullOrEmpty(overrideStyle))
-                    {
-                        currentFont = defaultFont;
-                    }
-                    else if (styles.TryGetValue(overrideStyle, out var of))
-                    {
-                        currentFont = of;
-                    }
-
-                    if (!usedChars.ContainsKey(currentFont))
-                    {
-                        usedChars[currentFont] = new HashSet<uint>();
-                    }
-                }
-
-                int pSearchIdx = 0;
-                while ((pSearchIdx = tagContent.IndexOf("\\p", pSearchIdx, StringComparison.OrdinalIgnoreCase)) != -1)
-                {
-                    if (pSearchIdx + 2 < tagContent.Length && char.IsDigit(tagContent[pSearchIdx + 2]))
-                    {
-                        inDrawingMode = tagContent[pSearchIdx + 2] != '0';
-                        break;
-                    }
-
-                    pSearchIdx += 2;
+                    usedChars[currentFont] = new HashSet<uint>();
                 }
 
                 i = endTag;
@@ -327,6 +213,115 @@ public class AssDocumentParser
 
                     usedChars[currentFont].Add(c);
                 }
+            }
+        }
+    }
+
+    private static void ApplyOverrideTags(
+        string content,
+        ref FontDescriptor currentFont,
+        FontDescriptor defaultFont,
+        Dictionary<string, FontDescriptor> styles,
+        ref bool inDrawingMode)
+    {
+        int position = 0;
+        while (position < content.Length)
+        {
+            int slash = content.IndexOf('\\', position);
+            if (slash < 0)
+            {
+                break;
+            }
+
+            int start = slash + 1;
+            int nameEnd = start;
+            // Font and reset names are free-form strings, including letters and parentheses.
+            if (content.AsSpan(start).StartsWith("fn", StringComparison.OrdinalIgnoreCase))
+            {
+                nameEnd += 2;
+            }
+            else if (start < content.Length && (content[start] == 'r' || content[start] == 'R'))
+            {
+                nameEnd++;
+            }
+            else
+            {
+                while (nameEnd < content.Length && char.IsLetter(content[nameEnd]))
+                {
+                    nameEnd++;
+                }
+            }
+
+            string name = content.Substring(start, nameEnd - start).ToLowerInvariant();
+            int end = nameEnd;
+            int depth = 0;
+            bool stringArgument = name is "fn" or "r";
+            while (end < content.Length)
+            {
+                char c = content[end];
+                if (c == '\\' && (stringArgument || depth == 0))
+                {
+                    break;
+                }
+
+                if (!stringArgument)
+                {
+                    if (c == '(')
+                    {
+                        depth++;
+                    }
+                    else if (c == ')' && depth > 0)
+                    {
+                        depth--;
+                    }
+                }
+
+                end++;
+            }
+
+            // Parenthesized tags (notably nested transforms) are consumed as a unit.
+            // Their children must not leak into the static font/drawing state.
+            string value = content.Substring(nameEnd, end - nameEnd).Trim();
+            position = end;
+            switch (name)
+            {
+                case "fn":
+                    if (value.StartsWith('@'))
+                    {
+                        value = value.Substring(1);
+                    }
+
+                    currentFont = currentFont with { FontName = value.Length == 0 ? defaultFont.FontName : value };
+                    break;
+                case "b":
+                    if (int.TryParse(value, out int weight))
+                    {
+                        currentFont = currentFont with
+                        {
+                            IsBoldRequest = weight == 1,
+                            RequestedWeight = weight is 0 or 1 ? null : weight
+                        };
+                    }
+
+                    break;
+                case "i":
+                    if (value is "0" or "1")
+                    {
+                        currentFont = currentFont with { IsItalic = value == "1" };
+                    }
+
+                    break;
+                case "r":
+                    currentFont = styles.TryGetValue(NormalizeStyleName(value), out var resetFont) ? resetFont : defaultFont;
+                    inDrawingMode = false;
+                    break;
+                case "p":
+                    if (int.TryParse(value, out int drawingScale))
+                    {
+                        inDrawingMode = drawingScale > 0;
+                    }
+
+                    break;
             }
         }
     }
