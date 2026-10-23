@@ -554,7 +554,7 @@ public class AssToSupConverter : IDisposable
             string content = line.Substring(9);
             // Split by comma, but only up to the text field (text can contain commas)
             int maxSplits = Math.Max(startIdx, Math.Max(endIdx, textIdx >= 0 ? textIdx : 0));
-            string[] parts = content.Split(',', maxSplits + 2);
+            string[] parts = content.Split(',', maxSplits + 1);
 
             if (parts.Length <= Math.Max(startIdx, endIdx))
             {

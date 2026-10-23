@@ -14,6 +14,19 @@ public sealed class AssToSupConverterTests : IDisposable
     }
 
     [Fact]
+    public async Task ParseEvents_PreservesAnimationAfterTextCommas()
+    {
+        string input = Path.Join(_tempDir, "animation.ass");
+        await File.WriteAllTextAsync(input,
+            "[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:02.00,Default,,0,0,0,,Hello, {\\t(0,1000,\\fs60)}world",
+            TestContext.Current.CancellationToken);
+        var parse = typeof(AssToSupConverter).GetMethod("ParseAssEvents", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        var events = (System.Collections.IEnumerable)parse.Invoke(null, [input])!;
+        object ev = Assert.Single(events.Cast<object>());
+        Assert.True((bool)ev.GetType().GetProperty("HasAnimation")!.GetValue(ev)!);
+    }
+
+    [Fact]
     public async Task ConvertAsync_ShouldPreserveExistingOutput_WhenConversionFails()
     {
         string input = Path.Join(_tempDir, "empty.ass");
