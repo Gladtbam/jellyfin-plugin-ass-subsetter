@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
@@ -28,11 +26,8 @@ public class SubtitleCacheService : IHostedService, IDisposable
     private readonly AsyncKeyedLocker<string> _fileLocks = new(StringComparer.Ordinal);
     private readonly ILogger<SubtitleCacheService> _logger;
     private readonly MksMuxer? _mksMuxer;
-    private readonly ConcurrentDictionary<string, Lazy<Task>> _backgroundConversions = new(StringComparer.Ordinal);
-    private readonly object _backgroundGate = new();
-    private readonly CancellationTokenSource _stoppingCts = new();
+    private readonly BoundedBackgroundScheduler _scheduler;
     private bool _disposed;
-    private bool _stopping;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="SubtitleCacheService" /> class.
@@ -72,6 +67,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
         _assToSupConverter = assToSupConverter;
         _mksMuxer = mksMuxer;
         _logger = logger;
+        _scheduler = new BoundedBackgroundScheduler(logger);
         CacheFolderPath = !string.IsNullOrWhiteSpace(cacheFolderPath)
             ? cacheFolderPath
             : Plugin.Instance?.PluginCachePath ?? Path.Join(AppContext.BaseDirectory, "Cache");
@@ -92,7 +88,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <summary>
     ///     Gets the number of SUP conversions currently tracked by the service.
     /// </summary>
-    internal int ActiveBackgroundConversionCount => _backgroundConversions.Count;
+    internal int ActiveBackgroundConversionCount => _scheduler.Count;
 
     /// <inheritdoc />
     public Task StartAsync(CancellationToken cancellationToken)
@@ -103,18 +99,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <inheritdoc />
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        Task[] tasks;
-        lock (_backgroundGate)
-        {
-            _stopping = true;
-            tasks = _backgroundConversions.Values
-                .Where(static lazy => lazy.IsValueCreated)
-                .Select(static lazy => lazy.Value)
-                .ToArray();
-        }
-
-        await _stoppingCts.CancelAsync().ConfigureAwait(false);
-        await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _scheduler.StopAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -137,13 +122,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
         if (disposing)
         {
-            lock (_backgroundGate)
-            {
-                _stopping = true;
-            }
-
-            _stoppingCts.Cancel();
-            _stoppingCts.Dispose();
+            _scheduler.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
 
         _disposed = true;
@@ -304,69 +283,9 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <param name="videoHeight">Video frame height.</param>
     private void TriggerBackgroundSupConversion(string conversionKey, Guid itemId, string originalAssPath, int videoWidth, int videoHeight)
     {
-        Lazy<Task>? candidate = null;
-        candidate = new Lazy<Task>(
-            () => Task.Run(
-                () => RunTrackedSupConversionAsync(
-                    conversionKey,
-                    candidate!,
-                    itemId,
-                    originalAssPath,
-                    videoWidth,
-                    videoHeight),
-                CancellationToken.None),
-            LazyThreadSafetyMode.ExecutionAndPublication);
-        Lazy<Task> tracked;
-        lock (_backgroundGate)
-        {
-            if (_stopping)
-            {
-                return;
-            }
-
-            tracked = _backgroundConversions.GetOrAdd(conversionKey, candidate);
-            if (ReferenceEquals(tracked, candidate))
-            {
-                _ = candidate.Value;
-            }
-        }
-
-        if (!ReferenceEquals(tracked, candidate))
-        {
-            _logger.LogInformation("[AssSubsetter] Background SUP conversion already in progress for item {ItemId}. Skipping.", itemId);
-            return;
-        }
-
-        _logger.LogInformation("[AssSubsetter] Triggering background ASS to SUP conversion for item {ItemId}...", itemId);
-    }
-
-    private async Task RunTrackedSupConversionAsync(
-        string conversionKey,
-        Lazy<Task> trackedTask,
-        Guid itemId,
-        string originalAssPath,
-        int videoWidth,
-        int videoHeight)
-    {
-        try
-        {
-            await GetOrGenerateSupAsync(itemId, originalAssPath, videoWidth, videoHeight, _stoppingCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (_stoppingCts.IsCancellationRequested)
-        {
-            _logger.LogInformation("[AssSubsetter] Background SUP conversion cancelled for item {ItemId} (application stopping).", itemId);
-        }
-
-        // codeql[cs/catch-of-all-exceptions] Justification: Prevent an unobserved background task exception.
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "[AssSubsetter] Background SUP conversion failed for item {ItemId}.", itemId);
-        }
-        finally
-        {
-            ((ICollection<KeyValuePair<string, Lazy<Task>>>)_backgroundConversions)
-                .Remove(new KeyValuePair<string, Lazy<Task>>(conversionKey, trackedTask));
-        }
+        _scheduler.TryEnqueue(
+            conversionKey,
+            async token => { await GetOrGenerateSupAsync(itemId, originalAssPath, videoWidth, videoHeight, token).ConfigureAwait(false); });
     }
 
     /// <summary>

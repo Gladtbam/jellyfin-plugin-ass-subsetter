@@ -316,6 +316,50 @@ public sealed class SubtitleCacheServiceSupTests : IDisposable
         Assert.Equal(0, mockCacheService.Object.ActiveBackgroundConversionCount);
     }
 
+    [Fact]
+    public async Task BackgroundQueueLimitsRunningConversionsAndCancelsPendingWork()
+    {
+        int startedCount = 0;
+        var twoStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var service = new Mock<SubtitleCacheService>(
+            (Func<PluginConfiguration>)(() => _config), null!, null!, _customCachePath, NullLogger<SubtitleCacheService>.Instance)
+        {
+            CallBase = true
+        };
+        using var lifetime = service.Object;
+        service.Protected().Setup<Task<string>>(
+            "GetOrGenerateSupAsync",
+            ItExpr.IsAny<Guid>(),
+            ItExpr.IsAny<string>(),
+            ItExpr.IsAny<int>(),
+            ItExpr.IsAny<int>(),
+            ItExpr.IsAny<CancellationToken>())
+            .Returns(async (Guid id, string path, int width, int height, CancellationToken token) =>
+            {
+                if (Interlocked.Increment(ref startedCount) == 2)
+                {
+                    twoStarted.TrySetResult();
+                }
+
+                await Task.Delay(Timeout.Infinite, token);
+                return string.Empty;
+            });
+        string source = Path.Join(_tempDataPath, "bounded.ass");
+        await File.WriteAllTextAsync(source, "plain", TestContext.Current.CancellationToken);
+        for (int index = 0; index < 3; index++)
+        {
+            var result = await lifetime.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.False(result.IsReady);
+        }
+
+        await twoStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(3, lifetime.ActiveBackgroundConversionCount);
+        Assert.Equal(2, Volatile.Read(ref startedCount));
+        await lifetime.StopAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(0, lifetime.ActiveBackgroundConversionCount);
+        Assert.Equal(2, startedCount);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDataPath))
