@@ -96,7 +96,7 @@ public sealed partial class SqliteFontRepository
                     orderby file.NormalizedPath, face.FaceIndex
                     select new
                     {
-                        face.Id, file.Path, face.FaceIndex, face.FamilyName, face.StyleName, face.Weight, face.Width, face.Slant,
+                        face.Id, file.Path, file.Sha256, face.FaceIndex, face.FamilyName, face.StyleName, face.Weight, face.Width, face.Slant,
                         face.IsItalic, face.IsFixedPitch, face.Technology, face.RetentionScore, face.IsRuntimePreferred,
                         NamesJson = evidence == null ? null : evidence.NamesJson,
                         Coverage = coverage == null ? null : coverage.CompactValue
@@ -106,6 +106,7 @@ public sealed partial class SqliteFontRepository
         {
             faces.Add(new RuntimeFontFace(face.Id, face.Path, face.FaceIndex, face.FamilyName, face.StyleName, namesByFace[face.Id].ToArray(), face.Weight, face.Width, face.Slant, face.IsItalic, face.IsFixedPitch, face.Technology, face.RetentionScore, face.IsRuntimePreferred)
             {
+                ContentHash = Convert.ToHexString(face.Sha256),
                 NameRecords = face.NamesJson is null ? [] : JsonSerializer.Deserialize<OpenTypeNameRecord[]>(face.NamesJson) ?? [],
                 UnicodeCoverage = face.Coverage is null ? [] : UnicodeCoverageCodec.Decode(face.Coverage)
             });

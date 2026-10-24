@@ -21,6 +21,8 @@ public sealed class FontCacheManager : IDisposable
     private readonly FontMaintenanceCoordinator _coordinator;
     private readonly Func<RuntimeFontFace, bool> _canSelect;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly SubtitleFontRequestCache _subtitleRequests = new();
+    private readonly AsyncLocal<SubtitleFontDependencyValidation?> _dependencyValidation = new();
     private RuntimeFontIndex _runtimeIndex = RuntimeFontIndex.Empty;
 
     /// <summary>Initializes a new instance of the <see cref="FontCacheManager"/> class backed by SQLite.</summary>
@@ -37,6 +39,45 @@ public sealed class FontCacheManager : IDisposable
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _canSelect = face => _coordinator.IsPathAvailable(face.Path);
     }
+
+    internal SubtitleFontDependencies GetSubtitleDependencies(string sourcePath)
+    {
+        var requests = _subtitleRequests.Get(sourcePath);
+        RuntimeFontIndex snapshot = Volatile.Read(ref _runtimeIndex);
+        var selections = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var request in requests)
+        {
+            RuntimeFontFace? face = snapshot.Find(request.Key, _canSelect, request.Value);
+            string identity = "missing";
+            if (face is not null)
+            {
+                string hash = face.ContentHash;
+                if (string.IsNullOrEmpty(hash))
+                {
+                    // Production SQLite snapshots always project SHA-256. An incomplete
+                    // custom snapshot must fail byte validation rather than read without a lease.
+                    hash = "unpublished";
+                }
+
+                identity = SubtitleFontDependencies.FaceIdentity(hash, face.FaceIndex);
+            }
+
+            selections[SubtitleFontDependencies.RequestKey(request.Key, request.Value)] = identity;
+        }
+
+        return new SubtitleFontDependencies(selections);
+    }
+
+    internal SubtitleFontDependencyValidation BeginDependencyValidation(SubtitleFontDependencies dependencies)
+    {
+        SubtitleFontDependencyValidation? previous = _dependencyValidation.Value;
+        var validation = new SubtitleFontDependencyValidation(dependencies, () => _dependencyValidation.Value = previous);
+        _dependencyValidation.Value = validation;
+        return validation;
+    }
+
+    internal void ValidateFontDependency(FontDescriptor descriptor, IReadOnlyCollection<uint> characters, FontFileLease? lease, byte[]? bytes)
+        => _dependencyValidation.Value?.Observe(descriptor, characters, lease, bytes);
 
     /// <summary>Releases synchronization resources owned by the manager.</summary>
     public void Dispose() => _loadGate.Dispose();

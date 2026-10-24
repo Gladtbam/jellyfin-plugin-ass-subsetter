@@ -164,6 +164,13 @@ public class SubtitleInterceptorMiddleware
                             string finalPath = result.Path;
                             string contentType = result.ContentType;
 
+                            if (string.IsNullOrEmpty(finalPath))
+                            {
+                                // An empty result explicitly disables fallback on conversion failure.
+                                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                                return;
+                            }
+
                             if (!string.IsNullOrEmpty(finalPath) && File.Exists(finalPath))
                             {
                                 var corsService = context.RequestServices.GetService(typeof(ICorsService)) as ICorsService;

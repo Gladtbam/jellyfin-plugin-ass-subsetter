@@ -22,13 +22,15 @@ internal static class SubtitleCacheFingerprint
     /// <param name="width">The SUP rendering width.</param>
     /// <param name="height">The SUP rendering height.</param>
     /// <param name="frameRate">The SUP rendering frame rate.</param>
+    /// <param name="fontDependencies">Content identity of the selected subtitle font dependencies.</param>
     /// <returns>A 16-character Base64URL fingerprint.</returns>
     internal static string Create(
         string sourcePath,
         SubtitleProcessingMode mode,
         int width = 0,
         int height = 0,
-        int frameRate = 0)
+        int frameRate = 0,
+        string fontDependencies = "")
     {
         var source = new FileInfo(sourcePath);
         string normalizedPath = Path.GetFullPath(sourcePath);
@@ -45,7 +47,7 @@ internal static class SubtitleCacheFingerprint
             : string.Empty;
         string canonical = string.Create(
             CultureInfo.InvariantCulture,
-            $"v1\0{normalizedPath}\0{sourceLength}\0{lastWriteTicks}\0{(int)mode}\0{supParameters}");
+            $"v2\0{normalizedPath}\0{sourceLength}\0{lastWriteTicks}\0{(int)mode}\0{supParameters}\0{fontDependencies}");
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
         return Convert.ToBase64String(hash, 0, FingerprintByteCount)

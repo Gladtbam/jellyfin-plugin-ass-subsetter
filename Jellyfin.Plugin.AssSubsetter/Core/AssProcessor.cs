@@ -27,6 +27,7 @@ public class AssProcessor
     private readonly Func<FontDescriptor, IReadOnlyCollection<uint>, CancellationToken, Task<FontFileLease?>> _acquireFont;
     private readonly Func<string> _generateFontPrefix;
     private readonly ILogger<AssProcessor> _logger;
+    private readonly Action<FontDescriptor, IReadOnlyCollection<uint>, FontFileLease?, byte[]?>? _validateFontDependency;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="AssProcessor" /> class.
@@ -36,7 +37,7 @@ public class AssProcessor
     /// <param name="assParser">The ASS document parser.</param>
     /// <param name="logger">The logger.</param>
     public AssProcessor(Func<PluginConfiguration> configFactory, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
-        : this(configFactory, fontCacheManager.AcquireFontAsync, FontNameRewriter.GenerateRandomPrefix, assParser, logger)
+        : this(configFactory, fontCacheManager.AcquireFontAsync, FontNameRewriter.GenerateRandomPrefix, assParser, logger, fontCacheManager.ValidateFontDependency)
     {
     }
 
@@ -45,13 +46,15 @@ public class AssProcessor
         Func<FontDescriptor, IReadOnlyCollection<uint>, CancellationToken, Task<FontFileLease?>> acquireFont,
         Func<string> generateFontPrefix,
         AssDocumentParser assParser,
-        ILogger<AssProcessor> logger)
+        ILogger<AssProcessor> logger,
+        Action<FontDescriptor, IReadOnlyCollection<uint>, FontFileLease?, byte[]?>? validateFontDependency = null)
     {
         _logger = logger;
         _configFactory = configFactory;
         _acquireFont = acquireFont;
         _generateFontPrefix = generateFontPrefix;
         _assParser = assParser;
+        _validateFontDependency = validateFontDependency;
     }
 
     private PluginConfiguration Config => _configFactory();
@@ -156,6 +159,7 @@ public class AssProcessor
                 FontFileLease? lease = await _acquireFont(desc, kvp.Value, cancellationToken).ConfigureAwait(false);
                 if (lease is null)
                 {
+                    _validateFontDependency?.Invoke(desc, kvp.Value, null, null);
                     _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
                     continue;
                 }
@@ -166,6 +170,7 @@ public class AssProcessor
                 _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, kvp.Value.Count);
 
                 byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
+                _validateFontDependency?.Invoke(desc, kvp.Value, lease, fontData);
                 byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, kvp.Value, _logger);
                 if (subsetData == null || subsetData.Length == 0)
                 {

@@ -21,6 +21,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 public class SubtitleCacheService : IHostedService, IDisposable
 {
     private readonly AssProcessor _assProcessor;
+    private readonly FontCacheManager? _fontCacheManager;
     private readonly AssToSupConverter? _assToSupConverter;
     private readonly Func<PluginConfiguration> _configFactory;
 
@@ -55,15 +56,18 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <param name="mksMuxer">The MKS muxer instance.</param>
     /// <param name="cacheFolderPath">Optional custom cache path.</param>
     /// <param name="logger">The logger instance.</param>
+    /// <param name="fontCacheManager">The shared font selection and dependency validator.</param>
     public SubtitleCacheService(
         Func<PluginConfiguration> configFactory,
         AssProcessor assProcessor,
         AssToSupConverter? assToSupConverter,
         MksMuxer? mksMuxer,
         string cacheFolderPath,
-        ILogger<SubtitleCacheService> logger)
+        ILogger<SubtitleCacheService> logger,
+        FontCacheManager? fontCacheManager = null)
     {
         _configFactory = configFactory;
+        _fontCacheManager = fontCacheManager;
         _assProcessor = assProcessor;
         _assToSupConverter = assToSupConverter;
         _mksMuxer = mksMuxer;
@@ -157,6 +161,19 @@ public class SubtitleCacheService : IHostedService, IDisposable
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are guided by sanitized database-derived item IDs and hardcoded directories.")]
     public virtual async Task<SubtitleResult> GetOrGenerateSubtitleAsync(Guid itemId, string originalAssPath, int videoWidth = 0, int videoHeight = 0, CancellationToken cancellationToken = default)
     {
+        try
+        {
+            return await GetOrGenerateSubtitleCoreAsync(itemId, originalAssPath, videoWidth, videoHeight, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(exception, "Unable to read subtitle cache dependencies for item {ItemId}.", itemId);
+            return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
+        }
+    }
+
+    private async Task<SubtitleResult> GetOrGenerateSubtitleCoreAsync(Guid itemId, string originalAssPath, int videoWidth, int videoHeight, CancellationToken cancellationToken)
+    {
         videoWidth = videoWidth > 0 ? videoWidth : 1920;
         videoHeight = videoHeight > 0 ? videoHeight : 1080;
 
@@ -218,7 +235,13 @@ public class SubtitleCacheService : IHostedService, IDisposable
             }
 
             _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
-            bool success = await _assProcessor.GenerateSubsetFontAsync(originalAssPath, cacheFilePath, cancellationToken).ConfigureAwait(false);
+            using var validation = BeginValidation(originalAssPath);
+            bool success = await WriteValidatedAsync(
+                cacheFilePath,
+                () => GetSubsetCachePath(itemId, originalAssPath),
+                validation,
+                (path, token) => _assProcessor.GenerateSubsetFontAsync(originalAssPath, path, token),
+                cancellationToken).ConfigureAwait(false);
 
             if (success && File.Exists(cacheFilePath))
             {
@@ -247,13 +270,14 @@ public class SubtitleCacheService : IHostedService, IDisposable
             SubtitleProcessingMode.ConvertToSup,
             videoWidth,
             videoHeight,
-            Math.Clamp(Config.AssToSupFrameRate, 10, 60));
+            Math.Clamp(Config.AssToSupFrameRate, 10, 60),
+            _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
         return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.sup");
     }
 
     private string GetMksCachePath(Guid itemId, string originalAssPath)
     {
-        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.GenerateMks);
+        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.GenerateMks, fontDependencies: _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
         return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.mks");
     }
 
@@ -265,7 +289,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <returns>The expected cache file path for the subsetted ASS file.</returns>
     private string GetSubsetCachePath(Guid itemId, string originalAssPath)
     {
-        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting);
+        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting, fontDependencies: _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
         return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.ass");
     }
 
@@ -396,7 +420,13 @@ public class SubtitleCacheService : IHostedService, IDisposable
             }
 
             _logger.LogInformation("[AssSubsetter] SUP cache miss for item {ItemId}. Triggering ASS to SUP conversion...", itemId);
-            bool success = await _assToSupConverter.ConvertAsync(originalAssPath, cacheFilePath, videoWidth, videoHeight, cancellationToken).ConfigureAwait(false);
+            using var validation = BeginValidation(originalAssPath);
+            bool success = await WriteValidatedAsync(
+                cacheFilePath,
+                () => GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight),
+                validation,
+                (path, token) => _assToSupConverter.ConvertAsync(originalAssPath, path, videoWidth, videoHeight, token),
+                cancellationToken).ConfigureAwait(false);
 
             if (success && File.Exists(cacheFilePath))
             {
@@ -459,6 +489,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 return CreateMksFallback(originalAssPath);
             }
 
+            using var validation = BeginValidation(originalAssPath);
             var artifact = await _assProcessor.GenerateSubsetArtifactAsync(originalAssPath, cancellationToken).ConfigureAwait(false);
             if (artifact == null)
             {
@@ -479,7 +510,12 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 _logger.LogError(ex, "[AssSubsetter] Permission error during MKS cache eviction.");
             }
 
-            bool success = await _mksMuxer.MuxAsync(artifact, cacheFilePath, cancellationToken).ConfigureAwait(false);
+            bool success = await WriteValidatedAsync(
+                cacheFilePath,
+                () => GetMksCachePath(itemId, originalAssPath),
+                validation,
+                (path, token) => _mksMuxer.MuxAsync(artifact, path, token),
+                cancellationToken).ConfigureAwait(false);
             if (success && File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
             {
                 TouchFile(cacheFilePath);
@@ -494,6 +530,30 @@ public class SubtitleCacheService : IHostedService, IDisposable
     {
         return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
     }
+
+    private SubtitleFontDependencyValidation? BeginValidation(string sourcePath)
+        => _fontCacheManager?.BeginDependencyValidation(_fontCacheManager.GetSubtitleDependencies(sourcePath));
+
+    private Task<bool> WriteValidatedAsync(
+        string outputPath,
+        Func<string> currentPath,
+        SubtitleFontDependencyValidation? validation,
+        Func<string, CancellationToken, Task<bool>> generate,
+        CancellationToken cancellationToken)
+        => AtomicCacheFile.WriteAsync(
+            outputPath,
+            async (temporaryPath, token) =>
+            {
+                if (!StringComparer.Ordinal.Equals(outputPath, currentPath()))
+                {
+                    return false;
+                }
+
+                bool success = await generate(temporaryPath, token).ConfigureAwait(false);
+                return success && (validation?.IsComplete ?? true) && StringComparer.Ordinal.Equals(outputPath, currentPath());
+            },
+            _logger,
+            cancellationToken);
 
     private void EnforceCapacityLimit(long requiredSpace)
     {

@@ -189,7 +189,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             var mksMuxer = provider.GetRequiredService<MksMuxer>();
             var logger = provider.GetRequiredService<ILogger<SubtitleCacheService>>();
             var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
-            return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, mksMuxer, string.Empty, logger);
+            return new SubtitleCacheService(configFactory, assProcessor, assToSupConverter, mksMuxer, string.Empty, logger, provider.GetRequiredService<FontCacheManager>());
         });
         serviceCollection.AddSingleton<IHostedService>(provider => provider.GetRequiredService<SubtitleCacheService>());
 

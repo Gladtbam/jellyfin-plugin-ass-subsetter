@@ -70,6 +70,30 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         Assert.True(_nextCalled);
     }
 
+    [Fact]
+    public async Task InvokeAsync_DoesNotUseNativeFallbackWhenCacheReturnsEmptyPath()
+    {
+        Guid itemId = Guid.NewGuid();
+        string source = Path.Join(_tempDataPath, "source.ass");
+        await File.WriteAllTextAsync(source, "source", TestContext.Current.CancellationToken);
+        var video = new Video { Id = itemId };
+        _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
+        _mockMediaSourceManager.Setup(m => m.GetMediaSource(video, "source", null, false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new MediaSourceInfo
+            {
+                Id = "source",
+                MediaStreams = [new MediaStream { Type = MediaStreamType.Subtitle, Index = 0, IsExternal = true, Path = source }]
+            });
+        _mockCacheService.Setup(s => s.GetOrGenerateSubtitleAsync(itemId, source, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SubtitleResult(string.Empty, "text/x-ssa", false));
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Path = $"/Videos/{itemId:N}/source/Subtitles/0/Stream.ass";
+        await CreateMiddleware().InvokeAsync(context);
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+    }
+
     [Theory]
     [InlineData(false, "")]
     [InlineData(true, "")]

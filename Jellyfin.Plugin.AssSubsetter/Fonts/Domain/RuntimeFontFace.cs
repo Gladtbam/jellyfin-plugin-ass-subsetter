@@ -36,6 +36,9 @@ public sealed record RuntimeFontFace(
     int RetentionScore,
     bool IsRuntimePreferred)
 {
+    /// <summary>Gets the published SHA-256 of the font container, independent of its location.</summary>
+    public string ContentHash { get; init; } = string.Empty;
+
     /// <summary>Gets typed OpenType names used to distinguish family aliases from Face-specific names.</summary>
     public IReadOnlyList<OpenTypeNameRecord> NameRecords { get; init; } = [];
 
