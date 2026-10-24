@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Middleware;
@@ -11,9 +12,13 @@ using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Dto;
 using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -30,6 +35,8 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
     private readonly Mock<IMediaSourceManager> _mockMediaSourceManager;
     private bool _nextCalled;
     private readonly RequestDelegate _nextDelegate;
+    private readonly Guid _userId = Guid.NewGuid();
+    private bool _hostAllowsRequest = true;
 
     public SubtitleInterceptorMiddlewareTests()
     {
@@ -64,9 +71,11 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task InvokeAsync_ShouldUseRequestedMediaSourceAndSubtitleIndex(bool includeStartPositionTicks)
+    [InlineData(false, "")]
+    [InlineData(true, "")]
+    [InlineData(false, "/")]
+    [InlineData(true, "/")]
+    public async Task InvokeAsync_ShouldUseRequestedMediaSourceAndSubtitleIndex(bool includeStartPositionTicks, string trailingSlash)
     {
         var middleware = CreateMiddleware();
         var itemId = Guid.NewGuid();
@@ -80,7 +89,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         await File.WriteAllTextAsync(cachedPath, "cached", TestContext.Current.CancellationToken);
 
         var video = new Video { Id = itemId, Path = Path.Join(_tempDataPath, "movie.mkv") };
-        _mockLibraryManager.Setup(m => m.GetItemById(itemId)).Returns(video);
+        _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
             .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
@@ -101,10 +110,13 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
             ? $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/{requestedIndex}/0/Stream.ass"
             : $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/{requestedIndex}/Stream.ass";
         context.Request.QueryString = new QueryString("?ApiKey=redacted");
+        context.Request.Path += trailingSlash;
+        context.Request.Headers.Remove("Authorization");
 
         await middleware.InvokeAsync(context);
 
         Assert.False(_nextCalled);
+        _mockLibraryManager.Verify(m => m.GetItemById<Video>(itemId, Guid.Empty), Times.Once);
         _mockCacheService.Verify(
             s => s.GetOrGenerateSubtitleAsync(itemId, requestedPath, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()),
             Times.Once);
@@ -133,7 +145,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         }
 
         var video = new Video { Id = itemId, Path = Path.Join(_tempDataPath, "movie.mkv") };
-        _mockLibraryManager.Setup(m => m.GetItemById(itemId)).Returns(video);
+        _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
             .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
@@ -145,7 +157,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
                 }
             });
 
-        var context = new DefaultHttpContext();
+        var (context, _) = CreateFileResultContext();
         context.Request.Path = $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/3/Stream.ass";
 
         await middleware.InvokeAsync(context);
@@ -186,7 +198,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         await File.WriteAllTextAsync(cachedAssPath, "dummy subset sub", TestContext.Current.CancellationToken);
 
         var video = new Video { Id = itemId, Path = videoPath };
-        _mockLibraryManager.Setup(m => m.GetItemById(itemId)).Returns(video);
+        _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
             .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
@@ -221,11 +233,46 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
             logger ?? new NullLogger<SubtitleInterceptorMiddleware>());
     }
 
-    private static (DefaultHttpContext Context, FileResultCapture Capture) CreateFileResultContext()
+    private (DefaultHttpContext Context, FileResultCapture Capture) CreateFileResultContext()
     {
         var context = new DefaultHttpContext();
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Headers.Authorization = "valid-user";
         var capture = new FileResultCapture();
-        var mockServiceProvider = new Mock<IServiceProvider>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization(options => options.DefaultPolicy = new AuthorizationPolicyBuilder("Jellyfin-Test")
+            .RequireAuthenticatedUser()
+            .RequireAssertion(_ => _hostAllowsRequest)
+            .Build());
+        services.AddSingleton<IPolicyEvaluator, PolicyEvaluator>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
+        var authentication = new Mock<IAuthenticationService>();
+        authentication.Setup(x => x.AuthenticateAsync(It.IsAny<HttpContext>(), "Jellyfin-Test"))
+            .ReturnsAsync((HttpContext request, string _) =>
+            {
+                bool apiKey = request.Request.Query["ApiKey"] == "redacted";
+                if (!apiKey && request.Request.Headers.Authorization != "valid-user")
+                {
+                    return string.IsNullOrEmpty(request.Request.Headers.Authorization)
+                        ? AuthenticateResult.NoResult()
+                        : AuthenticateResult.Fail("Invalid credentials");
+                }
+
+                var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
+                {
+                    new Claim("Jellyfin-UserId", (apiKey ? Guid.Empty : _userId).ToString("N")),
+                    new Claim("Jellyfin-IsApiKey", apiKey.ToString())
+                }, "Jellyfin-Test"));
+                return AuthenticateResult.Success(new AuthenticationTicket(principal, "Jellyfin-Test"));
+            });
+        authentication.Setup(x => x.ChallengeAsync(It.IsAny<HttpContext>(), "Jellyfin-Test", It.IsAny<AuthenticationProperties>()))
+            .Callback<HttpContext, string, AuthenticationProperties>((request, _, _) => request.Response.StatusCode = 401)
+            .Returns(Task.CompletedTask);
+        authentication.Setup(x => x.ForbidAsync(It.IsAny<HttpContext>(), "Jellyfin-Test", It.IsAny<AuthenticationProperties>()))
+            .Callback<HttpContext, string, AuthenticationProperties>((request, _, _) => request.Response.StatusCode = 403)
+            .Returns(Task.CompletedTask);
+        services.AddSingleton(authentication.Object);
         var mockExecutor = new Mock<IActionResultExecutor<PhysicalFileResult>>();
         mockExecutor
             .Setup(x => x.ExecuteAsync(It.IsAny<ActionContext>(), It.IsAny<PhysicalFileResult>()))
@@ -235,11 +282,121 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
                 context.Response.ContentType = result.ContentType;
             })
             .Returns(Task.CompletedTask);
-        mockServiceProvider
-            .Setup(x => x.GetService(typeof(IActionResultExecutor<PhysicalFileResult>)))
-            .Returns(mockExecutor.Object);
-        context.RequestServices = mockServiceProvider.Object;
+        services.AddSingleton(mockExecutor.Object);
+        context.RequestServices = services.BuildServiceProvider();
         return (context, capture);
+    }
+
+    [Theory]
+    [InlineData("", "GET")]
+    [InlineData("invalid-token", "GET")]
+    [InlineData("", "HEAD")]
+    [InlineData("invalid-token", "HEAD")]
+    public async Task InvokeAsync_RejectsUnauthenticatedRequestsBeforeLookingUpMedia(string credential, string method)
+    {
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Headers.Authorization = credential;
+        context.Request.Method = method;
+        context.Request.Path = $"/Videos/{Guid.NewGuid():N}/source/Subtitles/0/Stream.ass";
+        // A prepopulated principal must not turn a failed host authentication into success.
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("Jellyfin-IsApiKey", "True") }, "untrusted"));
+
+        await CreateMiddleware().InvokeAsync(context);
+
+        Assert.Equal(401, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+        _mockLibraryManager.VerifyNoOtherCalls();
+        _mockMediaSourceManager.VerifyNoOtherCalls();
+        _mockCacheService.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_HonorsHostPolicyDenialBeforeLookingUpMedia()
+    {
+        _hostAllowsRequest = false;
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Path = $"/Videos/{Guid.NewGuid():N}/source/Subtitles/0/Stream.ass";
+
+        await CreateMiddleware().InvokeAsync(context);
+
+        Assert.Equal(403, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+        _mockLibraryManager.VerifyNoOtherCalls();
+        _mockCacheService.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RejectsItemHiddenFromAuthenticatedUserWithoutFallback()
+    {
+        var itemId = Guid.NewGuid();
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Path = $"/Videos/{itemId:N}/source/Subtitles/0/Stream.ass";
+        _mockLibraryManager.Setup(x => x.GetItemById<Video>(itemId, _userId)).Returns((Video?)null);
+
+        await CreateMiddleware().InvokeAsync(context);
+
+        Assert.Equal(404, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+        _mockLibraryManager.Verify(x => x.GetItemById<Video>(itemId, _userId), Times.Once);
+        _mockMediaSourceManager.VerifyNoOtherCalls();
+        _mockCacheService.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RejectsDifferentLegacyQueryItemBeforeFallback()
+    {
+        var itemId = Guid.NewGuid();
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Path = $"/Videos/{itemId:N}/source/Subtitles/0/Stream.ass";
+        context.Request.QueryString = new QueryString($"?itemId={Guid.NewGuid():N}");
+        _mockLibraryManager.Setup(x => x.GetItemById<Video>(itemId, _userId)).Returns(new Video { Id = itemId });
+
+        await CreateMiddleware().InvokeAsync(context);
+
+        Assert.Equal(400, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+        _mockMediaSourceManager.VerifyNoOtherCalls();
+        _mockCacheService.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("GetSubtitle", "GET", false)]
+    [InlineData("GetSubtitleWithTicks", "GET", false)]
+    [InlineData("GetSubtitle", "HEAD", false)]
+    [InlineData("GetSubtitle", "GET", true)]
+    [InlineData("GetSubtitleWithTicks", "HEAD", true)]
+    public async Task InvokeAsync_TrailingSlashCannotBypassAuthentication(string action, string method, bool useSelectedRoute)
+    {
+        var (context, capture) = CreateFileResultContext();
+        context.Request.Headers.Remove("Authorization");
+        context.Request.Method = method;
+        var itemId = Guid.NewGuid();
+        string ticks = action == "GetSubtitleWithTicks" ? "/0" : string.Empty;
+        context.Request.Path = $"/Videos/{itemId:N}/source/Subtitles/0{ticks}/Stream.ass/";
+        if (useSelectedRoute)
+        {
+            // A Guid form accepted by MVC but outside the old hand-written regex.
+            context.Request.Path = $"/Videos/{itemId:B}/source/Subtitles/+0{ticks}/Stream.ass/";
+            context.Request.RouteValues["controller"] = "Subtitle";
+            context.Request.RouteValues["action"] = action;
+            context.Request.RouteValues["routeFormat"] = "ass";
+            context.Request.RouteValues["routeItemId"] = itemId.ToString("B");
+            context.Request.RouteValues["routeMediaSourceId"] = "source";
+            context.Request.RouteValues["routeIndex"] = "+0";
+        }
+
+        await CreateMiddleware().InvokeAsync(context);
+
+        Assert.Equal(401, context.Response.StatusCode);
+        Assert.False(_nextCalled);
+        Assert.Null(capture.Result);
+        _mockLibraryManager.VerifyNoOtherCalls();
+        _mockMediaSourceManager.VerifyNoOtherCalls();
+        _mockCacheService.VerifyNoOtherCalls();
     }
 
     private sealed class FileResultCapture

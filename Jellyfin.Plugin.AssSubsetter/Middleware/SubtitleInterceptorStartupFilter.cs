@@ -1,21 +1,16 @@
-using System;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 
 /// <summary>
 ///     A startup filter to inject the middleware at the correct position in the pipeline.
 /// </summary>
-public class SubtitleInterceptorStartupFilter : IStartupFilter
+public class SubtitleInterceptorStartupFilter : IConfigureOptions<MvcOptions>
 {
     /// <inheritdoc />
-    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+    public void Configure(MvcOptions options)
     {
-        return app =>
-        {
-            app.UseMiddleware<SubtitleInterceptorMiddleware>();
-            next(app);
-        };
+        options.Filters.Add<SubtitleInterceptorResourceFilter>();
     }
 }

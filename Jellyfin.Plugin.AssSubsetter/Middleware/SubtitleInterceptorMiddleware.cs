@@ -2,16 +2,20 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -23,7 +27,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 public class SubtitleInterceptorMiddleware
 {
     private static readonly Regex _subtitleRouteRegex = new(
-        @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/(?<MediaSourceId>[^/]+)/Subtitles/(?<SubtitleIndex>\d+)(?:/\d+)?/Stream\.ass$",
+        @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/(?<MediaSourceId>[^/]+)/Subtitles/(?<SubtitleIndex>\d+)(?:/\d+)?/Stream\.ass/?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private readonly IHostApplicationLifetime _appLifetime;
@@ -68,21 +72,79 @@ public class SubtitleInterceptorMiddleware
     {
         string path = context.Request.Path.Value ?? string.Empty;
         var match = _subtitleRouteRegex.Match(path);
+        var route = context.Request.RouteValues;
+        string? action = Convert.ToString(route["action"], CultureInfo.InvariantCulture);
+        bool selectedSubtitleAction = string.Equals(Convert.ToString(route["controller"], CultureInfo.InvariantCulture), "Subtitle", StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(action, "GetSubtitle", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(action, "GetSubtitleWithTicks", StringComparison.OrdinalIgnoreCase))
+            && string.Equals(Convert.ToString(route["routeFormat"], CultureInfo.InvariantCulture), "ass", StringComparison.OrdinalIgnoreCase);
 
-        if (match.Success)
+        // MVC's selected route is authoritative: do not independently reject path forms
+        // accepted by host routing, such as trailing slashes or alternate Guid formats.
+        if ((selectedSubtitleAction || match.Success) && (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method)))
         {
-            string itemIdString = match.Groups["ItemId"].Value;
-            string mediaSourceId = match.Groups["MediaSourceId"].Value;
-            string subtitleIndexString = match.Groups["SubtitleIndex"].Value;
+            string? itemIdString = selectedSubtitleAction ? Convert.ToString(route["routeItemId"], CultureInfo.InvariantCulture) : match.Groups["ItemId"].Value;
+            string mediaSourceId = (selectedSubtitleAction ? Convert.ToString(route["routeMediaSourceId"], CultureInfo.InvariantCulture) : match.Groups["MediaSourceId"].Value) ?? string.Empty;
+            string? subtitleIndexString = selectedSubtitleAction ? Convert.ToString(route["routeIndex"], CultureInfo.InvariantCulture) : match.Groups["SubtitleIndex"].Value;
+
+            if (!Guid.TryParse(itemIdString, out _) || !int.TryParse(subtitleIndexString, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
 
             if (Guid.TryParse(itemIdString, out Guid itemId)
-                && int.TryParse(subtitleIndexString, NumberStyles.None, CultureInfo.InvariantCulture, out int subtitleIndex))
+                && int.TryParse(subtitleIndexString, NumberStyles.Integer, CultureInfo.InvariantCulture, out int subtitleIndex))
             {
                 _logger.LogDebug("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
 
+                // Keep security checks outside the conversion fallback: a denied request
+                // must never reach the native subtitle action (which permits anonymous streams).
+                var policyProvider = context.RequestServices.GetRequiredService<IAuthorizationPolicyProvider>();
+                var evaluator = context.RequestServices.GetRequiredService<IPolicyEvaluator>();
+                var policy = await policyProvider.GetDefaultPolicyAsync().ConfigureAwait(false);
+                var authentication = await evaluator.AuthenticateAsync(policy, context).ConfigureAwait(false);
+                var authorization = await evaluator.AuthorizeAsync(policy, authentication, context, context).ConfigureAwait(false);
+                if (!authentication.Succeeded || !authorization.Succeeded)
+                {
+                    var handler = context.RequestServices.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
+                    await handler.HandleAsync(
+                        _ => Task.CompletedTask,
+                        context,
+                        policy,
+                        authentication.Succeeded ? authorization : PolicyAuthorizationResult.Challenge()).ConfigureAwait(false);
+                    return;
+                }
+
+                // These claim names are the Jellyfin 10.11.9 authentication contract.
+                // API keys have no user and are unrestricted by Jellyfin's default policy.
+                var principal = authentication.Principal!;
+                bool isApiKey = bool.TryParse(principal.Claims.FirstOrDefault(c => string.Equals(c.Type, "Jellyfin-IsApiKey", StringComparison.OrdinalIgnoreCase))?.Value, out bool apiKey) && apiKey;
+                Guid userId = Guid.Empty;
+                if (!isApiKey && (!Guid.TryParse(principal.Claims.FirstOrDefault(c => string.Equals(c.Type, "Jellyfin-UserId", StringComparison.OrdinalIgnoreCase))?.Value, out userId) || userId == Guid.Empty))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
+                var video = _libraryManager.GetItemById<Video>(itemId, userId);
+                if (video is null)
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+
+                // Jellyfin's legacy query parameter overrides the route item inside its
+                // action. Never fall back to a different, unchecked item.
+                if (context.Request.Query.TryGetValue("itemId", out var queryItemId)
+                    && (!Guid.TryParse(queryItemId.ToString(), out var requestedItemId) || requestedItemId != itemId))
+                {
+                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    return;
+                }
+
                 try
                 {
-                    if (_libraryManager.GetItemById(itemId) is Video video)
                     {
                         string? originalAssPath = await _subtitleStreamResolver.ResolveExternalAssPathAsync(
                             video,
@@ -109,10 +171,10 @@ public class SubtitleInterceptorMiddleware
 
                                 if (corsService != null && corsPolicyProvider != null)
                                 {
-                                    var policy = await corsPolicyProvider.GetPolicyAsync(context, null).ConfigureAwait(false);
-                                    if (policy != null)
+                                    var corsPolicy = await corsPolicyProvider.GetPolicyAsync(context, null).ConfigureAwait(false);
+                                    if (corsPolicy != null)
                                     {
-                                        var corsResult = corsService.EvaluatePolicy(context, policy);
+                                        var corsResult = corsService.EvaluatePolicy(context, corsPolicy);
                                         corsService.ApplyResult(corsResult, context.Response);
                                     }
                                 }

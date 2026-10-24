@@ -15,10 +15,11 @@ using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using MediaBrowser.Model.Tasks;
-using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Jellyfin.Plugin.AssSubsetter;
 
@@ -196,7 +197,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddHostedService<PlaybackPrefetchService>();
 
-        serviceCollection.AddTransient<IStartupFilter, SubtitleInterceptorStartupFilter>();
+        serviceCollection.AddTransient<IConfigureOptions<MvcOptions>, SubtitleInterceptorStartupFilter>();
     }
 
     private sealed class ConfigurationSignalSubscription(Action unsubscribe) : IDisposable
