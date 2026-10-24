@@ -41,6 +41,25 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
 
         serviceCollection.AddSingleton<FontDatabase>();
         serviceCollection.AddSingleton<IFontRepository, SqliteFontRepository>();
+        // Capability aliases share the aggregate repository and its atomic publication boundary.
+        serviceCollection.AddSingleton<IFontRepositoryLifecycle>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontInventoryReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontInventoryWriter>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontRuntimeFaceReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontAnalysisReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontAnalysisPublisher>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontAnalysisEvidenceRepository>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontRetentionRepository>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontOperationReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontOperationRepository>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontMaintenanceReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontMaintenanceRepository>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontDiagnosticsReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontDiagnosticsWriter>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontRenameReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontRenameRepository>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontManagementReader>(provider => provider.GetRequiredService<IFontRepository>());
+        serviceCollection.AddSingleton<IFontMaintenanceExecutionRepository>(provider => provider.GetRequiredService<IFontRepository>());
         serviceCollection.AddSingleton<IPhysicalFileIdentityProvider, PlatformPhysicalFileIdentityProvider>();
         serviceCollection.AddSingleton<FontMaintenanceCoordinator>();
         serviceCollection.AddSingleton(provider =>

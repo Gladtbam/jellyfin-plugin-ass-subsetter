@@ -24,7 +24,7 @@ public sealed class FontManagementController : ControllerBase
     private readonly FontOperationRequestStore _requestStore;
     private readonly FontRenameCandidateService _renameCandidates;
     private readonly FontRenameCandidateRefreshQueue _candidateRefreshQueue;
-    private readonly IFontRepository _repository;
+    private readonly IFontManagementReader _repository;
     private readonly IFontOperationRequestDispatcher _operationDispatcher;
     private readonly IFontRestoreRequestDispatcher _restoreDispatcher;
 
@@ -36,7 +36,7 @@ public sealed class FontManagementController : ControllerBase
     /// <param name="restoreDispatcher">Wakes plugin-owned restore processing after persistence.</param>
     /// <param name="candidateRefreshQueue">The durable background candidate refresh queue.</param>
     /// <param name="renameCandidates">The immutable preview and current-rule validation service.</param>
-    public FontManagementController(FontManagementQuery query, FontOperationRequestStore requestStore, IFontRepository repository, IFontOperationRequestDispatcher operationDispatcher, IFontRestoreRequestDispatcher restoreDispatcher, FontRenameCandidateService renameCandidates, FontRenameCandidateRefreshQueue candidateRefreshQueue)
+    public FontManagementController(FontManagementQuery query, FontOperationRequestStore requestStore, IFontManagementReader repository, IFontOperationRequestDispatcher operationDispatcher, IFontRestoreRequestDispatcher restoreDispatcher, FontRenameCandidateService renameCandidates, FontRenameCandidateRefreshQueue candidateRefreshQueue)
     {
         _query = query ?? throw new ArgumentNullException(nameof(query));
         _requestStore = requestStore ?? throw new ArgumentNullException(nameof(requestStore));

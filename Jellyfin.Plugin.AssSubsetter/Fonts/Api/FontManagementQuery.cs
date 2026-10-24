@@ -17,13 +17,13 @@ public sealed class FontManagementQuery
 {
     private const int MaximumPageSize = 200;
     private static readonly string[] Technologies = ["TrueType", "OpenType", "OpenType CFF", "OpenType CFF2"];
-    private readonly IFontRepository _repository;
+    private readonly IFontManagementReader _repository;
     private readonly Func<FontDirectoryPolicyResolver>? _policy;
 
     /// <summary>Initializes a new instance of the <see cref="FontManagementQuery"/> class.</summary>
     /// <param name="repository">The durable font repository used by all API reads.</param>
     /// <param name="policy">Current configured analysis inputs.</param>
-    public FontManagementQuery(IFontRepository repository, Func<FontDirectoryPolicyResolver>? policy = null)
+    public FontManagementQuery(IFontManagementReader repository, Func<FontDirectoryPolicyResolver>? policy = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _policy = policy;

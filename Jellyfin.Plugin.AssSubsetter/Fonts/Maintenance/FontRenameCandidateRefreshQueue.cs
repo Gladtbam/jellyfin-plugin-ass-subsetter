@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 #pragma warning disable CA1711 // Durable operation queue, not a collection.
 public sealed class FontRenameCandidateRefreshQueue
 {
-    private readonly IFontRepository _repository;
+    private readonly IFontRenameRepository _repository;
     private readonly Func<FontNamingRules> _rules;
     private readonly Func<FontRenameCandidateReadRequirements> _requirements;
     private readonly TimeProvider _timeProvider;
@@ -20,7 +20,7 @@ public sealed class FontRenameCandidateRefreshQueue
     /// <param name="rules">Current administrator rules.</param>
     /// <param name="requirements">Compatible analysis inputs.</param>
     /// <param name="timeProvider">Request clock.</param>
-    public FontRenameCandidateRefreshQueue(IFontRepository repository, Func<FontNamingRules> rules, Func<FontRenameCandidateReadRequirements> requirements, TimeProvider timeProvider)
+    public FontRenameCandidateRefreshQueue(IFontRenameRepository repository, Func<FontNamingRules> rules, Func<FontRenameCandidateReadRequirements> requirements, TimeProvider timeProvider)
     {
         _repository = repository;
         _rules = rules;

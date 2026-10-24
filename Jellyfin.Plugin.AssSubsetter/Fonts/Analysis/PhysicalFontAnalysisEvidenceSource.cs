@@ -23,7 +23,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
     internal static readonly string DeepEvidenceKey = string.Join('|', "deep-v7", Environment.Version, RuntimeInformation.OSDescription, RuntimeInformation.ProcessArchitecture, typeof(SKTypeface).Assembly.GetName().Version, HarfBuzzSubsetNative.GetNativeVersion(), FreeTypeFontVerifier.IsAvailable, LibassFontVerifier.IsAvailable);
     internal static readonly string AnalysisCompatibilityKey = FontDuplicateAnalyzer.CurrentEvidenceVersion + "|" + DeepEvidenceKey;
 
-    private readonly IFontRepository _repository;
+    private readonly IFontAnalysisEvidenceRepository _repository;
     private readonly Func<string, CancellationToken, Task<byte[]>> _readFile;
     private readonly Func<byte[], int, InspectedFontFace, FontVerificationStatus> _verifyFreeType;
     private readonly Func<byte[], InspectedFontFace, FontVerificationStatus> _verifyLibass;
@@ -31,13 +31,13 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
     /// <summary>Initializes a new instance of the <see cref="PhysicalFontAnalysisEvidenceSource"/> class.</summary>
     /// <param name="repository">The durable staged and published font inventory.</param>
-    public PhysicalFontAnalysisEvidenceSource(IFontRepository repository)
+    public PhysicalFontAnalysisEvidenceSource(IFontAnalysisEvidenceRepository repository)
         : this(repository, File.ReadAllBytesAsync)
     {
     }
 
     internal PhysicalFontAnalysisEvidenceSource(
-        IFontRepository repository,
+        IFontAnalysisEvidenceRepository repository,
         Func<string, CancellationToken, Task<byte[]>> readFile,
         Func<byte[], int, InspectedFontFace, FontVerificationStatus>? verifyFreeType = null,
         Func<byte[], InspectedFontFace, FontVerificationStatus>? verifyLibass = null)

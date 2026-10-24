@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 public sealed class FontOperationRequestScheduler : BackgroundService, IFontOperationRequestDispatcher
 {
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
-    private readonly IFontRepository _repository;
+    private readonly IFontOperationRepository _repository;
     private readonly ITaskManager _taskManager;
     private readonly Func<bool> _isBusy;
     private readonly Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> _executePending;
@@ -28,7 +28,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
     /// <param name="isBusy">The shared task gate state.</param>
     /// <param name="executePending">Consumes existing authorization without scheduled-task fallback.</param>
     /// <param name="logger">Records scheduling failures.</param>
-    public FontOperationRequestScheduler(IFontRepository repository, ITaskManager taskManager, Func<bool> isBusy, Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> executePending, ILogger<FontOperationRequestScheduler> logger)
+    public FontOperationRequestScheduler(IFontOperationRepository repository, ITaskManager taskManager, Func<bool> isBusy, Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> executePending, ILogger<FontOperationRequestScheduler> logger)
     {
         _repository = repository;
         _taskManager = taskManager;

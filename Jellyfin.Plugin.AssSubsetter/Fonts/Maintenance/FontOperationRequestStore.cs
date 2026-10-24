@@ -10,13 +10,13 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Creates immutable, durable idempotent requests for physical-file maintenance and fileless scheduled Analyze or Purge operations.</summary>
 public sealed class FontOperationRequestStore
 {
-    private readonly IFontRepository _repository;
+    private readonly IFontOperationRepository _repository;
     private readonly TimeProvider _timeProvider;
 
     /// <summary>Initializes a new instance of the <see cref="FontOperationRequestStore"/> class.</summary>
     /// <param name="repository">The durable font repository.</param>
     /// <param name="timeProvider">The UTC clock used for immutable creation timestamps.</param>
-    public FontOperationRequestStore(IFontRepository repository, TimeProvider timeProvider)
+    public FontOperationRequestStore(IFontOperationRepository repository, TimeProvider timeProvider)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));

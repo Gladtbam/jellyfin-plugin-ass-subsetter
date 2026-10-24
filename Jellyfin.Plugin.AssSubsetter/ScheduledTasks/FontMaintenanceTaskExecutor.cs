@@ -21,7 +21,7 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskExecutor, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly IFontRepository _repository;
+    private readonly IFontMaintenanceExecutionRepository _repository;
     private readonly FontAnalysisWorkflow _workflow;
     private readonly ILogger<FontMaintenanceTaskExecutor> _logger;
     private readonly FontOperationRequestStore _requestStore;
@@ -51,7 +51,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     /// <param name="refreshService">Signals candidate refresh.</param>
     /// <param name="logger">The task logger.</param>
     public FontMaintenanceTaskExecutor(
-        IFontRepository repository,
+        IFontMaintenanceExecutionRepository repository,
         FontOperationRequestStore requestStore,
         FontAnalysisWorkflow workflow,
         FontQuarantineManager quarantineManager,

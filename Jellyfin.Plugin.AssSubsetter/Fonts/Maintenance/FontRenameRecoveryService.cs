@@ -8,13 +8,13 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Reconciles durable rename evidence before normal host operation begins.</summary>
 public sealed class FontRenameRecoveryService : IHostedService
 {
-    private readonly IFontRepository _repository;
+    private readonly IFontRepositoryLifecycle _repository;
     private readonly IFontFilenameNormalizationExecutor _normalizer;
 
     /// <summary>Initializes a new instance of the <see cref="FontRenameRecoveryService"/> class.</summary>
     /// <param name="repository">Initializes or recovers the fixed SQLite catalog.</param>
     /// <param name="normalizer">Reimports and reconciles immutable rename intents.</param>
-    public FontRenameRecoveryService(IFontRepository repository, IFontFilenameNormalizationExecutor normalizer)
+    public FontRenameRecoveryService(IFontRepositoryLifecycle repository, IFontFilenameNormalizationExecutor normalizer)
     {
         _repository = repository;
         _normalizer = normalizer;

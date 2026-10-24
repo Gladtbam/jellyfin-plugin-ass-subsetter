@@ -11,13 +11,13 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 /// <summary>Maps one consistent database status page without calculating or accessing files.</summary>
 public sealed class FontRenameStateQuery
 {
-    private readonly IFontRepository _repository;
+    private readonly IFontRenameReader _repository;
     private readonly FontRenameCandidateService _candidates;
 
     /// <summary>Initializes a new instance of the <see cref="FontRenameStateQuery"/> class.</summary>
     /// <param name="repository">The transactional database page boundary.</param>
     /// <param name="candidates">The lightweight current input requirements.</param>
-    public FontRenameStateQuery(IFontRepository repository, FontRenameCandidateService candidates)
+    public FontRenameStateQuery(IFontRenameReader repository, FontRenameCandidateService candidates)
     {
         _repository = repository;
         _candidates = candidates;
