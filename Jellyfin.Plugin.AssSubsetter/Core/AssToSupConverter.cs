@@ -5,11 +5,13 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
+using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Native;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +25,7 @@ public class AssToSupConverter : IDisposable
 {
     private readonly Func<PluginConfiguration> _configFactory;
     private readonly ILogger<AssToSupConverter> _logger;
+    private readonly AssProcessor? _assProcessor;
     private bool _disposed;
 
     /// <summary>
@@ -30,10 +33,12 @@ public class AssToSupConverter : IDisposable
     /// </summary>
     /// <param name="configFactory">The plugin configuration factory.</param>
     /// <param name="logger">The logger instance.</param>
-    public AssToSupConverter(Func<PluginConfiguration> configFactory, ILogger<AssToSupConverter> logger)
+    /// <param name="assProcessor">Published, leased font artifact producer. Conversion fails closed when absent.</param>
+    public AssToSupConverter(Func<PluginConfiguration> configFactory, ILogger<AssToSupConverter> logger, AssProcessor? assProcessor = null)
     {
         _configFactory = configFactory;
         _logger = logger;
+        _assProcessor = assProcessor;
     }
 
     private PluginConfiguration Config => _configFactory();
@@ -66,8 +71,14 @@ public class AssToSupConverter : IDisposable
         {
             _logger.LogInformation("[AssSubsetter] Starting ASS to SUP conversion for {File} ({Width}x{Height})...", inputAssPath, videoWidth, videoHeight);
 
-            // Parse ASS events to get time ranges
-            var events = ParseAssEvents(inputAssPath);
+            SubsetArtifact? artifact = _assProcessor is null ? null :
+                await _assProcessor.GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+            if (artifact is null || artifact.HasMissingFonts || artifact.Fonts.Any(font => font.Data.Length == 0))
+            {
+                return false;
+            }
+
+            var events = ParseArtifactEvents(artifact.AssContent);
             if (events.Count == 0)
             {
                 _logger.LogInformation("[AssSubsetter] No dialogue events found in {File}. Skipping conversion.", inputAssPath);
@@ -80,7 +91,7 @@ public class AssToSupConverter : IDisposable
                 {
                     // Run the CPU-intensive rendering on a thread pool thread
                     bool rendered = await Task.Run(
-                        () => RenderAndEncode(inputAssPath, partialPath, videoWidth, videoHeight, events, token),
+                        () => RenderAndEncode(artifact, partialPath, videoWidth, videoHeight, events, token),
                         token).ConfigureAwait(false);
 
                     return rendered &&
@@ -121,8 +132,8 @@ public class AssToSupConverter : IDisposable
         }
     }
 
-    private bool RenderAndEncode(
-        string inputAssPath,
+    private unsafe bool RenderAndEncode(
+        SubsetArtifact artifact,
         string outputSupPath,
         int videoWidth,
         int videoHeight,
@@ -143,21 +154,12 @@ public class AssToSupConverter : IDisposable
                 return false;
             }
 
-            // Set custom fonts directories
-            string fontsDir = Config.CustomFontDirectories;
-            if (!string.IsNullOrEmpty(fontsDir))
+            // Consume only bytes prepared under the published font selection's leases.
+            foreach (SubsetFontAttachment font in artifact.Fonts)
             {
-                // ass_set_fonts_dir only takes a single directory, so we set the first one
-                // and rely on fontconfig for the rest
-                string[] dirs = fontsDir.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                foreach (string dir in dirs)
+                fixed (byte* data = font.Data)
                 {
-                    if (Directory.Exists(dir))
-                    {
-                        LibassNative.AssSetFontsDir(library, dir);
-                        _logger.LogDebug("[AssSubsetter] Set libass fonts dir: {Dir}", dir);
-                        break; // libass only supports one fonts_dir
-                    }
+                    LibassNative.AssAddFont(library, font.FileName, data, font.Data.Length);
                 }
             }
 
@@ -173,14 +175,19 @@ public class AssToSupConverter : IDisposable
             LibassNative.AssSetFrameSize(renderer, videoWidth, videoHeight);
             LibassNative.AssSetStorageSize(renderer, videoWidth, videoHeight);
 
-            // Set fonts with autodetect provider
-            LibassNative.AssSetFonts(renderer, null, "sans-serif", 1, null, 1);
+            // Disable system font discovery; only prepared attachments are available.
+            LibassNative.AssSetFonts(renderer, null, null, 0, null, 0);
 
             // Load ASS file
-            track = LibassNative.AssReadFile(library, inputAssPath, null);
+            byte[] assBytes = Encoding.UTF8.GetBytes(artifact.AssContent);
+            fixed (byte* data = assBytes)
+            {
+                track = LibassNative.AssReadMemory(library, data, (nuint)assBytes.Length, null);
+            }
+
             if (track == IntPtr.Zero)
             {
-                _logger.LogError("[AssSubsetter] Failed to load ASS file: {File}", inputAssPath);
+                _logger.LogError("[AssSubsetter] Failed to load prepared ASS artifact.");
                 return false;
             }
 
@@ -510,6 +517,9 @@ public class AssToSupConverter : IDisposable
     ///     Parses ASS dialogue events to extract timing information.
     /// </summary>
     private static List<AssEvent> ParseAssEvents(string assFilePath)
+        => ParseArtifactEvents(File.ReadAllText(assFilePath));
+
+    private static List<AssEvent> ParseArtifactEvents(string assContent)
     {
         var events = new List<AssEvent>();
         bool inEvents = false;
@@ -517,7 +527,7 @@ public class AssToSupConverter : IDisposable
         int endIdx = -1;
         int textIdx = -1;
 
-        foreach (string rawLine in File.ReadLines(assFilePath))
+        foreach (string rawLine in assContent.Split('\n'))
         {
             string line = rawLine.Trim();
 

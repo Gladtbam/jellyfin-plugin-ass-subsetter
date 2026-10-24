@@ -7,4 +7,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Models;
 /// </summary>
 /// <param name="AssContent">Rewritten ASS content without a Fonts section.</param>
 /// <param name="Fonts">Separate subset font attachments.</param>
-public sealed record SubsetArtifact(string AssContent, IReadOnlyList<SubsetFontAttachment> Fonts);
+public sealed record SubsetArtifact(string AssContent, IReadOnlyList<SubsetFontAttachment> Fonts)
+{
+    /// <summary>Gets a value indicating whether any requested font could not be prepared.</summary>
+    public bool HasMissingFonts { get; init; }
+}

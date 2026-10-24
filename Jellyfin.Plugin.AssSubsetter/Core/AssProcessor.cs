@@ -143,6 +143,7 @@ public class AssProcessor
             var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var fontPrefixMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var attachments = new List<SubsetFontAttachment>();
+            bool hasMissingFonts = false;
 
             foreach (var kvp in usedChars)
             {
@@ -160,6 +161,7 @@ public class AssProcessor
                 if (lease is null)
                 {
                     _validateFontDependency?.Invoke(desc, kvp.Value, null, null);
+                    hasMissingFonts = true;
                     _logger.LogWarning("[AssSubsetter] Could not find physical font file for '{FontName}' (Variant requested: {Desc}). Skipping.", fontName, desc);
                     continue;
                 }
@@ -174,10 +176,13 @@ public class AssProcessor
                 byte[]? subsetData = HarfBuzzSubsetNative.SubsetFont(fontData, (uint)faceIndex, kvp.Value, _logger);
                 if (subsetData == null || subsetData.Length == 0)
                 {
+                    hasMissingFonts = true;
                     continue;
                 }
 
-                byte[] renamedData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix) ?? subsetData;
+                byte[]? rewrittenData = FontNameRewriter.RenameFontFamily(subsetData, newPrefix);
+                hasMissingFonts |= rewrittenData is null;
+                byte[] renamedData = rewrittenData ?? subsetData;
                 string extension = Path.GetExtension(physicalPath).Equals(".otf", StringComparison.OrdinalIgnoreCase) ? ".otf" : ".ttf";
                 string mimeType = extension == ".otf" ? "font/otf" : "font/ttf";
                 attachments.Add(new SubsetFontAttachment($"{newPrefix}_{attachments.Count}{extension}", mimeType, renamedData));
@@ -185,7 +190,7 @@ public class AssProcessor
             }
 
             string rewrittenContent = RewriteAssFontNames(originalContent, fontNameMap);
-            return new SubsetArtifact(rewrittenContent, attachments);
+            return new SubsetArtifact(rewrittenContent, attachments) { HasMissingFonts = hasMissingFonts };
         }
         catch (OperationCanceledException)
         {

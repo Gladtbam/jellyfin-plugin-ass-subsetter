@@ -176,7 +176,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         {
             var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
             var logger = provider.GetRequiredService<ILogger<AssToSupConverter>>();
-            return new AssToSupConverter(configFactory, logger);
+            return new AssToSupConverter(configFactory, logger, provider.GetRequiredService<AssProcessor>());
         });
 
         serviceCollection.AddSingleton<MksMuxer>();
