@@ -53,6 +53,20 @@ Assert-ExitCode 1 (Invoke-VerificationScript -ScriptPath $artifactVerifier -Argu
 $temporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('ass-subsetter-artifact-tests-' + [Guid]::NewGuid().ToString('N'))
 [System.IO.Directory]::CreateDirectory($temporaryRoot) | Out-Null
 try {
+    $oldMajorDeps = Join-Path $temporaryRoot 'old-major.deps.json'
+    (Get-Content -Raw -LiteralPath $validDeps).Replace('/10.0.12', '/9.0.11') | Set-Content -LiteralPath $oldMajorDeps
+    Assert-ExitCode 1 (Invoke-VerificationScript -ScriptPath $artifactVerifier -ArgumentList @('-PackagePath', $acceptedPackage, '-JellyfinDepsPath', $oldMajorDeps)) 'complete old database major version'
+
+    $olderPatchDeps = Join-Path $temporaryRoot 'older-patch.deps.json'
+    (Get-Content -Raw -LiteralPath $validDeps).Replace('/10.0.12', '/10.0.11') | Set-Content -LiteralPath $olderPatchDeps
+    Assert-ExitCode 1 (Invoke-VerificationScript -ScriptPath $artifactVerifier -ArgumentList @('-PackagePath', $acceptedPackage, '-JellyfinDepsPath', $olderPatchDeps)) 'older host assembly patch version'
+
+    $missingRuntimeDeps = Join-Path $temporaryRoot 'missing-runtime.deps.json'
+    $missingRuntime = Get-Content -Raw -LiteralPath $validDeps | ConvertFrom-Json
+    $missingRuntime.libraries.PSObject.Properties.Remove('Microsoft.Data.Sqlite.Core/10.0.12')
+    $missingRuntime | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $missingRuntimeDeps
+    Assert-ExitCode 1 (Invoke-VerificationScript -ScriptPath $artifactVerifier -ArgumentList @('-PackagePath', $acceptedPackage, '-JellyfinDepsPath', $missingRuntimeDeps)) 'missing SQLite runtime package'
+
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zipPath = Join-Path $temporaryRoot 'accepted.zip'

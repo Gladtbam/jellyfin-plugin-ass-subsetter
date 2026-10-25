@@ -57,20 +57,19 @@ function Test-JellyfinDependencies([string]$Path) {
     $libraries = $json.libraries
     if ($null -eq $libraries) { Fail 'Jellyfin deps file has no libraries object.' }
     $required = @(
-        'Microsoft.EntityFrameworkCore/9.0.11',
-        'Microsoft.EntityFrameworkCore.Abstractions/9.0.11',
-        'Microsoft.EntityFrameworkCore.Relational/9.0.11',
-        'Microsoft.EntityFrameworkCore.Sqlite/9.0.11',
-        'Microsoft.EntityFrameworkCore.Sqlite.Core/9.0.11',
-        'Microsoft.Data.Sqlite/9.0.11',
-        'Microsoft.Data.Sqlite.Core/9.0.11',
-        'SQLitePCLRaw.bundle_e_sqlite3/2.1.10',
-        'SQLitePCLRaw.core/2.1.10',
-        'SQLitePCLRaw.lib.e_sqlite3/2.1.10',
-        'SQLitePCLRaw.provider.e_sqlite3/2.1.10'
+        'Microsoft.EntityFrameworkCore/10.0.12',
+        'Microsoft.EntityFrameworkCore.Abstractions/10.0.12',
+        'Microsoft.EntityFrameworkCore.Relational/10.0.12',
+        'Microsoft.EntityFrameworkCore.Sqlite/10.0.12',
+        'Microsoft.EntityFrameworkCore.Sqlite.Core/10.0.12',
+        'Microsoft.Data.Sqlite.Core/10.0.12',
+        'SQLitePCLRaw.bundle_e_sqlite3/2.1.12',
+        'SQLitePCLRaw.core/2.1.12',
+        'SQLitePCLRaw.lib.e_sqlite3/2.1.12',
+        'SQLitePCLRaw.provider.e_sqlite3/2.1.12'
     )
     foreach ($key in $required) {
-        if ($libraries.PSObject.Properties.Name -notcontains $key) { Fail "Jellyfin 10.11.9 dependency is missing or mismatched: $key" }
+        if ($libraries.PSObject.Properties.Name -notcontains $key) { Fail "Jellyfin release-12.z dependency baseline is missing or mismatched: $key" }
     }
 }
 

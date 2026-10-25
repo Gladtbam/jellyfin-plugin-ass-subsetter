@@ -2,6 +2,9 @@
 
 **Jellyfin ASS Subsetter** 是一款专为 Jellyfin 打造的外挂 ASS 字幕字体子集化插件。
 
+> [!IMPORTANT]
+> 当前构建面向 Jellyfin 12.x 与 .NET 10；不适用于 Jellyfin 10.11.x。
+
 ## 📖 项目简介
 
 本插件致力于解决流媒体播放时“因客户端本地缺少字体导致字幕特效失效、排版错位”的痛点。通过服务端的实时优化，让客户端在**完全无需安装本地字体**的情况下，使用字幕所需字体，减少字体缺失造成的排版问题。
@@ -67,8 +70,8 @@ Jellyfin“计划任务”中的字体维护任务默认安排如下，管理员
 
 * **核心处理引擎**：通过原生 P/Invoke 深度集成 **HarfBuzz** 进行内存级子集化处理（已弃用 [MkvAutoSubset](https://github.com/MkvAutoSubset/MkvAutoSubset) 外部依赖），实现极速无损裁剪。
 * **图形渲染引擎**：内建 **libass** 渲染层与纯 C# 实现的 PGS 编码器（AssToSupConverter），支持 ASS 到 SUP 格式的高效转换。
-* **Jellyfin 插件端**：基于 **C# (.NET 9.0)** 开发，深度集成 ASP.NET Core 的依赖注入、路由拦截（Middleware）与后台常驻任务（IHostedService）。
-* **字体持久化**：使用 **EF Core 9 与 SQLite** 管理库存、分析和维护记录，关键发布保持事务一致性。EF Core、SQLite 托管及原生运行时由 Jellyfin 主机提供，插件包不携带这些数据库运行时依赖。
+* **Jellyfin 插件端**：基于 **C# (.NET 10.0)** 开发，深度集成 ASP.NET Core 的依赖注入、路由拦截（Middleware）与后台常驻任务（IHostedService）。
+* **字体持久化**：使用 **EF Core 10 与 SQLite** 管理库存、分析和维护记录，关键发布保持事务一致性。EF Core、SQLite 托管及原生运行时由 Jellyfin 主机提供，插件包不携带这些数据库运行时依赖。
 
 ## ⚠️ 已知缺陷与限制
 
@@ -97,13 +100,13 @@ Jellyfin“计划任务”中的字体维护任务默认安排如下，管理员
 
 ### 从源码构建
 
-使用 .NET 9 SDK，在仓库根目录执行：
+使用 .NET 10 SDK，在仓库根目录执行：
 
 ```sh
 dotnet publish Jellyfin.Plugin.AssSubsetter/Jellyfin.Plugin.AssSubsetter.csproj -c Release
 ```
 
-插件发布目录为 `Jellyfin.Plugin.AssSubsetter/bin/Release/net9.0/publish/`。将该目录内容部署到 Jellyfin 的插件目录后重启服务。当前项目按 Jellyfin 10.11.9 的依赖构建。
+插件发布目录为 `Jellyfin.Plugin.AssSubsetter/bin/Release/net10.0/publish/`。将该目录内容部署到 Jellyfin 的插件目录后重启服务。当前项目按 Jellyfin 12.0.0 构建。
 
 运行测试：
 
@@ -114,7 +117,7 @@ dotnet test --project Jellyfin.Plugin.AssSubsetter.Tests/Jellyfin.Plugin.AssSubs
 使用 PowerShell 检查发布包中是否误带宿主提供的数据库运行时：
 
 ```powershell
-./scripts/verify-plugin-artifacts.ps1 -PackagePath ./Jellyfin.Plugin.AssSubsetter/bin/Release/net9.0/publish
+./scripts/verify-plugin-artifacts.ps1 -PackagePath ./Jellyfin.Plugin.AssSubsetter/bin/Release/net10.0/publish
 ```
 
 ---

@@ -116,7 +116,7 @@ public class SubtitleInterceptorMiddleware
                     return;
                 }
 
-                // These claim names are the Jellyfin 10.11.9 authentication contract.
+                // These claim names match the Jellyfin 12.x authentication contract.
                 // API keys have no user and are unrestricted by Jellyfin's default policy.
                 var principal = authentication.Principal!;
                 bool isApiKey = bool.TryParse(principal.Claims.FirstOrDefault(c => string.Equals(c.Type, "Jellyfin-IsApiKey", StringComparison.OrdinalIgnoreCase))?.Value, out bool apiKey) && apiKey;
