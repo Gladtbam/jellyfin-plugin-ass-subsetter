@@ -478,9 +478,10 @@ public class SubtitleCacheService : IHostedService, IDisposable
     {
         var dirInfo = new DirectoryInfo(CacheFolderPath);
         long maxCacheSizeInBytes = (long)Config.MaxCacheSizeMB * 1024 * 1024;
-        long currentSize = dirInfo.EnumerateFiles()
+        var managedFiles = dirInfo.EnumerateFiles()
             .Where(IsManagedCacheFile)
-            .Sum(f => f.Length);
+            .ToArray();
+        long currentSize = managedFiles.Sum(f => f.Length);
 
         if (currentSize + requiredSpace <= maxCacheSizeInBytes)
         {
@@ -489,10 +490,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
         _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
 
-        var oldestFiles = dirInfo.GetFiles()
-            .Where(IsManagedCacheFile)
-            .OrderBy(f => f.LastAccessTime)
-            .ToList();
+        var oldestFiles = managedFiles.OrderBy(f => f.LastAccessTime);
 
         foreach (var file in oldestFiles)
         {

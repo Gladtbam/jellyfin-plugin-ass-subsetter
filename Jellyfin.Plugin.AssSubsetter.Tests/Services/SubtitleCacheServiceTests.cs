@@ -208,6 +208,31 @@ public sealed class SubtitleCacheServiceTests : IDisposable
         Assert.True(File.Exists(newerAss));
     }
 
+    [Theory]
+    [InlineData(".ass")]
+    [InlineData(".sup")]
+    [InlineData(".MKS")]
+    public async Task QuotaEvictionPreservesUnmanagedFilesAndNewerEntries(string extension)
+    {
+        string oldest = Path.Join(_customCachePath, "oldest" + extension);
+        string newest = Path.Join(_customCachePath, "newest.ass");
+        string unmanaged = Path.Join(_customCachePath, "keep.tmp");
+        await File.WriteAllBytesAsync(oldest, new byte[600 * 1024], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(newest, new byte[600 * 1024], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(unmanaged, new byte[2 * 1024 * 1024], TestContext.Current.CancellationToken);
+        File.SetLastAccessTimeUtc(oldest, DateTime.UtcNow.AddHours(-2));
+        File.SetLastAccessTimeUtc(newest, DateTime.UtcNow.AddHours(-1));
+        File.SetLastAccessTimeUtc(unmanaged, DateTime.UtcNow.AddDays(-1));
+
+        string source = Path.Join(_tempDataPath, "eviction.ass");
+        await File.WriteAllTextAsync(source, "plain", TestContext.Current.CancellationToken);
+        await _cacheService.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(File.Exists(oldest));
+        Assert.True(File.Exists(newest));
+        Assert.True(File.Exists(unmanaged));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempDataPath))
