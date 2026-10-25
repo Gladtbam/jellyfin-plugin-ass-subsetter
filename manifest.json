@@ -9,6 +9,14 @@
         "imageUrl": "https://gladtbam.github.io/jellyfin-plugin-ass-subsetter/poster.png",
         "versions": [
             {
+                "version": "4.0.0.0",
+                "changelog": "升级至 .NET 10 与 Jellyfin 12 API\n\n完善字幕鉴权与媒体可见性检查、按实际字体依赖失效缓存，以及有界 SUP 后台转换。\n\n修复 ASS 覆盖与动画标签、MKS 同族字体附件覆盖；合并字体维护任务并减少字体分析及缓存目录扫描开销。",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v4.0.0.0/Jellyfin.Plugin.AssSubsetter_4.0.0.0.zip",
+                "checksum": "2f6f5cd8809b378c2eaf21c15392ab61",
+                "timestamp": "2026-10-25T12:50:51Z"
+            },
+            {
                 "version": "3.0.0.0",
                 "changelog": "feat: 引入字体库存分析、隔离恢复与文件名重命名管理",
                 "targetAbi": "10.11.9.0",
