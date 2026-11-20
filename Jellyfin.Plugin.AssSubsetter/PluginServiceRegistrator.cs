@@ -110,7 +110,16 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             PluginConfiguration config = provider.GetRequiredService<Func<PluginConfiguration>>()();
             return new FontNamingRules(config.FontFileNameTemplate, config.FontFolderTemplate, config.RemoveEmptyFontDirectories);
         });
-        serviceCollection.AddSingleton(provider => new FontRenameCandidateService(provider.GetRequiredService<IFontRepository>(), provider.GetRequiredService<FontRenamePlanner>(), provider.GetRequiredService<Func<FontNamingRules>>(), provider.GetRequiredService<Func<FontDirectoryPolicyResolver>>(), provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<IQuarantineFileSystem>(), provider.GetRequiredService<IFontRenameDirectoryOperations>(), provider.GetRequiredService<FontMaintenanceCoordinator>()));
+        serviceCollection.AddSingleton(provider => new FontRenameCandidateService(
+            provider.GetRequiredService<IFontRepository>(),
+            provider.GetRequiredService<FontRenamePlanner>(),
+            provider.GetRequiredService<Func<FontNamingRules>>(),
+            provider.GetRequiredService<Func<FontDirectoryPolicyResolver>>(),
+            provider.GetRequiredService<TimeProvider>(),
+            provider.GetRequiredService<IQuarantineFileSystem>(),
+            provider.GetRequiredService<IFontRenameDirectoryOperations>(),
+            provider.GetRequiredService<FontMaintenanceCoordinator>(),
+            provider.GetRequiredService<IQuarantineManifestStore>()));
         serviceCollection.AddSingleton<IFontFilenameNormalizationExecutor>(provider => new FontFilenameNormalizer(
             provider.GetRequiredService<IFontRepository>(),
             provider.GetRequiredService<FontMaintenanceCoordinator>(),

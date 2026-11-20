@@ -120,15 +120,9 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
         bool pending = false;
         foreach (FontOperationKind kind in kinds)
         {
-            Type? taskType = kind switch
-            {
-                FontOperationKind.Analyze or FontOperationKind.RebuildDerivedData or FontOperationKind.RefreshRenameCandidates => typeof(FontCacheUpdateTask),
-                FontOperationKind.Quarantine => typeof(FontDuplicateQuarantineTask),
-                FontOperationKind.Purge => typeof(FontDuplicateQuarantineTask),
-                FontOperationKind.NormalizeNames or FontOperationKind.RollbackNames => typeof(FontFilenameNormalizationTask),
-                _ => null
-            };
-            if (taskType is null)
+            if (kind is not (FontOperationKind.Analyze or FontOperationKind.RebuildDerivedData
+                or FontOperationKind.RefreshRenameCandidates or FontOperationKind.Quarantine or FontOperationKind.Purge
+                or FontOperationKind.NormalizeNames or FontOperationKind.RollbackNames))
             {
                 // Restore has its own worker.
                 continue;
@@ -140,10 +134,10 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
                 break;
             }
 
-            // Requests can also be queued before the corresponding Jellyfin task is registered.
-            if (!_taskManager.ScheduledTasks.Any(worker => worker.ScheduledTask.GetType() == taskType))
+            // Explicit requests run independently of the stage switches after Jellyfin registers the font task.
+            if (!_taskManager.ScheduledTasks.Any(worker => worker.ScheduledTask is FontCacheUpdateTask))
             {
-                continue;
+                break;
             }
 
             FontTaskExecutionResult result = await _executePending(kind, cancellationToken).ConfigureAwait(false);

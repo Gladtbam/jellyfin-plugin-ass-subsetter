@@ -13,15 +13,15 @@ public sealed class FontTaskProgressTests
     {
         var reports = new List<double>();
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.RefreshAnalyzeAndPruneAsync(It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((int _, IProgress<double> progress, CancellationToken token) =>
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns((FontMaintenanceStages _, int _, IProgress<double> progress, CancellationToken _) =>
             {
                 foreach (double value in new[] { 40d, 10d, double.NaN, -20d, 150d, 90d, 100d }) progress.Report(value);
                 Assert.DoesNotContain(100d, reports);
                 return Task.FromResult(new FontTaskExecutionResult(7, "analyzed", 3));
             });
         var logger = new RecordingLogger<FontCacheUpdateTask>();
-        var task = new FontCacheUpdateTask(executor.Object, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), logger);
+        var task = new FontCacheUpdateTask(executor.Object, () => new PluginConfiguration(), logger);
 
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
@@ -36,14 +36,14 @@ public sealed class FontTaskProgressTests
     {
         var reports = new List<double>();
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.QuarantineAndPurgeAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) =>
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns((FontMaintenanceStages _, int _, IProgress<double> progress, CancellationToken _) =>
             {
                 progress.Report(60);
                 return Task.FromResult(new FontTaskExecutionResult(9, outcome, 4));
             });
-        var logger = new RecordingLogger<FontDuplicateQuarantineTask>();
-        var task = new FontDuplicateQuarantineTask(executor.Object, logger);
+        var logger = new RecordingLogger<FontCacheUpdateTask>();
+        var task = CreateQuarantineTask(executor.Object, logger);
 
         Exception exception = outcome == "Cancelled"
             ? await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None))
@@ -60,14 +60,14 @@ public sealed class FontTaskProgressTests
     {
         var reports = new List<double>();
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.QuarantineAndPurgeAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) =>
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns((FontMaintenanceStages _, int _, IProgress<double> progress, CancellationToken _) =>
             {
                 progress.Report(100);
                 throw new IOException("Manifest persistence failed.");
             });
-        var logger = new RecordingLogger<FontDuplicateQuarantineTask>();
-        var task = new FontDuplicateQuarantineTask(executor.Object, logger);
+        var logger = new RecordingLogger<FontCacheUpdateTask>();
+        var task = CreateQuarantineTask(executor.Object, logger);
 
         await Assert.ThrowsAsync<IOException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
 
@@ -79,7 +79,7 @@ public sealed class FontTaskProgressTests
     public async Task HistoryFailureIsLoggedAndDoesNotFinishProgress()
     {
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.RefreshAnalyzeAndPruneAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("Pruning failed."));
         var logger = new RecordingLogger<FontCacheUpdateTask>();
         var task = new FontCacheUpdateTask(executor.Object, () => new PluginConfiguration { FontHistoryRetentionCount = 2 }, logger);
@@ -95,47 +95,30 @@ public sealed class FontTaskProgressTests
     public async Task PreCancelledTaskDoesNotInvokeExecutor()
     {
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        var task = new FontCacheUpdateTask(executor.Object, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
+        var task = new FontCacheUpdateTask(executor.Object, () => new PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task.ExecuteAsync(new InlineProgress(_ => { }), cancellation.Token));
 
-        executor.Verify(item => item.RefreshAnalyzeAndPruneAsync(It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()), Times.Never);
+        executor.VerifyNoOtherCalls();
     }
 
-    [Theory]
-    [InlineData("rename")]
-    [InlineData("purge")]
-    [InlineData("history")]
-    public async Task OtherScheduledTasksForwardIntermediateProgress(string kind)
+    [Fact]
+    public async Task PartialQuarantineBatchReportsIntermediateProgressAndCompletes()
     {
         var reports = new List<double>();
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        Task<FontTaskExecutionResult> Execute(IProgress<double> progress)
-        {
-            progress.Report(35);
-            progress.Report(20);
-            progress.Report(100);
-            Assert.DoesNotContain(100d, reports);
-            return Task.FromResult(new FontTaskExecutionResult(null, "Complete"));
-        }
-        executor.Setup(item => item.NormalizeFilenamesAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) => Execute(progress));
-        executor.Setup(item => item.QuarantineAndPurgeAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) => Execute(progress));
-        executor.Setup(item => item.RefreshAnalyzeAndPruneAsync(2, It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns(async (int _, IProgress<double> progress, CancellationToken token) =>
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns((FontMaintenanceStages _, int _, IProgress<double> progress, CancellationToken _) =>
             {
-                await Execute(progress);
-                return new FontTaskExecutionResult(1, "analyzed");
+                progress.Report(35);
+                progress.Report(20);
+                progress.Report(100);
+                Assert.DoesNotContain(100d, reports);
+                return Task.FromResult(new FontTaskExecutionResult(1, "Partial"));
             });
-        MediaBrowser.Model.Tasks.IScheduledTask task = kind switch
-        {
-            "rename" => new FontFilenameNormalizationTask(executor.Object, NullLogger<FontFilenameNormalizationTask>.Instance),
-            "purge" => new FontDuplicateQuarantineTask(executor.Object, NullLogger<FontDuplicateQuarantineTask>.Instance),
-            _ => new FontCacheUpdateTask(executor.Object, () => new PluginConfiguration { FontHistoryRetentionCount = 2 }, NullLogger<FontCacheUpdateTask>.Instance)
-        };
+        var task = CreateQuarantineTask(executor.Object, NullLogger<FontCacheUpdateTask>.Instance);
 
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
@@ -150,14 +133,14 @@ public sealed class FontTaskProgressTests
         var reports = new List<double>();
         IProgress<double>? delayed = null;
         var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.QuarantineAndPurgeAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) =>
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, It.IsAny<int>(), It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
+            .Returns((FontMaintenanceStages _, int _, IProgress<double> progress, CancellationToken _) =>
             {
                 delayed = progress;
                 progress.Report(35);
                 return Task.FromResult(new FontTaskExecutionResult(9, fails ? "Failed" : "Complete", 4));
             });
-        var task = new FontDuplicateQuarantineTask(executor.Object, NullLogger<FontDuplicateQuarantineTask>.Instance);
+        var task = CreateQuarantineTask(executor.Object, NullLogger<FontCacheUpdateTask>.Instance);
         if (fails)
             await Assert.ThrowsAsync<InvalidOperationException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
         else
@@ -169,6 +152,13 @@ public sealed class FontTaskProgressTests
 
         Assert.Equal(finished, reports);
     }
+
+    private static FontCacheUpdateTask CreateQuarantineTask(IFontMaintenanceTaskExecutor executor, ILogger<FontCacheUpdateTask> logger)
+        => new(executor, () => new PluginConfiguration
+        {
+            EnableScheduledFontAnalysis = false,
+            EnableScheduledFontQuarantine = true
+        }, logger);
 
     private sealed class RecordingLogger<T> : ILogger<T>
     {

@@ -3,11 +3,114 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
+using MediaBrowser.Model.Tasks;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
 public sealed partial class FontMaintenanceTaskTests
 {
+    [Fact]
+    public void OnlyTheExistingInventoryTaskIdentityRemainsDiscoverable()
+    {
+        Type[] taskTypes = typeof(FontCacheUpdateTask).Assembly.GetTypes()
+            .Where(type => !type.IsAbstract && typeof(IScheduledTask).IsAssignableFrom(type))
+            .ToArray();
+
+        Assert.Equal(typeof(FontCacheUpdateTask), Assert.Single(taskTypes));
+    }
+
+    [Fact]
+    public async Task ScheduledMaintenanceRunsAllEnabledStagesInOrderUnderOneLock()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var repository = new InMemoryFontRepository();
+        long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        await repository.WriteInventoryAsync(generation, [File(1, generation)], token);
+        await repository.CreateOperationRequestAsync(new OperationRequest
+        {
+            Kind = FontOperationKind.NormalizeNames,
+            IdempotencyKey = "scheduled-maintenance-rename",
+            RequestJson = "{}"
+        }, token);
+        var phases = new List<string>();
+        int releases = 0;
+        repository.BeforePrune = _ => phases.Add("prune-history");
+        var normalizer = new RecordingFilenameNormalizer(request =>
+        {
+            Assert.Equal(0, releases);
+            phases.Add("rename");
+            return Maintenance(2, request.Id, FontOperationKind.NormalizeNames);
+        });
+        using var executor = CreateExecutor(
+            repository,
+            refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(generation, true, FontAnalysisInputSnapshot.Empty, [])),
+            analyze: (id, _) =>
+            {
+                phases.Add("analyze");
+                return Task.FromResult(Analysis(id) with
+                {
+                    Groups = [new DuplicateGroupRecord
+                    {
+                        EvidenceJson = "{}",
+                        Members = [new DuplicateGroupMemberRecord
+                        {
+                            FileId = 1, FaceId = 10, Decision = DuplicateGroupMemberDecision.QuarantineCandidate, ScoreJson = "{}", Reason = "duplicate"
+                        }]
+                    }]
+                });
+            },
+            publish: (batch, cancellation) => repository.PublishAnalysisAsync(batch, cancellation),
+            quarantine: (request, _, _) =>
+            {
+                Assert.Equal(0, releases);
+                phases.Add("quarantine");
+                return Task.FromResult(Maintenance(1, request.Id));
+            },
+            purge: _ =>
+            {
+                phases.Add("purge");
+                return Task.FromResult(0);
+            },
+            filenameNormalizer: normalizer,
+            signalPendingRequests: () => releases++);
+        var progress = new List<double>();
+
+        FontTaskExecutionResult result = await executor.RunScheduledMaintenanceAsync(
+            FontMaintenanceStages.Analyze | FontMaintenanceStages.Quarantine | FontMaintenanceStages.Rename,
+            3,
+            new InlineProgress(progress.Add),
+            token);
+
+        Assert.Equal("Complete", result.Outcome);
+        Assert.Equal(["analyze", "prune-history", "quarantine", "purge", "rename"], phases);
+        Assert.Equal(progress.Order(), progress);
+        Assert.Equal(100, progress[^1]);
+        Assert.Equal(1, releases);
+        Assert.False(executor.IsBusy);
+    }
+
+    [Fact]
+    public async Task ScheduledMaintenanceStopsBeforeLaterStagesWhenAnalysisFails()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var repository = new InMemoryFontRepository();
+        var normalizer = new RecordingFilenameNormalizer();
+        using var executor = CreateExecutor(
+            repository,
+            analyze: (generation, _) => Task.FromResult(Analysis(generation) with { Status = AnalysisBatchStatus.Failed }),
+            filenameNormalizer: normalizer);
+
+        FontTaskExecutionResult result = await executor.RunScheduledMaintenanceAsync(
+            FontMaintenanceStages.Analyze | FontMaintenanceStages.Rename,
+            3,
+            new InlineProgress(_ => { }),
+            token);
+
+        Assert.Equal("Failed", result.Outcome);
+        Assert.Equal(0, normalizer.LatestPlanRequestCalls);
+        Assert.False(executor.IsBusy);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

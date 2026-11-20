@@ -25,6 +25,7 @@ public sealed class FontRenameCandidateService
     private readonly IQuarantineFileSystem _files;
     private readonly IFontRenameDirectoryOperations _directories;
     private readonly FontMaintenanceCoordinator _coordinator;
+    private readonly IQuarantineManifestStore? _quarantineManifests;
 
     /// <summary>Initializes a new instance of the <see cref="FontRenameCandidateService"/> class.</summary>
     /// <param name="repository">Publication, candidates and durable requests.</param>
@@ -35,7 +36,8 @@ public sealed class FontRenameCandidateService
     /// <param name="files">Fresh selected file evidence.</param>
     /// <param name="directories">Uncached selected directory checks.</param>
     /// <param name="coordinator">Shared runtime file leases.</param>
-    public FontRenameCandidateService(IFontRepository repository, FontRenamePlanner planner, Func<FontNamingRules> rules, Func<FontDirectoryPolicyResolver> policy, TimeProvider time, IQuarantineFileSystem files, IFontRenameDirectoryOperations directories, FontMaintenanceCoordinator coordinator)
+    /// <param name="quarantineManifests">Provides retained paths for active quarantine items during scheduled rename selection.</param>
+    public FontRenameCandidateService(IFontRepository repository, FontRenamePlanner planner, Func<FontNamingRules> rules, Func<FontDirectoryPolicyResolver> policy, TimeProvider time, IQuarantineFileSystem files, IFontRenameDirectoryOperations directories, FontMaintenanceCoordinator coordinator, IQuarantineManifestStore? quarantineManifests = null)
     {
         _repository = repository;
         _planner = planner;
@@ -45,6 +47,7 @@ public sealed class FontRenameCandidateService
         _files = files;
         _directories = directories;
         _coordinator = coordinator;
+        _quarantineManifests = quarantineManifests;
     }
 
     /// <summary>Captures compatible analysis and naming inputs without reading font data.</summary>
@@ -208,10 +211,19 @@ public sealed class FontRenameCandidateService
         var current = await GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var active = await _repository.LoadActiveRenameRequestsAsync(cancellationToken).ConfigureAwait(false);
         var reserved = active.SelectMany(request => FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items).ToArray();
+        // Expiry validates replacement evidence at the paths recorded in the durable manifests.
+        var retainedPaths = _quarantineManifests is null
+            ? new HashSet<string>(FontPathComparison.Comparer)
+            : (await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false))
+                .SelectMany(manifest => manifest.Items)
+                .Where(item => item.Status is QuarantineItemStatus.Staged or QuarantineItemStatus.Promoted or QuarantineItemStatus.Quarantined)
+                .SelectMany(item => item.Replacements.Select(replacement => replacement.Path))
+                .ToHashSet(FontPathComparison.Comparer);
         var eligible = new List<FontRenameCandidate>();
         foreach (var candidate in current.Items.Where(item => item.SkipReason is null))
         {
-            if (!reserved.Any(saved => FontPathComparison.Comparer.Equals(saved.OldPath, candidate.File.Path) || FontPathComparison.Comparer.Equals(saved.NewPath, candidate.NewPath))
+            if (!retainedPaths.Contains(candidate.File.Path)
+                && !reserved.Any(saved => FontPathComparison.Comparer.Equals(saved.OldPath, candidate.File.Path) || FontPathComparison.Comparer.Equals(saved.NewPath, candidate.NewPath))
                 && await GetLiveExclusionAsync(candidate, cancellationToken).ConfigureAwait(false) is null)
             {
                 eligible.Add(candidate);

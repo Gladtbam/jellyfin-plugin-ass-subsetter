@@ -16,6 +16,48 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     private string? _protected;
     private Action? _duringProbe;
 
+    [Theory]
+    [InlineData(QuarantineItemStatus.Quarantined, true)]
+    [InlineData(QuarantineItemStatus.Promoted, true)]
+    [InlineData(QuarantineItemStatus.Staged, true)]
+    [InlineData(QuarantineItemStatus.Purged, false)]
+    [InlineData(QuarantineItemStatus.Restored, false)]
+    public async Task ScheduledRenamePreservesRetainedPathsOfActiveQuarantines(QuarantineItemStatus status, bool protectedPath)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var manifests = new InMemoryQuarantineManifestStore();
+        var service = await PrepareAsync(includeSecondFile: true, quarantineManifests: manifests);
+        var snapshot = await service.GetCurrentAsync(token);
+        FontFileRecord retained = snapshot.Items.Single(item => item.File.Id == 1).File;
+        string quarantinePath = Path.Combine(_root, "quarantine");
+        await manifests.SaveAsync(new QuarantineManifest
+        {
+            Version = 2,
+            EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion,
+            BatchId = 100,
+            AnalysisBatchId = snapshot.AnalysisBatchId + 100,
+            OperationIdempotencyKey = "previous-quarantine",
+            OperationRequestJson = "{}",
+            Items = [new QuarantineManifestItem
+            {
+                SourcePath = Path.Combine(_root, "duplicate.ttf"),
+                SourcePhysicalIdentity = "duplicate",
+                StagingPath = Path.Combine(quarantinePath, "staging"),
+                QuarantinePath = Path.Combine(quarantinePath, "duplicate.ttf"),
+                Sha256 = retained.Sha256,
+                Replacements = [new QuarantineReplacementEvidence(retained.Id + 100, retained.Path, retained.Size, retained.Sha256)],
+                FaceReplacementProofs = [],
+                Status = status
+            }]
+        }, token);
+
+        OperationRequest request = Assert.IsType<OperationRequest>(await service.CreateScheduledRequestAsync(token));
+        string[] paths = FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items.Select(item => item.OldPath).ToArray();
+
+        Assert.Equal(protectedPath ? 1 : 2, paths.Length);
+        Assert.Equal(!protectedPath, paths.Contains(retained.Path));
+    }
+
     [Fact]
     public async Task GetCurrentNeverCalculates()
     {
@@ -261,7 +303,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
     private static Task<OperationRequest> SelectAsync(FontRenameCandidateService service, FontRenameSnapshot current, string key)
         => service.CreateRequestAsync(current.GenerationId, current.AnalysisBatchId, current.RuleFingerprint, [1], key, CancellationToken.None);
 
-    private async Task<FontRenameCandidateService> PrepareAsync(int evidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion, bool includeSecondFile = false)
+    private async Task<FontRenameCandidateService> PrepareAsync(int evidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion, bool includeSecondFile = false, IQuarantineManifestStore? quarantineManifests = null)
     {
         Directory.CreateDirectory(_root);
         long generation = await _repository.BeginGenerationAsync(Input(), [], CancellationToken.None);
@@ -283,7 +325,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
         await _repository.WriteInventoryAsync(generation, files, CancellationToken.None);
         await _repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = evidenceVersion, SummaryJson = "{}" }, CancellationToken.None);
         var directories = new ReadOnlyDirectories(() => _duringProbe?.Invoke());
-        var service = new FontRenameCandidateService(_repository, new FontRenamePlanner(directories), () => _rules, Policy, TimeProvider.System, new PhysicalQuarantineFileSystem(), directories, new FontMaintenanceCoordinator());
+        var service = new FontRenameCandidateService(_repository, new FontRenamePlanner(directories), () => _rules, Policy, TimeProvider.System, new PhysicalQuarantineFileSystem(), directories, new FontMaintenanceCoordinator(), quarantineManifests);
         if (evidenceVersion == FontDuplicateAnalyzer.CurrentEvidenceVersion)
         {
             var analysis = (await _repository.GetLatestCompleteAnalysisAsync(CancellationToken.None))!;

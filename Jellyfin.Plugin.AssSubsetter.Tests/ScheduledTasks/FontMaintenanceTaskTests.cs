@@ -241,65 +241,6 @@ public sealed partial class FontMaintenanceTaskTests
     }
 
     [Fact]
-    public void DefaultTriggers_ShouldMatchApprovedSchedule()
-    {
-        var executor = new RecordingTaskExecutor();
-
-        Assert.Empty(new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance).GetDefaultTriggers());
-        AssertDailyWithoutStartup(new FontCacheUpdateTask(
-            executor,
-            () => new PluginConfiguration(),
-            NullLogger<FontCacheUpdateTask>.Instance));
-        Assert.Empty(new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance).GetDefaultTriggers());
-    }
-
-    [Fact]
-    public async Task QuarantineTask_ShouldForwardPerFileProgress()
-    {
-        var executor = new Mock<IFontMaintenanceTaskExecutor>();
-        executor.Setup(item => item.QuarantineAndPurgeAsync(It.IsAny<IProgress<double>>(), It.IsAny<CancellationToken>()))
-            .Returns((IProgress<double> progress, CancellationToken _) =>
-            {
-                progress.Report(37);
-                return Task.FromResult(new FontTaskExecutionResult(1, "Partial"));
-            });
-        var reported = new List<double>();
-        var task = new FontDuplicateQuarantineTask(
-            executor.Object,
-            NullLogger<FontDuplicateQuarantineTask>.Instance);
-
-        await task.ExecuteAsync(new InlineProgress(reported.Add), CancellationToken.None);
-
-        Assert.Contains(37d, reported);
-        Assert.Equal(100d, reported[^1]);
-    }
-
-    [Fact]
-    public void TaskTypes_ShouldBeDiscoverableWithStableDistinctKeys()
-    {
-        var executor = new RecordingTaskExecutor();
-        IScheduledTask[] tasks =
-        [
-            new FontCacheUpdateTask(
-                executor,
-                () => new PluginConfiguration(),
-                NullLogger<FontCacheUpdateTask>.Instance),
-            new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance),
-            new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance)
-        ];
-
-        Assert.Equal(tasks.Length, tasks.Select(task => task.Key).Distinct(StringComparer.Ordinal).Count());
-        Assert.All(tasks, task => Assert.False(string.IsNullOrWhiteSpace(task.Name)));
-        Assert.All(tasks, task => Assert.False(string.IsNullOrWhiteSpace(task.Description)));
-        Type[] discoverable = typeof(FontCacheUpdateTask).Assembly.GetTypes()
-            .Where(type => !type.IsAbstract && typeof(IScheduledTask).IsAssignableFrom(type))
-            .ToArray();
-        Assert.Equal(3, discoverable.Length);
-        Assert.All(tasks, task => Assert.Contains(task.GetType(), discoverable));
-        Assert.DoesNotContain(discoverable, type => type.Name == "FontQuarantineRestoreTask");
-    }
-
-    [Fact]
     public void PluginServiceRegistrator_ShouldRegisterOneSingletonMaintenanceGraph()
     {
         var services = new ServiceCollection();
@@ -320,22 +261,6 @@ public sealed partial class FontMaintenanceTaskTests
             services,
             descriptor => descriptor.ServiceType == typeof(IHostedService)
                 && descriptor.ImplementationType == typeof(FontRuntimeSnapshotStartupService));
-    }
-
-    [Fact]
-    public async Task MaintenanceTasks_ShouldDelegateExactlyOnce()
-    {
-        var executor = new RecordingTaskExecutor();
-        var progress = new InlineProgress(_ => { });
-
-        await new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance)
-            .ExecuteAsync(progress, CancellationToken.None);
-        await new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance)
-            .ExecuteAsync(progress, CancellationToken.None);
-
-        Assert.Equal(1, executor.QuarantineCalls);
-        Assert.Equal(0, executor.PurgeCalls);
-        Assert.Equal(1, executor.NormalizeCalls);
     }
 
     [Fact]
@@ -1047,84 +972,10 @@ public sealed partial class FontMaintenanceTaskTests
             CancellationToken.None);
     }
 
-    private static void AssertDailyWithoutStartup(IScheduledTask task)
-    {
-        TaskTriggerInfo trigger = Assert.Single(task.GetDefaultTriggers());
-        Assert.Equal(TaskTriggerInfoType.IntervalTrigger, trigger.Type);
-        Assert.Equal(TimeSpan.FromHours(24).Ticks, trigger.IntervalTicks);
-    }
-
     private static void AssertSingleton<TService>(IEnumerable<ServiceDescriptor> services)
     {
         ServiceDescriptor descriptor = Assert.Single(services, item => item.ServiceType == typeof(TService));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-    }
-}
-
-internal sealed class RecordingTaskExecutor : IFontMaintenanceTaskExecutor
-{
-    public Task<FontTaskExecutionResult> RefreshAnalyzeAndPruneAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
-        => RefreshInventoryAndAnalyzeAsync(progress, cancellationToken);
-
-    public Task<FontTaskExecutionResult> QuarantineAndPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => QuarantineDuplicatesAsync(progress, cancellationToken);
-
-    public Task<FontTaskExecutionResult> ExecutePendingOperationAsync(FontOperationKind kind, IProgress<double> progress, CancellationToken cancellationToken)
-        => Task.FromResult(new FontTaskExecutionResult(null, "request-missing"));
-
-    public bool IsBusy => false;
-
-    public int RefreshAndAnalyzeCalls { get; private set; }
-
-    public int QuarantineCalls { get; private set; }
-
-    public int RestoreCalls { get; private set; }
-
-    public int PurgeCalls { get; private set; }
-
-    public int NormalizeCalls { get; private set; }
-
-    public Task<FontHistoryPruneResult> PruneHistoryAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new FontHistoryPruneResult(0, 0, false));
-    }
-
-    public Task<FontTaskExecutionResult> RefreshInventoryAndAnalyzeAsync(
-        IProgress<double> progress,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        RefreshAndAnalyzeCalls++;
-        return Task.FromResult(new FontTaskExecutionResult(1, "analyzed"));
-    }
-
-    public Task<FontTaskExecutionResult> QuarantineDuplicatesAsync(IProgress<double> progress, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        QuarantineCalls++;
-        return Task.FromResult(new FontTaskExecutionResult(2, "quarantined"));
-    }
-
-    public Task<FontTaskExecutionResult> RestoreQuarantinedFontsAsync(CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        RestoreCalls++;
-        return Task.FromResult(new FontTaskExecutionResult(3, "restored"));
-    }
-
-    public Task<FontTaskExecutionResult> PurgeExpiredQuarantineAsync(IProgress<double> progress, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        PurgeCalls++;
-        return Task.FromResult(new FontTaskExecutionResult(null, "purged:0"));
-    }
-
-    public Task<FontTaskExecutionResult> NormalizeFilenamesAsync(IProgress<double> progress, CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        NormalizeCalls++;
-        return Task.FromResult(new FontTaskExecutionResult(4, "normalized"));
     }
 }
 

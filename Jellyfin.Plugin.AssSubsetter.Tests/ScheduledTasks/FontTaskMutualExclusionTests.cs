@@ -4,7 +4,6 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Microsoft.Extensions.Logging.Abstractions;
-using MediaBrowser.Model.Tasks;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
@@ -26,15 +25,16 @@ public sealed class FontTaskMutualExclusionTests
         {
             await fixture.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             OperationRequest[] before = fixture.Repository.OperationRequests.ToArray();
-            IScheduledTask[] tasks =
-            [
-                new FontCacheUpdateTask(fixture.Executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance),
-                new FontDuplicateQuarantineTask(fixture.Executor, NullLogger<FontDuplicateQuarantineTask>.Instance),
-                new FontFilenameNormalizationTask(fixture.Executor, NullLogger<FontFilenameNormalizationTask>.Instance)
-            ];
+            var task = new FontCacheUpdateTask(fixture.Executor, () => new PluginConfiguration
+            {
+                EnableScheduledFontAnalysis = true,
+                EnableScheduledFontQuarantine = true,
+                EnableScheduledFontRenaming = true
+            }, NullLogger<FontCacheUpdateTask>.Instance);
 
-            await Task.WhenAll(tasks.Select(task => Assert.ThrowsAnyAsync<OperationCanceledException>(
-                () => task.ExecuteAsync(new InlineProgress(_ => { }), CancellationToken.None)))).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => task.ExecuteAsync(new InlineProgress(_ => { }), CancellationToken.None))
+                .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
             Assert.Equal(before, fixture.Repository.OperationRequests);
             Assert.True(fixture.Executor.IsBusy);

@@ -1,3 +1,4 @@
+using System.Xml.Serialization;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Xunit;
 
@@ -20,6 +21,19 @@ public class PluginConfigurationTests
         Assert.Equal(string.Empty, config.ProtectedFontDirectories);
         Assert.Equal(string.Empty, config.PreferredFontDirectories);
         Assert.True(config.FallbackToOriginalOnError);
+    }
+
+    [Fact]
+    public void DeserializeLegacySettings_ShouldDefaultToScheduledAnalysisOnly()
+    {
+        var serializer = new XmlSerializer(typeof(PluginConfiguration));
+        using var reader = new StringReader("<PluginConfiguration><FontHistoryRetentionCount>5</FontHistoryRetentionCount></PluginConfiguration>");
+
+        var config = Assert.IsType<PluginConfiguration>(serializer.Deserialize(reader));
+
+        Assert.True(config.EnableScheduledFontAnalysis);
+        Assert.False(config.EnableScheduledFontQuarantine);
+        Assert.False(config.EnableScheduledFontRenaming);
     }
 
     [Fact]

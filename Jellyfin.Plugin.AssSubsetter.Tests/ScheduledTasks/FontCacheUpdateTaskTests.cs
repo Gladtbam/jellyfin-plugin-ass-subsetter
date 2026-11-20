@@ -1,46 +1,73 @@
+using Jellyfin.Plugin.AssSubsetter.Configuration;
+using Jellyfin.Plugin.AssSubsetter.Helpers;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
 public sealed class FontCacheUpdateTaskTests
 {
     [Fact]
-    public async Task ExecuteAsync_ShouldDelegateRefreshAndAnalysisAndReportBounds()
+    public async Task ExecuteAsync_DefaultConfigurationRunsOnlyAnalysis()
     {
-        var executor = new RecordingTaskExecutor();
-        var reports = new List<double>();
-        var task = new FontCacheUpdateTask(executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
+        await AssertDispatchesAsync(new PluginConfiguration(), FontMaintenanceStages.Analyze);
+    }
 
-        await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
+    [Theory]
+    [InlineData(false, false, false, FontMaintenanceStages.None)]
+    [InlineData(false, true, false, FontMaintenanceStages.Quarantine)]
+    [InlineData(false, false, true, FontMaintenanceStages.Rename)]
+    [InlineData(true, true, true, FontMaintenanceStages.Analyze | FontMaintenanceStages.Quarantine | FontMaintenanceStages.Rename)]
+    public async Task ExecuteAsync_DispatchesOnlyEnabledStagesOnce(bool analyze, bool quarantine, bool rename, FontMaintenanceStages expectedStages)
+    {
+        var configuration = new PluginConfiguration
+        {
+            EnableScheduledFontAnalysis = analyze,
+            EnableScheduledFontQuarantine = quarantine,
+            EnableScheduledFontRenaming = rename
+        };
 
-        Assert.Equal(1, executor.RefreshAndAnalyzeCalls);
-        Assert.Equal(0, reports.First());
-        Assert.Equal(100, reports.Last());
-        Assert.All(reports, value => Assert.InRange(value, 0, 100));
+        await AssertDispatchesAsync(configuration, expectedStages);
     }
 
     [Fact]
     public void GetDefaultTriggers_ShouldReturnDailyIntervalOnly()
     {
-        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
+        var task = CreateTask(Mock.Of<IFontMaintenanceTaskExecutor>(), new PluginConfiguration());
 
-        TaskTriggerInfo[] triggers = task.GetDefaultTriggers().ToArray();
+        TaskTriggerInfo trigger = Assert.Single(task.GetDefaultTriggers());
 
-        Assert.Single(triggers);
-        Assert.Equal(TaskTriggerInfoType.IntervalTrigger, triggers[0].Type);
-        Assert.Equal(TimeSpan.FromHours(24).Ticks, triggers[0].IntervalTicks);
+        Assert.Equal(TaskTriggerInfoType.IntervalTrigger, trigger.Type);
+        Assert.Equal(TimeSpan.FromHours(24).Ticks, trigger.IntervalTicks);
     }
 
     [Fact]
     public void Identity_ShouldRemainStableAndLocalized()
     {
-        var task = new FontCacheUpdateTask(new RecordingTaskExecutor(), () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance);
+        var task = CreateTask(Mock.Of<IFontMaintenanceTaskExecutor>(), new PluginConfiguration());
 
         Assert.Equal("LocalFontCacheUpdateTask", task.Key);
         Assert.Equal("Subtitles", task.Category);
-        Assert.Equal(Jellyfin.Plugin.AssSubsetter.Helpers.LocalizationHelper.GetString("FontAnalysisTask_Name"), task.Name);
-        Assert.Equal(Jellyfin.Plugin.AssSubsetter.Helpers.LocalizationHelper.GetString("FontAnalysisTask_Description"), task.Description);
+        Assert.Equal(LocalizationHelper.GetString("FontMaintenanceTask_Name"), task.Name);
+        Assert.Equal(LocalizationHelper.GetString("FontMaintenanceTask_Description"), task.Description);
     }
+
+    private static async Task AssertDispatchesAsync(PluginConfiguration configuration, FontMaintenanceStages expectedStages)
+    {
+        var executor = new Mock<IFontMaintenanceTaskExecutor>(MockBehavior.Strict);
+        using var cancellation = new CancellationTokenSource();
+        CancellationToken token = cancellation.Token;
+        executor.Setup(item => item.RunScheduledMaintenanceAsync(expectedStages, It.IsAny<int>(), It.IsAny<IProgress<double>>(), token))
+            .ReturnsAsync(new FontTaskExecutionResult(null, "Complete"));
+        var task = CreateTask(executor.Object, configuration);
+
+        await task.ExecuteAsync(new InlineProgress(_ => { }), token);
+
+        executor.Verify(item => item.RunScheduledMaintenanceAsync(expectedStages, It.IsAny<int>(), It.IsAny<IProgress<double>>(), token), Times.Once);
+    }
+
+    private static FontCacheUpdateTask CreateTask(IFontMaintenanceTaskExecutor executor, PluginConfiguration configuration)
+        => new(executor, () => configuration, NullLogger<FontCacheUpdateTask>.Instance);
 }

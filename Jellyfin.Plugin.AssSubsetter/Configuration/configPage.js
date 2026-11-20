@@ -11,6 +11,10 @@ var i18nStrings = {
         scanFrameRate: '扫描帧率',
         maxCacheSize: '最大缓存容量限制 (MB)',
         fontHistoryRetention: '分析报告及发布代次保留数量',
+        scheduledFontMaintenance: '计划字体维护任务',
+        enableScheduledFontAnalysis: '更新字体库存、分析重复项及清理历史',
+        enableScheduledFontQuarantine: '隔离已验证的重复字体及清理过期隔离项',
+        enableScheduledFontRenaming: '按配置的规则重命名字体',
         enableAutoScan: '开启自动扫描预处理',
         enablePrefetch: '开启播放时提前处理下一集',
         prefetchTrigger: '提前处理触发进度',
@@ -287,6 +291,10 @@ var i18nStrings = {
         scanFrameRate: 'Scan Frame Rate',
         maxCacheSize: 'Max Cache Size (MB)',
         fontHistoryRetention: 'Analysis reports and inventory generations to retain',
+        scheduledFontMaintenance: 'Scheduled Font Maintenance',
+        enableScheduledFontAnalysis: 'Update font inventory, analyze duplicates, and prune history',
+        enableScheduledFontQuarantine: 'Quarantine verified duplicates and purge expired copies',
+        enableScheduledFontRenaming: 'Rename fonts using the configured rules',
         enableAutoScan: 'Enable Auto Scan Processing',
         enablePrefetch: 'Enable Prefetch Next Episode',
         prefetchTrigger: 'Prefetch Trigger Percent (%)',
@@ -2776,6 +2784,9 @@ document.querySelector('#AssSubsetterConfigPage').addEventListener('pageshow', f
         document.querySelector('#PreferredFontDirectories').value = config.PreferredFontDirectories || "";
         document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
         document.querySelector('#FontHistoryRetentionCount').value = config.FontHistoryRetentionCount ?? 3;
+        document.querySelector('#EnableScheduledFontAnalysis').checked = config.EnableScheduledFontAnalysis !== false;
+        document.querySelector('#EnableScheduledFontQuarantine').checked = config.EnableScheduledFontQuarantine === true;
+        document.querySelector('#EnableScheduledFontRenaming').checked = config.EnableScheduledFontRenaming === true;
         document.querySelector('#EnableAutoScanProcessing').checked = config.EnableAutoScanProcessing !== false;
         document.querySelector('#EnablePrefetchSubsetting').checked = config.EnablePrefetchSubsetting !== false;
         document.querySelector('#PrefetchTriggerPercent').value = config.PrefetchTriggerPercent || 85;
@@ -2805,6 +2816,9 @@ document.querySelector('#AssSubsetterConfigForm').addEventListener('submit', fun
             config.PreferredFontDirectories = document.querySelector('#PreferredFontDirectories').value;
             config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
             config.FontHistoryRetentionCount = parseInt(document.querySelector('#FontHistoryRetentionCount').value || "1", 10);
+            config.EnableScheduledFontAnalysis = document.querySelector('#EnableScheduledFontAnalysis').checked;
+            config.EnableScheduledFontQuarantine = document.querySelector('#EnableScheduledFontQuarantine').checked;
+            config.EnableScheduledFontRenaming = document.querySelector('#EnableScheduledFontRenaming').checked;
             config.EnableAutoScanProcessing = document.querySelector('#EnableAutoScanProcessing').checked;
             config.EnablePrefetchSubsetting = document.querySelector('#EnablePrefetchSubsetting').checked;
             config.PrefetchTriggerPercent = parseInt(document.querySelector('#PrefetchTriggerPercent').value || "90", 10);

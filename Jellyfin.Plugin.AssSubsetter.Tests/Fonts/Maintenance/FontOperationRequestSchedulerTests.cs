@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
@@ -15,11 +16,11 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 public sealed class FontOperationRequestSchedulerTests
 {
     [Fact]
-    public async Task CandidateRefreshDispatchesDirectlyWithoutSynthesizingRenameTask()
+    public async Task CandidateRefreshDispatchesDirectlyWithoutQueueingScheduledMaintenance()
     {
         var repository = new InMemoryFontRepository();
         var request = await CreateRequest(repository, FontOperationKind.RefreshRenameCandidates, "candidate-refresh");
-        var manager = Manager(new RecordingTaskExecutor());
+        var manager = Manager(Mock.Of<IFontMaintenanceTaskExecutor>());
         var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var scheduler = CreateScheduler(repository, manager.Object, () => false, async (kind, token) =>
         {
@@ -43,24 +44,32 @@ public sealed class FontOperationRequestSchedulerTests
         using var executor = CreateExecutor(repository);
         var manager = new Mock<ITaskManager>();
         IScheduledTaskWorker[] workers = [];
-        manager.SetupGet(item => item.ScheduledTasks).Returns(() => workers);
+        var registrationChecked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.SetupGet(item => item.ScheduledTasks).Returns(() =>
+        {
+            IScheduledTaskWorker[] registered = Volatile.Read(ref workers);
+            registrationChecked.TrySetResult();
+            return registered;
+        });
         var processed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         int prematureCalls = 0;
         using var scheduler = CreateScheduler(repository, manager.Object, () => false, async (kind, token) =>
         {
-            if (workers.Length == 0) Interlocked.Increment(ref prematureCalls);
+            if (Volatile.Read(ref workers).Length == 0) Interlocked.Increment(ref prematureCalls);
             var result = await executor.ExecutePendingOperationAsync(kind, new Progress<double>(), token);
             processed.TrySetResult();
             return result;
         });
         await scheduler.StartAsync(CancellationToken.None);
+        await registrationChecked.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.False(processed.Task.IsCompleted);
         Assert.Equal(0, prematureCalls);
-        workers = Workers(executor);
+        Volatile.Write(ref workers, [Worker(executor)]);
         await processed.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         await scheduler.StopAsync(CancellationToken.None);
         Assert.Equal(0, prematureCalls);
         Assert.Equal(OperationRequestStatus.Complete, (await repository.GetOperationRequestAsync(request.Id, CancellationToken.None))!.Status);
-        manager.Verify(item => item.QueueIfNotRunning<FontFilenameNormalizationTask>(), Times.Never);
+        manager.Verify(item => item.QueueIfNotRunning<FontCacheUpdateTask>(), Times.Never);
     }
 
     [Theory]
@@ -70,7 +79,7 @@ public sealed class FontOperationRequestSchedulerTests
     [InlineData(FontOperationKind.Purge)]
     [InlineData(FontOperationKind.NormalizeNames)]
     [InlineData(FontOperationKind.RollbackNames)]
-    public async Task GateReleaseProcessesEveryPersistedTaskKind(FontOperationKind kind)
+    public async Task GateReleaseDispatchesPendingOperationWithAutomaticStagesDisabled(FontOperationKind kind)
     {
         var repository = new InMemoryFontRepository();
         long? analysisBatchId = null;
@@ -235,17 +244,18 @@ public sealed class FontOperationRequestSchedulerTests
     private static Mock<ITaskManager> Manager(IFontMaintenanceTaskExecutor executor)
     {
         var manager = new Mock<ITaskManager>();
-        manager.SetupGet(item => item.ScheduledTasks).Returns(Workers(executor));
+        manager.SetupGet(item => item.ScheduledTasks).Returns([Worker(executor)]);
         return manager;
     }
 
-    private static IScheduledTaskWorker[] Workers(IFontMaintenanceTaskExecutor executor)
-        => [Worker(new FontCacheUpdateTask(executor, () => new Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration(), NullLogger<FontCacheUpdateTask>.Instance)),
-            Worker(new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance)),
-            Worker(new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance))];
-
-    private static IScheduledTaskWorker Worker(IScheduledTask task)
+    private static IScheduledTaskWorker Worker(IFontMaintenanceTaskExecutor executor)
     {
+        var task = new FontCacheUpdateTask(executor, () => new PluginConfiguration
+        {
+            EnableScheduledFontAnalysis = false,
+            EnableScheduledFontQuarantine = false,
+            EnableScheduledFontRenaming = false
+        }, NullLogger<FontCacheUpdateTask>.Instance);
         var worker = new Mock<IScheduledTaskWorker>();
         worker.SetupGet(item => item.ScheduledTask).Returns(task);
         return worker.Object;

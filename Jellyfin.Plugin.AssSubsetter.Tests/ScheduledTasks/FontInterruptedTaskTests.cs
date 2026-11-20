@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
@@ -31,7 +32,11 @@ public sealed class FontInterruptedTaskTests
             (_, _) => throw new InvalidOperationException("Must not purge."),
             (_, _, _) => throw new InvalidOperationException("Must not publish."));
         var reports = new List<double>();
-        var task = new FontDuplicateQuarantineTask(executor, NullLogger<FontDuplicateQuarantineTask>.Instance);
+        var task = new FontCacheUpdateTask(executor, () => new PluginConfiguration
+        {
+            EnableScheduledFontAnalysis = false,
+            EnableScheduledFontQuarantine = true
+        }, NullLogger<FontCacheUpdateTask>.Instance);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
 
@@ -73,7 +78,11 @@ public sealed class FontInterruptedTaskTests
             (_, _) => throw new InvalidOperationException("Must not purge."),
             (_, _, _) => throw new InvalidOperationException("Must not publish."));
         var reports = new List<double>();
-        var task = new FontFilenameNormalizationTask(executor, NullLogger<FontFilenameNormalizationTask>.Instance);
+        var task = new FontCacheUpdateTask(executor, () => new PluginConfiguration
+        {
+            EnableScheduledFontAnalysis = false,
+            EnableScheduledFontRenaming = true
+        }, NullLogger<FontCacheUpdateTask>.Instance);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
 

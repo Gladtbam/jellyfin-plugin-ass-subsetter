@@ -34,6 +34,7 @@ public class PluginConfiguration : BasePluginConfiguration
         PrefetchTriggerPercent = 85;
         MaxCacheSizeMB = 1024;
         FontHistoryRetentionCount = 3;
+        EnableScheduledFontAnalysis = true;
         CustomFontDirectories = string.Empty;
         ProtectedFontDirectories = string.Empty;
         PreferredFontDirectories = string.Empty;
@@ -74,6 +75,15 @@ public class PluginConfiguration : BasePluginConfiguration
     ///     Gets or sets how many recent analysis reports and published inventory generations to retain. Zero retains all.
     /// </summary>
     public int FontHistoryRetentionCount { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether scheduled maintenance updates the inventory, analyzes duplicates, and prunes history.</summary>
+    public bool EnableScheduledFontAnalysis { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether scheduled maintenance quarantines verified duplicates and purges expired quarantine items.</summary>
+    public bool EnableScheduledFontQuarantine { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the scheduled font maintenance task renames fonts.</summary>
+    public bool EnableScheduledFontRenaming { get; set; }
 
     /// <summary>Gets or sets the filename stem template; source extensions are appended in lowercase.</summary>
     public string FontFileNameTemplate { get; set; } = FontNamingRules.DefaultFileNameTemplate;

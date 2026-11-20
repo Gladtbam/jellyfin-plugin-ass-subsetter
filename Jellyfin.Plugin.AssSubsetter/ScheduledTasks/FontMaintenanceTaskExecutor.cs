@@ -466,42 +466,43 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            OperationRequest? request = await _repository.ClaimNextOperationAsync(
-                FontOperationKind.NormalizeNames,
-                cancellationToken).ConfigureAwait(false);
-            if (request is not null)
-            {
-                return await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.ExecuteAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
-            }
-
-            request = await _repository.ClaimNextOperationAsync(FontOperationKind.RollbackNames, cancellationToken).ConfigureAwait(false);
-            if (request is not null)
-            {
-                return await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.RollbackAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
-            }
-
-            if (!allowScheduledWork)
-            {
-                return new FontTaskExecutionResult(null, "request-missing");
-            }
-
-            OperationRequest? created = await _filenameNormalizer.CreateCurrentRequestAsync(cancellationToken).ConfigureAwait(false);
-            if (created is null)
-            {
-                return new FontTaskExecutionResult(null, "rename-candidates-empty");
-            }
-
-            request = await _repository.ClaimNextOperationAsync(
-                FontOperationKind.NormalizeNames,
-                cancellationToken).ConfigureAwait(false);
-            return request is null
-                ? new FontTaskExecutionResult(null, "request-active", created.Id)
-                : await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.ExecuteAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
+            return await RunFilenameOperationCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             ReleaseTask();
         }
+    }
+
+    private async Task<FontTaskExecutionResult> RunFilenameOperationCoreAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    {
+        OperationRequest? request = await _repository.ClaimNextOperationAsync(FontOperationKind.NormalizeNames, cancellationToken).ConfigureAwait(false);
+        if (request is not null)
+        {
+            return await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.ExecuteAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
+        }
+
+        request = await _repository.ClaimNextOperationAsync(FontOperationKind.RollbackNames, cancellationToken).ConfigureAwait(false);
+        if (request is not null)
+        {
+            return await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.RollbackAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!allowScheduledWork)
+        {
+            return new FontTaskExecutionResult(null, "request-missing");
+        }
+
+        OperationRequest? created = await _filenameNormalizer.CreateCurrentRequestAsync(cancellationToken).ConfigureAwait(false);
+        if (created is null)
+        {
+            return new FontTaskExecutionResult(null, "rename-candidates-empty");
+        }
+
+        request = await _repository.ClaimNextOperationAsync(FontOperationKind.NormalizeNames, cancellationToken).ConfigureAwait(false);
+        return request is null
+            ? new FontTaskExecutionResult(null, "request-active", created.Id)
+            : await ExecuteRequestAsync(request, (operation, token) => _filenameNormalizer.ExecuteAsync(operation, token, progress), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> TryEnterTaskAsync(CancellationToken cancellationToken)

@@ -35,7 +35,7 @@ internal static class FontScheduledTaskExecution
                 throw new OperationCanceledException("Another font maintenance task is active; this scheduled execution was cancelled.");
             }
 
-            if (result.Outcome is "Cancelled" or "Failed" or "Running" or "Stale")
+            if (IsIncompleteOutcome(result.Outcome))
             {
                 Exception exception = result.Outcome == "Cancelled"
                     ? new OperationCanceledException("The font maintenance batch was cancelled.")
@@ -89,6 +89,8 @@ internal static class FontScheduledTaskExecution
             taskProgress.Stop();
         }
     }
+
+    internal static bool IsIncompleteOutcome(string outcome) => outcome is "Cancelled" or "Failed" or "Running" or "Stale";
 
     private static long? GetBatchId(Exception exception)
         => exception.Data[BatchIdDataKey] is long batchId ? batchId : null;

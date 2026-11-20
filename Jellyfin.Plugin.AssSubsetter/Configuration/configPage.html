@@ -194,6 +194,28 @@
                     <div class="fieldDescription" data-i18n="descFontHistoryRetention">Keep the latest N analysis reports and their published inventory generations. Set to 0 to retain all. The current inventory and data needed by active operations or plans remain protected.</div>
                 </div>
 
+                <div role="group" aria-labelledby="ScheduledFontMaintenanceLabel">
+                    <h2 id="ScheduledFontMaintenanceLabel" data-i18n="scheduledFontMaintenance">Scheduled Font Maintenance</h2>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableScheduledFontAnalysis" name="EnableScheduledFontAnalysis" type="checkbox" is="emby-checkbox" checked/>
+                            <span data-i18n="enableScheduledFontAnalysis">Update font inventory, analyze duplicates, and prune history</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableScheduledFontQuarantine" name="EnableScheduledFontQuarantine" type="checkbox" is="emby-checkbox"/>
+                            <span data-i18n="enableScheduledFontQuarantine">Quarantine verified duplicates and purge expired copies</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="EnableScheduledFontRenaming" name="EnableScheduledFontRenaming" type="checkbox" is="emby-checkbox"/>
+                            <span data-i18n="enableScheduledFontRenaming">Rename fonts using the configured rules</span>
+                        </label>
+                    </div>
+                </div>
+
                 <h2 data-i18n="fontRenameTab">Filename Renaming</h2>
                 <p class="fieldDescription" data-i18n="ruleSettingsIntro">Metadata case is preserved and the source extension is appended in lowercase. Folders start at the owning custom source root.</p>
                 <div class="inputContainer">
