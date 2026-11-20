@@ -8,12 +8,17 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 public sealed partial class FontMaintenanceTaskExecutor
 {
-    /// <inheritdoc/>
+    /// <summary>Waits for catalog recovery, analyzes the inventory, and prunes history after a successful analysis or when the inventory is current.</summary>
+    /// <param name="retentionCount">The number of analysis reports and published generations to retain. Zero retains all history.</param>
+    /// <param name="progress">Receives progress across analysis and pruning.</param>
+    /// <param name="cancellationToken">Cancels the recovery wait, analysis, or pruning.</param>
+    /// <returns>The analysis result, or a deferred result if another maintenance task holds the execution slot.</returns>
+    /// <exception cref="InvalidOperationException">The catalog could not be recovered.</exception>
     public async Task<FontTaskExecutionResult> RefreshAnalyzeAndPruneAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(retentionCount);
         ArgumentNullException.ThrowIfNull(progress);
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -36,11 +41,17 @@ public sealed partial class FontMaintenanceTaskExecutor
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Waits for catalog recovery, then quarantines duplicates. Applies the expiry policy when the request succeeds, already succeeded, or has no candidates.
+    /// </summary>
+    /// <param name="progress">Receives progress across quarantine and purge.</param>
+    /// <param name="cancellationToken">Cancels the recovery wait, quarantine, or purge.</param>
+    /// <returns>The quarantine result, or a deferred result if another maintenance task holds the execution slot.</returns>
+    /// <exception cref="InvalidOperationException">The catalog could not be recovered.</exception>
     public async Task<FontTaskExecutionResult> QuarantineAndPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }

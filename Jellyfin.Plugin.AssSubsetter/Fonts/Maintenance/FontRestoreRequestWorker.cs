@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -13,15 +14,18 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
     private readonly IFontMaintenanceTaskExecutor _executor;
     private readonly ILogger<FontRestoreRequestWorker> _logger;
+    private readonly FontCatalogReadiness? _readiness;
     private readonly SemaphoreSlim _signal = new(0, 1);
 
     /// <summary>Initializes a new instance of the <see cref="FontRestoreRequestWorker"/> class.</summary>
     /// <param name="executor">Executes durable restore requests.</param>
     /// <param name="logger">Records background failures.</param>
-    public FontRestoreRequestWorker(IFontMaintenanceTaskExecutor executor, ILogger<FontRestoreRequestWorker> logger)
+    /// <param name="readiness">The shared startup recovery result.</param>
+    public FontRestoreRequestWorker(IFontMaintenanceTaskExecutor executor, ILogger<FontRestoreRequestWorker> logger, FontCatalogReadiness? readiness = null)
     {
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _readiness = readiness;
     }
 
     /// <inheritdoc />
@@ -37,9 +41,16 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Waits for catalog recovery, drains persisted restore requests, and listens for new requests.</summary>
+    /// <param name="stoppingToken">Cancels waits for recovery or new requests and is passed to restore operations.</param>
+    /// <returns>The restore worker task, which exits on shutdown or when catalog recovery fails.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         // Also drain requests persisted before startup or between persistence and the previous shutdown.
         while (!stoppingToken.IsCancellationRequested)
         {

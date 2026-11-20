@@ -6,8 +6,9 @@ using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Services;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
-using Microsoft.Extensions.Hosting;
+using MediaBrowser.Controller;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
@@ -260,11 +261,13 @@ public sealed class FontCacheManagerTests
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/published.ttf"));
         var coordinator = new FontMaintenanceCoordinator();
         using FontCacheManager manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
-        IHostedService startup = new FontRuntimeSnapshotStartupService(manager, NullLogger<FontRuntimeSnapshotStartupService>.Instance, repository,
+        var readiness = new FontCatalogReadiness();
+        using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
-            new InMemoryQuarantineManifestStore(), coordinator);
+            new InMemoryQuarantineManifestStore(), coordinator, readiness);
 
         await startup.StartAsync(TestContext.Current.CancellationToken);
+        Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         (string Path, int FaceIndex)? path = await FontCacheManagerFixture.LookupAsync(manager, new FontDescriptor("FakeFont", null, false, false));
 
         Assert.NotNull(path);
@@ -276,31 +279,105 @@ public sealed class FontCacheManagerTests
     [Fact]
     public async Task ColdLookups_ShouldNotWaitForAnInProgressStartupLoad()
     {
+        var checkedStartup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var initializing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var loading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var repository = new InMemoryFontRepository { InitializationDelay = _ => loading.Task };
+        bool hostStarted = false;
+        var host = new Mock<IServerApplicationHost>();
+        host.SetupGet(item => item.CoreStartupHasCompleted).Returns(() =>
+        {
+            bool started = Volatile.Read(ref hostStarted);
+            checkedStartup.TrySetResult();
+            return started;
+        });
+        var repository = new InMemoryFontRepository
+        {
+            InitializationDelay = token =>
+            {
+                initializing.TrySetResult();
+                return loading.Task.WaitAsync(token);
+            }
+        };
         var coordinator = new FontMaintenanceCoordinator();
         using FontCacheManager manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
-        var startup = new FontRuntimeSnapshotStartupService(manager, NullLogger<FontRuntimeSnapshotStartupService>.Instance, repository,
+        var readiness = new FontCatalogReadiness();
+        using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
-            new InMemoryQuarantineManifestStore(), coordinator);
+            new InMemoryQuarantineManifestStore(), coordinator, readiness, host.Object);
         Task startupTask = startup.StartAsync(TestContext.Current.CancellationToken);
 
         try
         {
+            Assert.True(startupTask.IsCompletedSuccessfully);
+            await checkedStartup.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.Equal(0, repository.InitializeCallCount);
+
+            Volatile.Write(ref hostStarted, true);
+            await initializing.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             var descriptor = new FontDescriptor("FakeFont", null, false, false);
             Task<FontFileLease?> lookup = manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
 
             Assert.True(lookup.IsCompletedSuccessfully);
             Assert.Null(await lookup);
-            Assert.False(startupTask.IsCompleted);
+            Assert.False(readiness.WaitAsync(TestContext.Current.CancellationToken).IsCompleted);
             Assert.Equal(1, repository.InitializeCallCount);
             Assert.Equal(0, repository.RuntimeSnapshotLoadCallCount);
+
+            loading.TrySetResult();
+            Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         }
         finally
         {
-            loading.TrySetResult();
-            await startupTask;
+            await startup.StopAsync(TestContext.Current.CancellationToken);
         }
+    }
+
+    [Fact]
+    public async Task StartupService_ShouldCancelWithoutOpeningCatalog_WhenJellyfinNeverBecomesReady()
+    {
+        var checkedStartup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new Mock<IServerApplicationHost>();
+        host.SetupGet(item => item.CoreStartupHasCompleted).Returns(() =>
+        {
+            checkedStartup.TrySetResult();
+            return false;
+        });
+        var repository = new InMemoryFontRepository();
+        var coordinator = new FontMaintenanceCoordinator();
+        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        var readiness = new FontCatalogReadiness();
+        using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
+            new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
+            new InMemoryQuarantineManifestStore(), coordinator, readiness, host.Object);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        await startup.StartAsync(token);
+        await checkedStartup.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        await startup.StopAsync(token);
+
+        Assert.False(await readiness.WaitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token));
+        Assert.Equal(0, repository.InitializeCallCount);
+    }
+
+    [Fact]
+    public async Task StartupService_ShouldLeaveSnapshotCold_WhenCatalogRecoveryFails()
+    {
+        var repository = new InMemoryFontRepository();
+        var normalizer = new Mock<IFontFilenameNormalizationExecutor>();
+        normalizer.Setup(item => item.ReconcileAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("Maintenance journal unavailable."));
+        var coordinator = new FontMaintenanceCoordinator();
+        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        var readiness = new FontCatalogReadiness();
+        using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
+            new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
+            new InMemoryQuarantineManifestStore(), coordinator, readiness, normalizer: normalizer.Object);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        await startup.StartAsync(token);
+
+        Assert.False(await readiness.WaitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token));
+        Assert.Equal(1, repository.InitializeCallCount);
+        Assert.Equal(0, repository.RuntimeSnapshotLoadCallCount);
     }
 
     [Fact]

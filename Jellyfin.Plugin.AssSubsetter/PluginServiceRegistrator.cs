@@ -41,6 +41,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton(TimeProvider.System);
 
         serviceCollection.AddSingleton<FontDatabase>();
+        serviceCollection.AddSingleton<FontCatalogReadiness>();
         serviceCollection.AddSingleton<IFontRepository, SqliteFontRepository>();
         // Capability aliases share the aggregate repository and its atomic publication boundary.
         serviceCollection.AddSingleton<IFontRepositoryLifecycle>(provider => provider.GetRequiredService<IFontRepository>());
@@ -120,9 +121,6 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<FontRenameCandidateService>(),
             provider.GetRequiredService<IFontRenameDirectoryOperations>(),
             async token => await provider.GetRequiredService<FontQuarantineManager>().ReconcileAsync(token).ConfigureAwait(false)));
-        serviceCollection.AddHostedService(provider => new FontRenameRecoveryService(
-            provider.GetRequiredService<IFontRepository>(),
-            provider.GetRequiredService<IFontFilenameNormalizationExecutor>()));
         serviceCollection.AddSingleton(provider => new FontRenameCandidateRefreshQueue(
             provider.GetRequiredService<IFontRepository>(),
             provider.GetRequiredService<Func<FontNamingRules>>(),
@@ -139,7 +137,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
                 return new ConfigurationSignalSubscription(() => plugin.ConfigurationChanged -= handler);
             },
             provider.GetRequiredService<Func<FontNamingRules>>(),
-            provider.GetRequiredService<ILogger<FontRenameCandidateRefreshService>>()));
+            provider.GetRequiredService<ILogger<FontRenameCandidateRefreshService>>(),
+            provider.GetRequiredService<FontCatalogReadiness>()));
         serviceCollection.AddSingleton<IHostedService>(provider => provider.GetRequiredService<FontRenameCandidateRefreshService>());
 
         serviceCollection.AddSingleton<FontAnalysisWorkflow>();
@@ -149,7 +148,8 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             provider.GetRequiredService<ITaskManager>(),
             () => provider.GetRequiredService<IFontMaintenanceTaskExecutor>().IsBusy,
             (kind, token) => provider.GetRequiredService<IFontMaintenanceTaskExecutor>().ExecutePendingOperationAsync(kind, new Progress<double>(), token),
-            provider.GetRequiredService<ILogger<FontOperationRequestScheduler>>()));
+            provider.GetRequiredService<ILogger<FontOperationRequestScheduler>>(),
+            provider.GetRequiredService<FontCatalogReadiness>()));
         serviceCollection.AddSingleton<IFontOperationRequestDispatcher>(provider => provider.GetRequiredService<FontOperationRequestScheduler>());
         serviceCollection.AddSingleton<IHostedService>(provider => provider.GetRequiredService<FontOperationRequestScheduler>());
         serviceCollection.AddSingleton<FontRestoreRequestWorker>();

@@ -24,6 +24,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     private readonly IFontMaintenanceExecutionRepository _repository;
     private readonly FontAnalysisWorkflow _workflow;
     private readonly ILogger<FontMaintenanceTaskExecutor> _logger;
+    private readonly FontCatalogReadiness? _readiness;
     private readonly FontOperationRequestStore _requestStore;
     private readonly TimeProvider _timeProvider;
     private readonly IFontFilenameNormalizationExecutor _filenameNormalizer;
@@ -50,6 +51,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     /// <param name="candidateQueue">Queues candidate repairs.</param>
     /// <param name="refreshService">Signals candidate refresh.</param>
     /// <param name="logger">The task logger.</param>
+    /// <param name="readiness">The shared startup recovery result.</param>
     public FontMaintenanceTaskExecutor(
         IFontMaintenanceExecutionRepository repository,
         FontOperationRequestStore requestStore,
@@ -61,12 +63,14 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         FontRenameCandidateService candidateService,
         FontRenameCandidateRefreshQueue candidateQueue,
         FontRenameCandidateRefreshService refreshService,
-        ILogger<FontMaintenanceTaskExecutor> logger)
+        ILogger<FontMaintenanceTaskExecutor> logger,
+        FontCatalogReadiness readiness)
     {
         _repository = repository;
         _requestStore = requestStore;
         _workflow = workflow;
         _logger = logger;
+        _readiness = readiness;
         _timeProvider = timeProvider;
         _filenameNormalizer = filenameNormalizer;
         _quarantine = quarantineManager.QuarantineAsync;
@@ -159,7 +163,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     {
         ArgumentOutOfRangeException.ThrowIfNegative(retentionCount);
         ArgumentNullException.ThrowIfNull(progress);
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontHistoryPruneResult(0, 0, true);
         }
@@ -200,7 +204,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     {
         ArgumentNullException.ThrowIfNull(progress);
         progress.Report(0);
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -271,7 +275,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     private async Task<FontTaskExecutionResult> RunQuarantineAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -366,7 +370,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     /// <returns>The maintenance batch or safe-skip summary.</returns>
     public async Task<FontTaskExecutionResult> RestoreQuarantinedFontsAsync(CancellationToken cancellationToken)
     {
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -395,7 +399,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
     private async Task<FontTaskExecutionResult> RunPurgeAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
     {
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -455,7 +459,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
     private async Task<FontTaskExecutionResult> RunFilenameOperationAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
     {
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new FontTaskExecutionResult(null, "task-active");
         }
@@ -500,8 +504,13 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    private bool TryEnterTask(CancellationToken cancellationToken)
+    private async Task<bool> TryEnterTaskAsync(CancellationToken cancellationToken)
     {
+        if (_readiness is not null && !await _readiness.WaitAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The font catalog could not be recovered. See the server log for details.");
+        }
+
         lock (_taskLifetime)
         {
             cancellationToken.ThrowIfCancellationRequested();

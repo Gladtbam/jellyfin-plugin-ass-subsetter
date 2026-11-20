@@ -96,15 +96,17 @@ public sealed class FontQuarantineManagerTests
         }, CancellationToken.None);
         var coordinator = new FontMaintenanceCoordinator();
         using var manager = Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, coordinator);
-        var startup = new FontRuntimeSnapshotStartupService(
+        var readiness = new FontCatalogReadiness();
+        using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
-            NullLogger<FontRuntimeSnapshotStartupService>.Instance,
             fixture.Repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "rename-test-" + Guid.NewGuid().ToString("N"))),
             fixture.ManifestStore,
-            coordinator);
+            coordinator,
+            readiness);
 
         await startup.StartAsync(CancellationToken.None);
+        Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
 
         Assert.False(coordinator.IsPathAvailable(fixture.SourcePath));
         Assert.NotEqual(fixture.SourcePath, (await Tests.Services.FontCacheManagerFixture.LookupAsync(manager, new FontDescriptor("Family", null, false, false)))?.Path);

@@ -5,6 +5,7 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Controller;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,7 +56,7 @@ public sealed class FontRepositoryCapabilityRegistrationTests
         // These entry points are activated outside ordinary singleton resolution in production.
         Assert.NotNull(ActivatorUtilities.CreateInstance<FontManagementController>(provider));
         Assert.NotNull(ActivatorUtilities.CreateInstance<FontRenameStateQuery>(provider));
-        Assert.NotNull(ActivatorUtilities.CreateInstance<FontRenameRecoveryService>(provider));
+        Assert.NotNull(ActivatorUtilities.CreateInstance<FontRuntimeSnapshotStartupService>(provider));
 
         // Resolution must neither initialize storage nor execute maintenance work.
         repository.VerifyNoOtherCalls();
@@ -70,6 +71,7 @@ public sealed class FontRepositoryCapabilityRegistrationTests
         services.AddSingleton(FontStoragePaths.Create(Path.GetTempPath()));
         services.AddSingleton<Func<PluginConfiguration>>(() => new());
         services.AddSingleton(Mock.Of<ITaskManager>());
+        services.AddSingleton(Mock.Of<IServerApplicationHost>());
         services.AddLogging();
         return services;
     }

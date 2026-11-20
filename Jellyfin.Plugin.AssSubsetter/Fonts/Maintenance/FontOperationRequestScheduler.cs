@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,6 +21,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
     private readonly Func<bool> _isBusy;
     private readonly Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> _executePending;
     private readonly ILogger<FontOperationRequestScheduler> _logger;
+    private readonly FontCatalogReadiness? _readiness;
     private readonly SemaphoreSlim _signal = new(1, 1);
 
     /// <summary>Initializes a new instance of the <see cref="FontOperationRequestScheduler"/> class.</summary>
@@ -28,13 +30,15 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
     /// <param name="isBusy">The shared task gate state.</param>
     /// <param name="executePending">Consumes existing authorization without scheduled-task fallback.</param>
     /// <param name="logger">Records scheduling failures.</param>
-    public FontOperationRequestScheduler(IFontOperationRepository repository, ITaskManager taskManager, Func<bool> isBusy, Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> executePending, ILogger<FontOperationRequestScheduler> logger)
+    /// <param name="readiness">The shared startup recovery result.</param>
+    public FontOperationRequestScheduler(IFontOperationRepository repository, ITaskManager taskManager, Func<bool> isBusy, Func<FontOperationKind, CancellationToken, Task<FontTaskExecutionResult>> executePending, ILogger<FontOperationRequestScheduler> logger, FontCatalogReadiness? readiness = null)
     {
         _repository = repository;
         _taskManager = taskManager;
         _isBusy = isBusy;
         _executePending = executePending;
         _logger = logger;
+        _readiness = readiness;
     }
 
     /// <summary>Signals that an existing task or maintenance gate has released.</summary>
@@ -64,9 +68,16 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
         return base.StopAsync(cancellationToken);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Waits for catalog recovery, then dispatches pending operations as their Jellyfin tasks become available and maintenance is idle.</summary>
+    /// <param name="stoppingToken">Cancels waits for recovery or queue signals and is passed to pending operations.</param>
+    /// <returns>The scheduling task, which exits on shutdown or when catalog recovery fails.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         bool retry = false;
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -129,8 +140,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
                 break;
             }
 
-            // Jellyfin registers tasks after hosted-service startup and runtime snapshot recovery.
-            // Wait for registration without blocking the host's StartAsync.
+            // Requests can also be queued before the corresponding Jellyfin task is registered.
             if (!_taskManager.ScheduledTasks.Any(worker => worker.ScheduledTask.GetType() == taskType))
             {
                 continue;

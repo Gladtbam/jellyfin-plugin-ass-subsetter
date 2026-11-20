@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 [ApiController]
 [Route("AssSubsetter/Fonts")]
 [Authorize(Policy = "RequiresElevation")]
+[TypeFilter(typeof(FontCatalogReadinessFilter))]
 public sealed class FontManagementController : ControllerBase
 {
     private readonly FontManagementQuery _query;

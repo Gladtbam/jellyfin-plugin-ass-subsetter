@@ -5,10 +5,16 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Hosting;
 using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Api;
@@ -16,6 +22,33 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Api;
 /// <summary>Verifies the elevated font-operation HTTP boundary persists safe requests before scheduling work.</summary>
 public sealed class FontManagementControllerTests
 {
+    [Theory]
+    [InlineData(nameof(FontManagementController.ValidateNamingRules), true)]
+    [InlineData(nameof(FontManagementController.GetOverviewAsync), false)]
+    public async Task CatalogRecoveryFailure_ShouldOnlyBlockActionsThatUseTheDatabase(string methodName, bool runs)
+    {
+        var readiness = new FontCatalogReadiness();
+        readiness.Complete(false);
+        var descriptor = new ControllerActionDescriptor { MethodInfo = typeof(FontManagementController).GetMethod(methodName)! };
+        var action = new ActionContext(new DefaultHttpContext(), new RouteData(), descriptor);
+        var controller = CreateController(new InMemoryFontRepository(), Mock.Of<IFontOperationRequestDispatcher>());
+        var context = new ActionExecutingContext(action, [], new Dictionary<string, object?>(), controller);
+        var filter = new FontCatalogReadinessFilter(readiness, Mock.Of<IHostApplicationLifetime>());
+        bool actionRan = false;
+
+        await filter.OnActionExecutionAsync(context, () =>
+        {
+            actionRan = true;
+            return Task.FromResult(new ActionExecutedContext(action, [], controller));
+        });
+
+        Assert.Equal(runs, actionRan);
+        if (!runs)
+        {
+            Assert.Equal(StatusCodes.Status503ServiceUnavailable, Assert.IsType<StatusCodeResult>(context.Result).StatusCode);
+        }
+    }
+
     [Fact]
     public async Task RefreshCandidatesPersistsBeforeSignalAndRetriesKeepOriginalIdentity()
     {

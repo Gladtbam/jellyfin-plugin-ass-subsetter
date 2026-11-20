@@ -16,6 +16,7 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
     private readonly Func<Action, IDisposable> _subscribe;
     private readonly Func<FontNamingRules> _rules;
     private readonly ILogger<FontRenameCandidateRefreshService> _logger;
+    private readonly FontCatalogReadiness? _readiness;
     private readonly SemaphoreSlim _signal = new(1, 1);
     private IDisposable? _subscription;
 
@@ -25,13 +26,15 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
     /// <param name="subscribe">Configuration signal subscription.</param>
     /// <param name="rules">Current exact naming rules.</param>
     /// <param name="logger">Observable scheduling failures.</param>
-    public FontRenameCandidateRefreshService(FontRenameCandidateRefreshQueue queue, IFontOperationRequestDispatcher dispatcher, Func<Action, IDisposable> subscribe, Func<FontNamingRules> rules, ILogger<FontRenameCandidateRefreshService> logger)
+    /// <param name="readiness">The shared startup recovery result.</param>
+    public FontRenameCandidateRefreshService(FontRenameCandidateRefreshQueue queue, IFontOperationRequestDispatcher dispatcher, Func<Action, IDisposable> subscribe, Func<FontNamingRules> rules, ILogger<FontRenameCandidateRefreshService> logger, FontCatalogReadiness? readiness = null)
     {
         _queue = queue;
         _dispatcher = dispatcher;
         _subscribe = subscribe;
         _rules = rules;
         _logger = logger;
+        _readiness = readiness;
     }
 
     /// <summary>Signals a configuration or publication change without computing on the caller.</summary>
@@ -71,9 +74,16 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
         _signal.Dispose();
     }
 
-    /// <inheritdoc/>
+    /// <summary>Waits for catalog recovery, recovers interrupted candidate work, and queues refreshes for the current naming rules as needed.</summary>
+    /// <param name="stoppingToken">Cancels startup waits, configuration signal waits, or queue operations.</param>
+    /// <returns>The refresh worker task, which exits on shutdown or when catalog recovery fails.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
         bool retry = false;
         bool recovered = false;
         while (!stoppingToken.IsCancellationRequested)

@@ -13,7 +13,7 @@ public sealed partial class FontMaintenanceTaskExecutor
 {
     private async Task<FontTaskExecutionResult> RunCandidateRefreshAsync(CancellationToken cancellationToken)
     {
-        if (!TryEnterTask(cancellationToken))
+        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
             return new(null, "task-active");
         }

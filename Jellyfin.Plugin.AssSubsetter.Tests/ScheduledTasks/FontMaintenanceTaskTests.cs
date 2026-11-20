@@ -229,6 +229,7 @@ public sealed partial class FontMaintenanceTaskTests
         var services = new ServiceCollection();
         new PluginServiceRegistrator().RegisterServices(services, Mock.Of<IServerApplicationHost>());
         services.AddSingleton<IFontRepository>(new InMemoryFontRepository());
+        services.AddSingleton(Mock.Of<IServerApplicationHost>());
         services.AddSingleton(FontStoragePaths.Create(Path.GetTempPath()));
         services.AddSingleton<Func<Jellyfin.Plugin.AssSubsetter.Configuration.PluginConfiguration>>(() => new());
         services.AddLogging();

@@ -7,20 +7,25 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
+using MediaBrowser.Controller;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
-/// <summary>Loads the last published font snapshot during application startup without involving subtitle requests.</summary>
-public sealed class FontRuntimeSnapshotStartupService : IHostedService
+/// <summary>Recovers the font catalog and loads the last published snapshot after Jellyfin starts.</summary>
+public sealed class FontRuntimeSnapshotStartupService : BackgroundService
 {
+    private static readonly TimeSpan StartupCheckInterval = TimeSpan.FromMilliseconds(250);
     private readonly FontCacheManager _fontCacheManager;
     private readonly ILogger<FontRuntimeSnapshotStartupService> _logger;
     private readonly IFontRepository _repository;
     private readonly FileRenameManifestStore _renameManifests;
     private readonly IQuarantineManifestStore _quarantineManifests;
     private readonly FontMaintenanceCoordinator _coordinator;
+    private readonly IServerApplicationHost _applicationHost;
+    private readonly IFontFilenameNormalizationExecutor _normalizer;
+    private readonly FontCatalogReadiness _readiness;
     private readonly PlatformPhysicalFileIdentityProvider _identity = new();
 
     /// <summary>Initializes a new instance of the <see cref="FontRuntimeSnapshotStartupService"/> class with both durable maintenance journals.</summary>
@@ -30,13 +35,19 @@ public sealed class FontRuntimeSnapshotStartupService : IHostedService
     /// <param name="renameManifests">The durable rename transition journal.</param>
     /// <param name="quarantineManifests">The durable quarantine recovery journal.</param>
     /// <param name="coordinator">The memory-only path availability fence.</param>
+    /// <param name="applicationHost">Indicates when Jellyfin has completed its core startup tasks.</param>
+    /// <param name="normalizer">Recovers durable rename and quarantine state before new maintenance work is allowed.</param>
+    /// <param name="readiness">Reports the result of catalog recovery to other font consumers.</param>
     public FontRuntimeSnapshotStartupService(
         FontCacheManager fontCacheManager,
         ILogger<FontRuntimeSnapshotStartupService> logger,
         IFontRepository repository,
         FileRenameManifestStore renameManifests,
         IQuarantineManifestStore quarantineManifests,
-        FontMaintenanceCoordinator coordinator)
+        FontMaintenanceCoordinator coordinator,
+        IServerApplicationHost applicationHost,
+        IFontFilenameNormalizationExecutor normalizer,
+        FontCatalogReadiness readiness)
     {
         _fontCacheManager = fontCacheManager ?? throw new ArgumentNullException(nameof(fontCacheManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -44,37 +55,66 @@ public sealed class FontRuntimeSnapshotStartupService : IHostedService
         _renameManifests = renameManifests ?? throw new ArgumentNullException(nameof(renameManifests));
         _quarantineManifests = quarantineManifests ?? throw new ArgumentNullException(nameof(quarantineManifests));
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        _applicationHost = applicationHost;
+        _normalizer = normalizer;
+        _readiness = readiness;
     }
 
-    /// <summary>Loads and publishes the durable runtime snapshot before hosted startup completes.</summary>
-    /// <param name="cancellationToken">A token that cancels application startup.</param>
-    /// <returns>A task representing the startup load.</returns>
-    public async Task StartAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Waits for Jellyfin's core startup to finish, then initializes the catalog, reconciles maintenance journals, and loads the published font snapshot.
+    /// </summary>
+    /// <param name="stoppingToken">Cancels the wait for Jellyfin or the catalog work in progress.</param>
+    /// <returns>The background task that reports catalog readiness after the snapshot load attempt.</returns>
+    /// <remarks>Logs catalog or snapshot failures. If snapshot loading fails after catalog recovery, font maintenance can still run.</remarks>
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        bool recovered = false;
         try
         {
+            // Jellyfin runs core startup tasks after the generic host has started.
+            while (!_applicationHost.CoreStartupHasCompleted)
+            {
+                await Task.Delay(StartupCheckInterval, stoppingToken).ConfigureAwait(false);
+            }
+
+            stoppingToken.ThrowIfCancellationRequested();
             await _fontCacheManager.LoadPublishedSnapshotAsync(
-                RestoreFencesAsync,
-                cancellationToken).ConfigureAwait(false);
+                async token =>
+                {
+                    await _normalizer.ReconcileAsync(token).ConfigureAwait(false);
+                    recovered = true;
+                    await RestoreFencesAsync(token).ConfigureAwait(false);
+                },
+                stoppingToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (exception is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
-            _logger.LogError(exception, "[AssSubsetter] Failed to load the published font runtime snapshot during startup.");
+            _logger.LogError(
+                exception,
+                "[AssSubsetter] Failed to {Operation}.",
+                recovered ? "load the published font runtime snapshot" : "initialize or recover the font catalog");
+        }
+        finally
+        {
+            _readiness.Complete(recovered && !stoppingToken.IsCancellationRequested);
         }
     }
 
     private async Task RestoreFencesAsync(CancellationToken cancellationToken)
     {
-        var published = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
-        var publishedByPath = published.ToLookup(
-            file => file.Path,
-            FontPathComparison.Comparer);
         var renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
         var quarantineManifests = await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
         string[] paths = renameManifests.SelectMany(manifest => manifest.Batch.RenameItems.Select(item => manifest.Request.Kind == FontOperationKind.RollbackNames ? item.NewPath : item.OldPath))
             .Concat(quarantineManifests.SelectMany(manifest => manifest.Items.Select(item => item.SourcePath)))
             .Distinct(FontPathComparison.Comparer)
             .ToArray();
+        if (paths.Length == 0)
+        {
+            return;
+        }
+
+        var published = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
+        var publishedByPath = published.ToLookup(file => file.Path, FontPathComparison.Comparer);
         IAsyncDisposable lease = await _coordinator.AcquireExclusiveAsync(paths, cancellationToken).ConfigureAwait(false);
         await using var leaseScope = lease.ConfigureAwait(false);
         renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
@@ -125,9 +165,4 @@ public sealed class FontRuntimeSnapshotStartupService : IHostedService
             return false;
         }
     }
-
-    /// <summary>Stops the startup-only service without additional work.</summary>
-    /// <param name="cancellationToken">The application shutdown token.</param>
-    /// <returns>A completed task.</returns>
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

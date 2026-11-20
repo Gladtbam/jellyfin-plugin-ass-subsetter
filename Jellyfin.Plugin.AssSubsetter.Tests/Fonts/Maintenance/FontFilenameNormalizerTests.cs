@@ -340,14 +340,16 @@ public class FontFilenameNormalizerTests
 
         var restartedCoordinator = new FontMaintenanceCoordinator();
         using var manager = Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, restartedCoordinator);
-        var startup = new FontRuntimeSnapshotStartupService(
+        var readiness = new FontCatalogReadiness();
+        using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
-            NullLogger<FontRuntimeSnapshotStartupService>.Instance,
             fixture.Repository,
             fixture.Manifests,
             new InMemoryQuarantineManifestStore(),
-            restartedCoordinator);
+            restartedCoordinator,
+            readiness);
         await startup.StartAsync(CancellationToken.None);
+        Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
 
         Assert.False(restartedCoordinator.IsPathAvailable(source.Path));
     }
@@ -370,14 +372,16 @@ public class FontFilenameNormalizerTests
 
         var restartedCoordinator = new FontMaintenanceCoordinator();
         using var manager = Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, restartedCoordinator);
-        var startup = new FontRuntimeSnapshotStartupService(
+        var readiness = new FontCatalogReadiness();
+        using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
-            NullLogger<FontRuntimeSnapshotStartupService>.Instance,
             fixture.Repository,
             fixture.Manifests,
             new InMemoryQuarantineManifestStore(),
-            restartedCoordinator);
+            restartedCoordinator,
+            readiness);
         await startup.StartAsync(CancellationToken.None);
+        Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
 
         Assert.True(restartedCoordinator.IsPathAvailable(source.Path));
     }

@@ -1,8 +1,11 @@
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
+using Jellyfin.Plugin.AssSubsetter.Services;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
+using Jellyfin.Plugin.AssSubsetter.Tests.Services;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -173,20 +176,46 @@ public sealed class FontOperationRequestSchedulerTests
     }
 
     [Fact]
+    public async Task Scheduler_ShouldNotReadQueue_WhenStartupRecoveryFails()
+    {
+        var repository = new Mock<IFontOperationRepository>(MockBehavior.Strict);
+        var readiness = new FontCatalogReadiness();
+        using var scheduler = new FontOperationRequestScheduler(repository.Object, Mock.Of<ITaskManager>(),
+            () => false, (_, _) => throw new InvalidOperationException("No operation should be dispatched."),
+            NullLogger<FontOperationRequestScheduler>.Instance, readiness);
+        CancellationToken token = TestContext.Current.CancellationToken;
+
+        await scheduler.StartAsync(token);
+        readiness.Complete(false);
+        await scheduler.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), token);
+
+        repository.VerifyNoOtherCalls();
+        await scheduler.StopAsync(token);
+    }
+
+    [Fact]
     public async Task StartupRecoveryPersistsAnalysisWithoutCallingTheUnregisteredTaskQueue()
     {
         var repository = new InMemoryFontRepository();
         var normalizer = new Mock<IFontFilenameNormalizationExecutor>();
         normalizer.Setup(item => item.ReconcileAsync(It.IsAny<CancellationToken>())).Returns(async (CancellationToken token) =>
         {
+            Assert.Equal(1, repository.InitializeCallCount);
+            Assert.Equal(0, repository.RuntimeSnapshotLoadCallCount);
             await new FontOperationRequestStore(repository, TimeProvider.System).CreateTaskAsync(FontOperationKind.Analyze, "rename-refresh:startup", token);
         });
-        var recovery = new FontRenameRecoveryService(repository, normalizer.Object);
+        var coordinator = new FontMaintenanceCoordinator();
+        using var cache = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        var readiness = new FontCatalogReadiness();
+        using var recovery = FontCacheManagerFixture.CreateStartupService(cache, repository,
+            new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
+            new InMemoryQuarantineManifestStore(), coordinator, readiness, normalizer: normalizer.Object);
         await recovery.StartAsync(CancellationToken.None);
+        Assert.True(await readiness.WaitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.Equal(1, repository.RuntimeSnapshotLoadCallCount);
         var request = Assert.Single(repository.OperationRequests);
         Assert.Equal(FontOperationKind.Analyze, request.Kind);
         Assert.Equal(OperationRequestStatus.Pending, request.Status);
-        await recovery.StopAsync(CancellationToken.None);
     }
 
     private static Task<OperationRequest> CreateRequest(InMemoryFontRepository repository, FontOperationKind kind, string key)
