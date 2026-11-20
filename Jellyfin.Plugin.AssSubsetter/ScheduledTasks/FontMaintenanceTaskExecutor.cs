@@ -137,11 +137,11 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     public Task<FontTaskExecutionResult> ExecutePendingOperationAsync(FontOperationKind kind, IProgress<double> progress, CancellationToken cancellationToken)
         => kind switch
         {
-            FontOperationKind.Analyze or FontOperationKind.RebuildDerivedData => RunAnalysisAsync(progress, allowScheduledWork: false, cancellationToken),
+            FontOperationKind.Analyze or FontOperationKind.RebuildDerivedData => RunAnalysisAsync(progress, cancellationToken),
             FontOperationKind.RefreshRenameCandidates => RunCandidateRefreshAsync(cancellationToken),
-            FontOperationKind.Quarantine => RunQuarantineAsync(progress, allowScheduledWork: false, cancellationToken),
-            FontOperationKind.Purge => RunPurgeAsync(progress, allowScheduledWork: false, cancellationToken),
-            FontOperationKind.NormalizeNames or FontOperationKind.RollbackNames => RunFilenameOperationAsync(progress, allowScheduledWork: false, cancellationToken),
+            FontOperationKind.Quarantine => RunQuarantineAsync(progress, cancellationToken),
+            FontOperationKind.Purge => RunPurgeAsync(progress, cancellationToken),
+            FontOperationKind.NormalizeNames or FontOperationKind.RollbackNames => RunFilenameOperationAsync(progress, cancellationToken),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "No scheduled font operation handles this request.")
         };
 
@@ -154,31 +154,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    /// <summary>Deletes retained reports and unused inventory only outside active analysis and maintenance.</summary>
-    /// <param name="retentionCount">Number of reports and published inventory generations to keep; zero retains both.</param>
-    /// <param name="progress">Receives cleanup progress from zero through one hundred.</param>
-    /// <param name="cancellationToken">Cancels pruning.</param>
-    /// <returns>Counts of deleted rows, or a skipped result when another task is active.</returns>
-    public async Task<FontHistoryPruneResult> PruneHistoryAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
-    {
-        ArgumentOutOfRangeException.ThrowIfNegative(retentionCount);
-        ArgumentNullException.ThrowIfNull(progress);
-        if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return new FontHistoryPruneResult(0, 0, true);
-        }
-
-        try
-        {
-            return await PruneHistoryCoreAsync(retentionCount, progress, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            ReleaseTask();
-        }
-    }
-
-    private async Task<FontHistoryPruneResult> PruneHistoryCoreAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
+    private async Task<(int DeletedBatches, int DeletedGenerations)> PruneHistoryCoreAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
     {
         _logger.LogInformation("[AssSubsetter] History pruning reports. RetentionCount: {RetentionCount}.", retentionCount);
         int batches = await _repository.PruneAnalysisBatchesAsync(retentionCount, cancellationToken).ConfigureAwait(false);
@@ -190,17 +166,10 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
             abandonedBeforeUtc,
             new ScaledProgress(progress, 3, 99),
             cancellationToken).ConfigureAwait(false);
-        return new FontHistoryPruneResult(batches, generations, false);
+        return (batches, generations);
     }
 
-    /// <summary>Stages inventory, analyzes that exact generation, and publishes only a complete result.</summary>
-    /// <param name="progress">Receives percentage completion from zero through one hundred.</param>
-    /// <param name="cancellationToken">A token that cancels refresh or analysis.</param>
-    /// <returns>The persisted analysis batch summary.</returns>
-    public Task<FontTaskExecutionResult> RefreshInventoryAndAnalyzeAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => RunAnalysisAsync(progress, allowScheduledWork: true, cancellationToken);
-
-    private async Task<FontTaskExecutionResult> RunAnalysisAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    private async Task<FontTaskExecutionResult> RunAnalysisAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
         progress.Report(0);
@@ -211,7 +180,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            return await RunAnalysisCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
+            return await RunAnalysisCoreAsync(progress, allowScheduledWork: false, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -249,7 +218,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
             return new FontTaskExecutionResult(
                 batch.Id,
                 status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batch.Status.ToString(),
-                request.Id) { ScanResult = status == OperationRequestStatus.Complete ? new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons) : null };
+                request.Id);
         }
         catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
         {
@@ -265,14 +234,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    /// <summary>Consumes one explicit request or synthesizes one request from the latest current complete analysis.</summary>
-    /// <param name="progress">Receives per-file quarantine progress.</param>
-    /// <param name="cancellationToken">A token that cancels before or during quarantine.</param>
-    /// <returns>The maintenance batch or safe-skip summary.</returns>
-    public Task<FontTaskExecutionResult> QuarantineDuplicatesAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => RunQuarantineAsync(progress, allowScheduledWork: true, cancellationToken);
-
-    private async Task<FontTaskExecutionResult> RunQuarantineAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    private async Task<FontTaskExecutionResult> RunQuarantineAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(progress);
         if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
@@ -282,7 +244,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            return await RunQuarantineCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
+            return await RunQuarantineCoreAsync(progress, allowScheduledWork: false, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -390,14 +352,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    /// <summary>Purges quarantine items only through the manager's fixed thirty-day verification policy.</summary>
-    /// <param name="progress">Receives verification and deletion progress.</param>
-    /// <param name="cancellationToken">A token that cancels before the next purge item.</param>
-    /// <returns>The compact purge summary.</returns>
-    public Task<FontTaskExecutionResult> PurgeExpiredQuarantineAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => RunPurgeAsync(progress, allowScheduledWork: true, cancellationToken);
-
-    private async Task<FontTaskExecutionResult> RunPurgeAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    private async Task<FontTaskExecutionResult> RunPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -406,7 +361,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            return await RunPurgeCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
+            return await RunPurgeCoreAsync(progress, allowScheduledWork: false, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -450,14 +405,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    /// <summary>Executes one explicit filename request or creates one from current persisted candidates.</summary>
-    /// <param name="progress">Receives file and finalization progress.</param>
-    /// <param name="cancellationToken">A token that cancels before or during normalization.</param>
-    /// <returns>The maintenance batch or safe-skip summary.</returns>
-    public Task<FontTaskExecutionResult> NormalizeFilenamesAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => RunFilenameOperationAsync(progress, allowScheduledWork: true, cancellationToken);
-
-    private async Task<FontTaskExecutionResult> RunFilenameOperationAsync(IProgress<double> progress, bool allowScheduledWork, CancellationToken cancellationToken)
+    private async Task<FontTaskExecutionResult> RunFilenameOperationAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
         if (!await TryEnterTaskAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -466,7 +414,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            return await RunFilenameOperationCoreAsync(progress, allowScheduledWork, cancellationToken).ConfigureAwait(false);
+            return await RunFilenameOperationCoreAsync(progress, allowScheduledWork: false, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -678,14 +626,6 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
             exception.Data[FontScheduledTaskExecution.BatchIdDataKey] = batchId.Value;
         }
     }
-
-    private void LogStage(OperationRequest request, string stage, Stopwatch stopwatch)
-        => _logger.LogInformation(
-            "[AssSubsetter] Font maintenance stage. RequestId: {RequestId}; Kind: {Kind}; Stage: {Stage}; ElapsedMs: {ElapsedMs}.",
-            request.Id,
-            request.Kind,
-            stage,
-            stopwatch.ElapsedMilliseconds);
 
     private sealed class ScaledProgress(IProgress<double> target, double minimum, double maximum) : IProgress<double>
     {

@@ -84,29 +84,14 @@ public sealed partial class FontMaintenanceTaskExecutor
         }
     }
 
-    /// <summary>Analyzes the inventory and prunes history under one shared execution slot.</summary>
-    /// <param name="retentionCount">The number of analysis reports and published generations to retain. Zero retains all history.</param>
-    /// <param name="progress">Receives progress across analysis and pruning.</param>
-    /// <param name="cancellationToken">Cancels the recovery wait, analysis, or pruning.</param>
-    /// <returns>The analysis result or a deferred result if the execution slot is occupied.</returns>
-    public Task<FontTaskExecutionResult> RefreshAnalyzeAndPruneAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
-        => RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, retentionCount, progress, cancellationToken);
-
-    /// <summary>Quarantines duplicates and applies the expiry policy after successful quarantine or when there are no candidates.</summary>
-    /// <param name="progress">Receives progress across quarantine and purge.</param>
-    /// <param name="cancellationToken">Cancels the recovery wait, quarantine, or purge.</param>
-    /// <returns>The quarantine result or a deferred result if the execution slot is occupied.</returns>
-    public Task<FontTaskExecutionResult> QuarantineAndPurgeAsync(IProgress<double> progress, CancellationToken cancellationToken)
-        => RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, retentionCount: 0, progress, cancellationToken);
-
     private async Task<FontTaskExecutionResult> RunAnalysisAndPruneCoreAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
     {
         FontTaskExecutionResult result = await RunAnalysisCoreAsync(new ScaledProgress(progress, 0, 90), true, cancellationToken).ConfigureAwait(false);
         if (result.Outcome is "analyzed" or "no-changes")
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FontHistoryPruneResult removed = await PruneHistoryCoreAsync(retentionCount, new ScaledProgress(progress, 90, 99), cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[AssSubsetter] Analysis history pruning completed. RequestId: {RequestId}; DeletedBatches: {DeletedBatches}; DeletedGenerations: {DeletedGenerations}.", result.OperationRequestId, removed.DeletedBatches, removed.DeletedGenerations);
+            var (deletedBatches, deletedGenerations) = await PruneHistoryCoreAsync(retentionCount, new ScaledProgress(progress, 90, 99), cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("[AssSubsetter] Analysis history pruning completed. RequestId: {RequestId}; DeletedBatches: {DeletedBatches}; DeletedGenerations: {DeletedGenerations}.", result.OperationRequestId, deletedBatches, deletedGenerations);
         }
 
         return result;

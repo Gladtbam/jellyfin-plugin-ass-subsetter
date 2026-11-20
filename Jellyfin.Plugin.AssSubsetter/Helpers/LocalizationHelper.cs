@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 
 namespace Jellyfin.Plugin.AssSubsetter.Helpers;
 
@@ -9,11 +8,6 @@ namespace Jellyfin.Plugin.AssSubsetter.Helpers;
 public static class LocalizationHelper
 {
     private static string _culture = "en";
-
-    /// <summary>
-    ///     Gets the current UI culture.
-    /// </summary>
-    public static CultureInfo Culture => new CultureInfo(_culture);
 
     /// <summary>
     ///     Initializes the localization helper with the server's UI culture.

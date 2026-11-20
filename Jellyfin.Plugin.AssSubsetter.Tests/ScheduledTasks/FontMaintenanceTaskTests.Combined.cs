@@ -126,14 +126,14 @@ public sealed partial class FontMaintenanceTaskTests
             Assert.True(executor.IsBusy);
             Assert.Equal(0, signals);
             Assert.Equal(OperationRequestStatus.Complete, Assert.Single(repository.OperationRequests).Status);
-            Assert.Equal("task-active", executor.PurgeExpiredQuarantineAsync(new InlineProgress(_ => { }), CancellationToken.None).GetAwaiter().GetResult().Outcome);
+            Assert.Equal("task-active", executor.ExecutePendingOperationAsync(FontOperationKind.Purge, new InlineProgress(_ => { }), CancellationToken.None).GetAwaiter().GetResult().Outcome);
             pruned++;
             if (failCleanup) throw new IOException("cleanup failed");
         };
         if (failCleanup)
-            await Assert.ThrowsAsync<IOException>(() => executor.RefreshAnalyzeAndPruneAsync(0, new InlineProgress(_ => { }), CancellationToken.None));
+            await Assert.ThrowsAsync<IOException>(() => executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 0, new InlineProgress(_ => { }), CancellationToken.None));
         else
-            Assert.Equal("analyzed", (await executor.RefreshAnalyzeAndPruneAsync(0, new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
+            Assert.Equal("analyzed", (await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 0, new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
         Assert.Equal(1, pruned);
         Assert.Equal(1, signals);
         Assert.False(executor.IsBusy);
@@ -153,9 +153,9 @@ public sealed partial class FontMaintenanceTaskTests
             return Analysis(1) with { Status = AnalysisBatchStatus.Failed };
         });
         if (cancel)
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.RefreshAnalyzeAndPruneAsync(1, new InlineProgress(_ => { }), cts.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 1, new InlineProgress(_ => { }), cts.Token));
         else
-            Assert.Equal("Failed", (await executor.RefreshAnalyzeAndPruneAsync(1, new InlineProgress(_ => { }), cts.Token)).Outcome);
+            Assert.Equal("Failed", (await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 1, new InlineProgress(_ => { }), cts.Token)).Outcome);
         Assert.False(executor.IsBusy);
     }
 
@@ -163,7 +163,7 @@ public sealed partial class FontMaintenanceTaskTests
     public async Task CombinedAnalysisRejectsNegativeRetentionBeforeScanning()
     {
         using var executor = CreateExecutor(new InMemoryFontRepository(), refresh: (_, _, _) => throw new InvalidOperationException("Must not scan"));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => executor.RefreshAnalyzeAndPruneAsync(-1, new InlineProgress(_ => { }), CancellationToken.None));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, -1, new InlineProgress(_ => { }), CancellationToken.None));
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public sealed partial class FontMaintenanceTaskTests
         int pruned = 0;
         repository.BeforePrune = _ => pruned++;
         using var executor = CreateExecutor(repository, refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(generation, false, FontAnalysisInputSnapshot.Empty, [])));
-        Assert.Equal("no-changes", (await executor.RefreshAnalyzeAndPruneAsync(1, new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
+        Assert.Equal("no-changes", (await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 1, new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
         Assert.Equal(1, pruned);
     }
 
@@ -196,7 +196,7 @@ public sealed partial class FontMaintenanceTaskTests
         executor = CreateExecutor(repository, purge: _ => { Assert.True(executor!.IsBusy); purges++; return Task.FromResult(0); });
         using (executor)
         {
-            var result = await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None);
+            var result = await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, 0, new InlineProgress(_ => { }), CancellationToken.None);
             Assert.Equal(hasAnalysis ? "no-candidates" : "analysis-missing", result.Outcome);
             Assert.Equal(hasAnalysis ? 1 : 0, purges);
         }
@@ -224,9 +224,9 @@ public sealed partial class FontMaintenanceTaskTests
             quarantine: (operation, _, _) => Task.FromResult(Maintenance(1, operation.Id) with { Status = status }),
             purge: _ => { purges++; return purgeFails ? Task.FromException<int>(new IOException("purge failed")) : Task.FromResult(0); });
         if (purgeFails)
-            await Assert.ThrowsAsync<IOException>(() => executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None));
+            await Assert.ThrowsAsync<IOException>(() => executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, 0, new InlineProgress(_ => { }), CancellationToken.None));
         else
-            Assert.Equal(status.ToString(), (await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
+            Assert.Equal(status.ToString(), (await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, 0, new InlineProgress(_ => { }), CancellationToken.None)).Outcome);
         Assert.Equal(status == MaintenanceBatchStatus.Complete ? 1 : 0, purges);
         Assert.Equal(status == MaintenanceBatchStatus.Failed ? OperationRequestStatus.Failed : status == MaintenanceBatchStatus.Cancelled ? OperationRequestStatus.Cancelled : OperationRequestStatus.Complete,
             (await repository.GetOperationRequestAsync(request.Id, CancellationToken.None))!.Status);
@@ -257,8 +257,8 @@ public sealed partial class FontMaintenanceTaskTests
         using var executor = CreateExecutor(repository,
             quarantine: (request, _, _) => { quarantines++; return repository.SaveMaintenanceBatchAsync(Maintenance(1, request.Id) with { Status = status }, CancellationToken.None); },
             purge: _ => { purges++; return Task.FromResult(0); });
-        await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None);
-        await executor.QuarantineAndPurgeAsync(new InlineProgress(_ => { }), CancellationToken.None);
+        await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, 0, new InlineProgress(_ => { }), CancellationToken.None);
+        await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Quarantine, 0, new InlineProgress(_ => { }), CancellationToken.None);
         Assert.Equal(1, quarantines);
         Assert.Equal(status == MaintenanceBatchStatus.Complete ? 2 : 0, purges);
     }

@@ -15,7 +15,6 @@ public sealed class FontTaskMutualExclusionTests
     [InlineData("restore")]
     [InlineData("purge")]
     [InlineData("filenames")]
-    [InlineData("history")]
     [InlineData("candidates")]
     public async Task ScheduledConflictsAreCancelledBeforeClaimingRequests(string activeOperation)
     {
@@ -54,7 +53,6 @@ public sealed class FontTaskMutualExclusionTests
     [InlineData("restore")]
     [InlineData("purge")]
     [InlineData("filenames")]
-    [InlineData("history")]
     [InlineData("candidates")]
     public async Task DurableConflictsRemainPendingAndCanExecuteAfterRelease(string activeOperation)
     {
@@ -121,10 +119,11 @@ public sealed class FontTaskMutualExclusionTests
             {
                 "quarantine" => FontOperationKind.Quarantine,
                 "restore" => FontOperationKind.Restore,
+                "purge" => FontOperationKind.Purge,
                 "filenames" => FontOperationKind.NormalizeNames,
                 _ => FontOperationKind.Analyze
             };
-            if (activeOperation is "quarantine" or "restore" or "filenames")
+            if (activeOperation is "quarantine" or "restore" or "purge" or "filenames")
             {
                 await fixture.Repository.CreateOperationRequestAsync(new OperationRequest
                 {
@@ -168,15 +167,11 @@ public sealed class FontTaskMutualExclusionTests
         public Task Start(string operation) => Task.Run(() => operation switch
         {
             "candidates" => Executor.ExecutePendingOperationAsync(FontOperationKind.RefreshRenameCandidates, new InlineProgress(_ => { }), CancellationToken.None),
-            "analysis" => (Task)Executor.RefreshInventoryAndAnalyzeAsync(new InlineProgress(_ => { }), CancellationToken.None),
-            "quarantine" => Executor.QuarantineDuplicatesAsync(new InlineProgress(_ => { }), CancellationToken.None),
+            "analysis" => (Task)Executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 0, new InlineProgress(_ => { }), CancellationToken.None),
+            "quarantine" => Executor.ExecutePendingOperationAsync(FontOperationKind.Quarantine, new InlineProgress(_ => { }), CancellationToken.None),
             "restore" => Executor.RestoreQuarantinedFontsAsync(CancellationToken.None),
-            "purge" => Executor.PurgeExpiredQuarantineAsync(new InlineProgress(_ => { }), CancellationToken.None),
-            "filenames" => Executor.NormalizeFilenamesAsync(new InlineProgress(_ => { }), CancellationToken.None),
-            "history" => Executor.PruneHistoryAsync(1, new InlineProgress(value =>
-            {
-                if (value == 3) BlockAsync().GetAwaiter().GetResult();
-            }), CancellationToken.None),
+            "purge" => Executor.ExecutePendingOperationAsync(FontOperationKind.Purge, new InlineProgress(_ => { }), CancellationToken.None),
+            "filenames" => Executor.ExecutePendingOperationAsync(FontOperationKind.NormalizeNames, new InlineProgress(_ => { }), CancellationToken.None),
             _ => throw new ArgumentOutOfRangeException(nameof(operation))
         });
 
