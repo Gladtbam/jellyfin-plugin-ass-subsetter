@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 
 public sealed class FontRenameCandidateRefreshQueueTests
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
     [Fact]
     public async Task RestartReclaimsInterruptedCalculationWithOriginalIdentity()
@@ -117,7 +117,7 @@ public sealed class FontRenameCandidateRefreshQueueTests
         Assert.Equal(first.Id, (await queue.QueueAsync("first", CancellationToken.None)).Id);
         Assert.Equal(second.Id, (await queue.QueueAsync("second", CancellationToken.None)).Id);
         var group = await fixture.Repository.ClaimRenameCandidateRefreshGroupAsync(CancellationToken.None);
-        Assert.Equal(new[] { first.Id, second.Id }, group.Select(request => request.Id));
+        Assert.Equal([first.Id, second.Id], group.Select(request => request.Id));
         Assert.All(group, request => Assert.Equal(OperationRequestStatus.Running, request.Status));
         Assert.Empty(await fixture.Repository.ClaimRenameCandidateRefreshGroupAsync(CancellationToken.None));
     }
@@ -215,5 +215,5 @@ public sealed class FontRenameCandidateRefreshQueueTests
         => new(fixture.Repository, rules, () => fixture.Requirements with { RuleFingerprint = rules().GetFingerprint() }, TimeProvider.System);
 
     internal static FontRenameCandidateRefreshPayload Payload(OperationRequest request)
-        => JsonSerializer.Deserialize<FontRenameCandidateRefreshPayload>(request.RequestJson, JsonOptions)!;
+        => JsonSerializer.Deserialize<FontRenameCandidateRefreshPayload>(request.RequestJson, _jsonOptions)!;
 }

@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Core;
 /// <summary>
 ///     Processor for handling ASS subtitle subsetting via local HarfBuzzSharp.
 /// </summary>
-public class AssProcessor
+public partial class AssProcessor
 {
     private readonly AssDocumentParser _assParser;
     private readonly Func<PluginConfiguration> _configFactory;
@@ -37,7 +37,13 @@ public class AssProcessor
     /// <param name="assParser">The ASS document parser.</param>
     /// <param name="logger">The logger.</param>
     public AssProcessor(Func<PluginConfiguration> configFactory, FontCacheManager fontCacheManager, AssDocumentParser assParser, ILogger<AssProcessor> logger)
-        : this(configFactory, fontCacheManager.AcquireFontAsync, FontNameRewriter.GenerateRandomPrefix, assParser, logger, fontCacheManager.ValidateFontDependency)
+        : this(
+            configFactory,
+            (fontCacheManager ?? throw new ArgumentNullException(nameof(fontCacheManager))).AcquireFontAsync,
+            FontNameRewriter.GenerateRandomPrefix,
+            assParser,
+            logger,
+            fontCacheManager.ValidateFontDependency)
     {
     }
 
@@ -66,8 +72,7 @@ public class AssProcessor
     /// <param name="outputCachePath">The path where the subsetted ASS file should be saved.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>True if generation is successful; otherwise, false.</returns>
-    [SuppressMessage("Security", "CA3006:Review code for process command injection vulnerabilities", Justification = "The process execution is tightly sealed; arguments consist purely of verified physical directories and GUID names.")]
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are sanitized and guided by server side configurations.")]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Returns failure to the caller so subtitle delivery can fall back after native subsetting or output errors.")]
     public async Task<bool> GenerateSubsetFontAsync(string inputAssPath, string outputCachePath, CancellationToken cancellationToken = default)
     {
         SubsetArtifact? artifact = await GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
@@ -89,7 +94,7 @@ public class AssProcessor
                 _logger,
                 cancellationToken).ConfigureAwait(false);
 
-            if (success)
+            if (success && _logger.IsEnabled(LogLevel.Information))
             {
                 _logger.LogInformation("[AssSubsetter] Completed subsetting. Successfully embedded {Count} fonts with name rewriting.", artifact.Fonts.Count);
             }
@@ -125,19 +130,27 @@ public class AssProcessor
     /// <param name="inputAssPath">The physical path of the original ASS file.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The generated artifact, or <see langword="null" /> on failure.</returns>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Returns no artifact when font loading or native subsetting fails so callers can preserve the original subtitle.")]
     public virtual async Task<SubsetArtifact?> GenerateSubsetArtifactAsync(string inputAssPath, CancellationToken cancellationToken = default)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
+            }
 
             var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
             string originalContent = await File.ReadAllTextAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
             if (usedChars.Count == 0)
             {
-                _logger.LogInformation("[AssSubsetter] No font usage found in {File}. Returning plain ASS.", inputAssPath);
-                return new SubsetArtifact(originalContent, Array.Empty<SubsetFontAttachment>());
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] No font usage found in {File}. Returning plain ASS.", inputAssPath);
+                }
+
+                return new SubsetArtifact(originalContent, []);
             }
 
             var fontNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -169,7 +182,10 @@ public class AssProcessor
                 await using var leaseScope = lease.ConfigureAwait(false);
                 string physicalPath = lease.Path;
                 int faceIndex = lease.FaceIndex;
-                _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, kvp.Value.Count);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("[AssSubsetter] Subsetting font '{FontName}' from {Path} (Face {FaceIndex}) ({Count} characters)...", fontName, physicalPath, faceIndex, kvp.Value.Count);
+                }
 
                 byte[] fontData = await File.ReadAllBytesAsync(physicalPath, cancellationToken).ConfigureAwait(false);
                 _validateFontDependency?.Invoke(desc, kvp.Value, lease, fontData);
@@ -287,7 +303,7 @@ public class AssProcessor
             {
                 if (trimmed.StartsWith("Format:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var formatStr = trimmed.Substring(7).Trim();
+                    var formatStr = trimmed[7..].Trim();
                     var columns = formatStr.Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
                     styleFontIndex = columns.IndexOf("fontname");
                     outputLine = line;
@@ -336,8 +352,8 @@ public class AssProcessor
             return line;
         }
 
-        string prefix = line.Substring(0, colonPos + 1);
-        string rest = line.Substring(colonPos + 1);
+        string prefix = line[..(colonPos + 1)];
+        string rest = line[(colonPos + 1)..];
 
         // Split carefully — Style fields are comma-separated
         var parts = rest.Split(',');
@@ -350,7 +366,7 @@ public class AssProcessor
         string trimmedFont = originalFontField.Trim();
 
         bool hasVerticalPrefix = trimmedFont.StartsWith('@');
-        string lookupName = hasVerticalPrefix ? trimmedFont.Substring(1) : trimmedFont;
+        string lookupName = hasVerticalPrefix ? trimmedFont[1..] : trimmedFont;
 
         if (fontNameMap.TryGetValue(lookupName, out string? newName))
         {
@@ -362,7 +378,7 @@ public class AssProcessor
             }
 
             string leadingSpace = firstNonSpace > 0
-                ? originalFontField.Substring(0, firstNonSpace)
+                ? originalFontField[..firstNonSpace]
                 : string.Empty;
 
             parts[fontIndex] = hasVerticalPrefix
@@ -378,9 +394,7 @@ public class AssProcessor
     /// </summary>
     private static string RewriteFnTags(string line, Dictionary<string, string> fontNameMap)
     {
-        // Match \fn followed by the font name (up to the next \ or })
-        // Pattern: \fn[@]FontName where FontName continues until \ or }
-        return Regex.Replace(line, @"\\fn(@?)([^\\}]+)", match =>
+        return FontNameOverrideRegex().Replace(line, match =>
         {
             string verticalPrefix = match.Groups[1].Value;
             string fontName = match.Groups[2].Value.Trim();
@@ -393,6 +407,10 @@ public class AssProcessor
             return match.Value;
         });
     }
+
+    // Capture the optional @ prefix and the font name up to the next override tag or closing brace.
+    [GeneratedRegex(@"\\fn(@?)([^\\}]+)")]
+    private static partial Regex FontNameOverrideRegex();
 
     /// <summary>
     ///     Encodes font binary data into ASS UUEncode format lines (3 bytes to 4 characters with a +33 offset).

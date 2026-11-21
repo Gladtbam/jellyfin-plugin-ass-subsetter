@@ -53,11 +53,10 @@ public static class FontCandidateGenerator
             }
         }
 
-        FontCandidatePair[] pairs = uniquePairs
+        FontCandidatePair[] pairs = [.. uniquePairs
             .OrderBy(pair => pair.Left)
             .ThenBy(pair => pair.Right)
-            .Select(pair => new FontCandidatePair(pair.Left, pair.Right))
-            .ToArray();
+            .Select(pair => new FontCandidatePair(pair.Left, pair.Right))];
         return new FontCandidateGenerationResult(pairs, bucketPairCount);
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
@@ -7,6 +8,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 [MemoryDiagnoser]
 [BenchmarkCategory("Persistence")]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class PersistenceReadBenchmarks
 {
     private PersistenceFixture _fixture = null!;
@@ -15,12 +17,13 @@ public class PersistenceReadBenchmarks
     public int FileCount { get; set; }
 
     [GlobalSetup]
-    public async Task Setup()
+    public async Task Setup() => _fixture = await PersistenceFixture.CreateAsync(PrepareAsync);
+
+    private async Task PrepareAsync(PersistenceFixture fixture)
     {
-        _fixture = await PersistenceFixture.CreateAsync();
-        long generation = await _fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-        await _fixture.Repository.WriteInventoryAsync(generation, PersistenceFixture.CreateFiles(FileCount), CancellationToken.None);
-        await _fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
+        long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
+        await fixture.Repository.WriteInventoryAsync(generation, PersistenceFixture.CreateFiles(FileCount), CancellationToken.None);
+        await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
     }
 
     [Benchmark]
@@ -33,11 +36,18 @@ public class PersistenceReadBenchmarks
     public Task<IReadOnlyList<RuntimeFontFace>> RuntimeSnapshot() => _fixture.Repository.LoadPublishedRuntimeFacesAsync(CancellationToken.None);
 
     [GlobalCleanup]
-    public async Task Cleanup() => await _fixture.DisposeAsync();
+    public async Task Cleanup()
+    {
+        if (_fixture is not null)
+        {
+            await _fixture.DisposeAsync();
+        }
+    }
 }
 
 [MemoryDiagnoser]
 [BenchmarkCategory("Persistence")]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class PersistenceWriteBenchmarks
 {
     private PersistenceFixture _fixture = null!;
@@ -51,21 +61,31 @@ public class PersistenceWriteBenchmarks
     public void Setup() => _files = PersistenceFixture.CreateFiles(FileCount);
 
     [IterationSetup]
-    public void Reset()
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The benchmark engine calls IterationCleanup to dispose each successfully initialized fixture.")]
+    public void Reset() => _fixture = PersistenceFixture.CreateAsync(PrepareAsync).GetAwaiter().GetResult();
+
+    private async Task PrepareAsync(PersistenceFixture fixture)
     {
-        _fixture = PersistenceFixture.CreateAsync().GetAwaiter().GetResult();
-        _generation = _fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None).GetAwaiter().GetResult();
+        _generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
     }
 
     [Benchmark]
     public Task Inventory() => _fixture.Repository.WriteInventoryAsync(_generation, _files, CancellationToken.None);
 
     [IterationCleanup]
-    public void Cleanup() => _fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public void Cleanup()
+    {
+        if (_fixture is { } fixture)
+        {
+            _fixture = null!;
+            fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
 }
 
 [MemoryDiagnoser]
 [BenchmarkCategory("Persistence")]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class PersistencePublicationBenchmarks
 {
     private PersistenceFixture _fixture = null!;
@@ -79,12 +99,14 @@ public class PersistencePublicationBenchmarks
     public void Setup() => _files = PersistenceFixture.CreateFiles(FileCount);
 
     [IterationSetup]
-    public void Reset()
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The benchmark engine calls IterationCleanup to dispose each successfully initialized fixture.")]
+    public void Reset() => _fixture = PersistenceFixture.CreateAsync(PrepareAsync).GetAwaiter().GetResult();
+
+    private async Task PrepareAsync(PersistenceFixture fixture)
     {
-        _fixture = PersistenceFixture.CreateAsync().GetAwaiter().GetResult();
-        long generation = _fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None).GetAwaiter().GetResult();
-        _fixture.Repository.WriteInventoryAsync(generation, _files, CancellationToken.None).GetAwaiter().GetResult();
-        var files = _fixture.Repository.LoadInventoryAsync(generation, CancellationToken.None).GetAwaiter().GetResult();
+        long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
+        await fixture.Repository.WriteInventoryAsync(generation, _files, CancellationToken.None);
+        var files = await fixture.Repository.LoadInventoryAsync(generation, CancellationToken.None);
         var scores = files.SelectMany(file => file.Faces.Select(face => new FontFaceAnalysisRecord
         {
             FaceId = face.Id, FileId = file.Id, RetentionScore = 100, IsRuntimePreferred = true, ScoreJson = "{}", VerificationJson = "{}"
@@ -100,7 +122,14 @@ public class PersistencePublicationBenchmarks
     public Task<AnalysisBatch> Publish() => _fixture.Repository.PublishAnalysisAsync(_batch, CancellationToken.None);
 
     [IterationCleanup]
-    public void Cleanup() => _fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public void Cleanup()
+    {
+        if (_fixture is { } fixture)
+        {
+            _fixture = null!;
+            fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
 }
 
 
@@ -109,25 +138,34 @@ internal sealed class PersistenceFixture : IAsyncDisposable
     private readonly string _root;
     private readonly FontDatabase _database;
 
-    private PersistenceFixture(string root, FontDatabase database)
+    private PersistenceFixture(FontStoragePaths paths)
     {
-        _root = root;
-        _database = database;
-        Repository = new SqliteFontRepository(database);
+        _root = paths.RootPath;
+        _database = new FontDatabase(paths);
+        Repository = new SqliteFontRepository(_database);
     }
 
     internal SqliteFontRepository Repository { get; }
 
-    internal static async Task<PersistenceFixture> CreateAsync()
+    internal static async Task<PersistenceFixture> CreateAsync(Func<PersistenceFixture, Task> prepare)
     {
         string root = Path.Combine(Path.GetTempPath(), "ass-subsetter-persistence-benchmarks", Guid.NewGuid().ToString("N"));
         var paths = new FontStoragePaths(root, Path.Combine(root, "catalog.db"), Path.Combine(root, "quarantine"), Path.Combine(root, "manifests"));
-        var fixture = new PersistenceFixture(root, new FontDatabase(paths));
-        await fixture.Repository.InitializeAsync(CancellationToken.None);
-        return fixture;
+        var fixture = new PersistenceFixture(paths);
+        try
+        {
+            await fixture.Repository.InitializeAsync(CancellationToken.None);
+            await prepare(fixture);
+            return fixture;
+        }
+        catch
+        {
+            await fixture.DisposeAsync();
+            throw;
+        }
     }
 
-    internal static FontFileRecord[] CreateFiles(int count) => Enumerable.Range(0, count).Select(index => new FontFileRecord
+    internal static FontFileRecord[] CreateFiles(int count) => [.. Enumerable.Range(0, count).Select(index => new FontFileRecord
     {
         Path = $"/synthetic/fonts/{index:D5}.ttf",
         NormalizedPath = $"/SYNTHETIC/FONTS/{index:D5}.TTF",
@@ -143,11 +181,14 @@ internal sealed class PersistenceFixture : IAsyncDisposable
             Names = [$"Family {index:D5}", $"Alias {index:D5}"], Weight = 400, Width = 5, Technology = "TrueType",
             UnicodeCoverage = [new UnicodeRange(0x20, 0x7e), new UnicodeRange(0x4e00, 0x4eff)]
         }]
-    }).ToArray();
+    })];
 
     public async ValueTask DisposeAsync()
     {
         await _database.DisposeAsync();
-        Directory.Delete(_root, recursive: true);
+        if (Directory.Exists(_root))
+        {
+            Directory.Delete(_root, recursive: true);
+        }
     }
 }

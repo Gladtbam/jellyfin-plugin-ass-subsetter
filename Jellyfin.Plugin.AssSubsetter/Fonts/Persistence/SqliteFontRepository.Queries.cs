@@ -48,25 +48,25 @@ public sealed partial class SqliteFontRepository
         var metadata = await LoadFaceMetadataAsync(context, facesQuery.Select(face => face.Id), includeCoverage, cancellationToken).ConfigureAwait(false);
         ILookup<long, FontFaceRow> facesByFile = faces.ToLookup(face => face.FileId);
         ILookup<long, FontPathAliasRow> aliasesByFile = aliases.ToLookup(alias => alias.FileId);
-        FontFileRecord[] result = files.Select(file => new FontFileRecord
+        FontFileRecord[] result = [.. files.Select(file => new FontFileRecord
         {
             Id = file.Id, GenerationId = file.GenerationId, Path = file.Path, NormalizedPath = file.NormalizedPath,
-            PhysicalIdentity = file.PhysicalIdentity, PathAliases = aliasesByFile[file.Id].Select(alias => alias.Path).ToArray(),
+            PhysicalIdentity = file.PhysicalIdentity, PathAliases = [.. aliasesByFile[file.Id].Select(alias => alias.Path)],
             Size = file.Size, ModifiedUtc = ParseDate(file.ModifiedUtc), Sha256 = file.Sha256,
             DirectoryPolicy = (FontDirectoryPolicy)file.DirectoryPolicy, LinkKind = (FontLinkKind)file.LinkKind,
             Health = (FontFileHealth)file.Health, Error = file.Error,
-            Faces = facesByFile[file.Id].Select(face => new FontFaceRecord
+            Faces = [.. facesByFile[file.Id].Select(face => new FontFaceRecord
             {
                 Id = face.Id, FaceIndex = face.FaceIndex, StrictFingerprint = face.StrictFingerprint,
                 FamilyName = face.FamilyName, StyleName = face.StyleName, Weight = face.Weight, Width = face.Width,
                 Slant = face.Slant, IsItalic = face.IsItalic, IsFixedPitch = face.IsFixedPitch,
                 Technology = face.Technology, UnitsPerEm = face.UnitsPerEm, Version = face.Version,
                 RetentionScore = face.RetentionScore, IsRuntimePreferred = face.IsRuntimePreferred,
-                Names = metadata.Names[face.Id].Select(name => name.Name).ToArray(),
+                Names = [.. metadata.Names[face.Id].Select(name => name.Name)],
                 NameRecords = metadata.Evidence.GetValueOrDefault(face.Id) ?? [],
                 UnicodeCoverage = metadata.Coverage.GetValueOrDefault(face.Id) ?? []
-            }).ToArray()
-        }).ToArray();
+            })]
+        })];
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         return result;
     }
@@ -104,7 +104,8 @@ public sealed partial class SqliteFontRepository
         var faces = new List<RuntimeFontFace>();
         await foreach (var face in query.AsAsyncEnumerable().WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            faces.Add(new RuntimeFontFace(face.Id, face.Path, face.FaceIndex, face.FamilyName, face.StyleName, namesByFace[face.Id].ToArray(), face.Weight, face.Width, face.Slant, face.IsItalic, face.IsFixedPitch, face.Technology, face.RetentionScore, face.IsRuntimePreferred)
+            faces.Add(
+                new RuntimeFontFace(face.Id, face.Path, face.FaceIndex, face.FamilyName, face.StyleName, [.. namesByFace[face.Id]], face.Weight, face.Width, face.Slant, face.IsItalic, face.IsFixedPitch, face.Technology, face.RetentionScore, face.IsRuntimePreferred)
             {
                 ContentHash = Convert.ToHexString(face.Sha256),
                 NameRecords = face.NamesJson is null ? [] : JsonSerializer.Deserialize<OpenTypeNameRecord[]>(face.NamesJson) ?? [],

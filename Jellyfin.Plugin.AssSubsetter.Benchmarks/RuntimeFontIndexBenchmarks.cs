@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
@@ -9,6 +10,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 /// <summary>Measures deterministic 20,000-file runtime lookup construction and resolution.</summary>
 [MemoryDiagnoser]
 [MedianColumn]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class RuntimeFontIndexBenchmarks
 {
     private RuntimeFontIndex _index = null!;

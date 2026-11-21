@@ -52,7 +52,11 @@ public sealed class FontInventoryScanner : IDisposable
         try
         {
             progress?.Report(0);
-            _logger.LogInformation("[AssSubsetter] Font inventory scan started. ForceRebuild: {ForceRebuild}.", forceRebuild);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Font inventory scan started. ForceRebuild: {ForceRebuild}.", forceRebuild);
+            }
+
             await _repository.InitializeAsync(cancellationToken).ConfigureAwait(false);
             FontDirectoryPolicyResolver policy = _policyFactory();
             IReadOnlyList<FontFileRecord> previous = await _repository.LoadPublishedInventoryForReuseAsync(cancellationToken).ConfigureAwait(false);
@@ -86,7 +90,7 @@ public sealed class FontInventoryScanner : IDisposable
             long generationId = changed ? await _repository.BeginGenerationAsync(input, reasons, cancellationToken).ConfigureAwait(false) : analysis!.GenerationId;
             if (changed)
             {
-                await _repository.WriteInventoryAsync(generationId, records.Select(file => file with { GenerationId = generationId }).ToArray(), cancellationToken).ConfigureAwait(false);
+                await _repository.WriteInventoryAsync(generationId, [.. records.Select(file => file with { GenerationId = generationId })], cancellationToken).ConfigureAwait(false);
             }
 
             progress?.Report(98);
@@ -101,7 +105,11 @@ public sealed class FontInventoryScanner : IDisposable
                     RecordedUtc = DateTimeOffset.UtcNow
                 },
                 cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[AssSubsetter] Font inventory scan completed. GenerationId: {GenerationId}; Files: {FileCount}; Reused: {ReusedCount}; Unclassifiable: {UnclassifiableCount}; HasChanges: {HasChanges}; ChangeReasons: {ChangeReasons}; ElapsedMs: {ElapsedMs}.", generationId, records.Count, reusedCount, records.Count(file => file.Health == FontFileHealth.Unclassifiable), changed, string.Join(",", reasons), stopwatch.ElapsedMilliseconds);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Font inventory scan completed. GenerationId: {GenerationId}; Files: {FileCount}; Reused: {ReusedCount}; Unclassifiable: {UnclassifiableCount}; HasChanges: {HasChanges}; ChangeReasons: {ChangeReasons}; ElapsedMs: {ElapsedMs}.", generationId, records.Count, reusedCount, records.Count(file => file.Health == FontFileHealth.Unclassifiable), changed, string.Join(",", reasons), stopwatch.ElapsedMilliseconds);
+            }
+
             progress?.Report(100);
             return new(generationId, changed, input, reasons);
         }
@@ -118,6 +126,7 @@ public sealed class FontInventoryScanner : IDisposable
     /// <returns>A task representing validation.</returns>
     public async Task ValidatePublicationInputsAsync(FontInventoryScanResult scan, CancellationToken cancellationToken, IProgress<double>? progress = null)
     {
+        ArgumentNullException.ThrowIfNull(scan);
         FontDirectoryPolicyResolver policy = _policyFactory();
         IReadOnlyList<FontFileRecord> files = await _repository.LoadInventoryAsync(scan.GenerationId, cancellationToken).ConfigureAwait(false);
         (IReadOnlyList<FontFileRecord> observed, _) = await ObserveAsync(policy, files, progress, cancellationToken).ConfigureAwait(false);
@@ -133,7 +142,7 @@ public sealed class FontInventoryScanner : IDisposable
         FontDirectoryPolicyResolver policy, IReadOnlyList<FontFileRecord> previous, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         progress?.Report(0);
-        foreach (FontDirectoryRoot root in policy.GetConfiguredRoots())
+        foreach (FontDirectoryRoot root in policy.ConfiguredRoots)
         {
             if (!Directory.Exists(root.Path) && ((root.Policy & FontDirectoryPolicy.Custom) != 0 || previous.Any(file => FontPathComparison.IsWithin(file.Path, root.Path))))
             {
@@ -141,7 +150,7 @@ public sealed class FontInventoryScanner : IDisposable
             }
         }
 
-        string[] paths = EnumerateFiles(policy, cancellationToken).Distinct(FontPathComparison.Comparer).OrderBy(path => path, FontPathComparison.Comparer).ToArray();
+        string[] paths = [.. EnumerateFiles(policy, cancellationToken).Distinct(FontPathComparison.Comparer).OrderBy(path => path, FontPathComparison.Comparer)];
         progress?.Report(2);
         Dictionary<string, FontFileRecord> reusable = previous.GroupBy(file => file.PhysicalIdentity, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         ObservedFile[] observedFiles = GroupPhysicalFiles(paths, policy);
@@ -276,7 +285,7 @@ public sealed class FontInventoryScanner : IDisposable
         }
     }
 
-    private FontFileRecord CreateUnclassifiable(
+    private static FontFileRecord CreateUnclassifiable(
         string path,
         string physicalIdentity,
         long generationId,
@@ -304,31 +313,33 @@ public sealed class FontInventoryScanner : IDisposable
 
     private ObservedFile[] GroupPhysicalFiles(IEnumerable<string> paths, FontDirectoryPolicyResolver policy)
     {
-        return paths
-            .Select(path =>
-            {
-                var info = new FileInfo(path);
-                FontLinkKind linkKind = info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0
-                    ? FontLinkKind.SymbolicOrReparsePoint
-                    : FontLinkKind.None;
-                string physicalIdentity = _identityProvider.GetIdentity(path);
-                string groupingIdentity = linkKind == FontLinkKind.SymbolicOrReparsePoint ? physicalIdentity + "\0" + path : physicalIdentity;
-                return new ObservedPath(path, groupingIdentity, physicalIdentity, linkKind, policy.GetPolicy(path));
-            })
-            .GroupBy(observed => observed.GroupingIdentity, StringComparer.Ordinal)
-            .Select(group =>
-            {
-                ObservedPath[] members = group.ToArray();
-                ObservedPath canonical = members
-                    .OrderByDescending(member => (member.Policy & FontDirectoryPolicy.Preferred) != 0)
-                    .ThenBy(member => member.Path, FontPathComparison.Comparer)
-                    .First();
-                FontDirectoryPolicy combinedPolicy = members.Aggregate(FontDirectoryPolicy.None, (current, member) => current | member.Policy);
-                string[] aliases = members.Where(member => member.Path != canonical.Path).Select(member => member.Path).OrderBy(path => path, FontPathComparison.Comparer).ToArray();
-                return new ObservedFile(canonical.Path, canonical.PhysicalIdentity, canonical.LinkKind, combinedPolicy, aliases);
-            })
-            .OrderBy(file => file.Path, FontPathComparison.Comparer)
-            .ToArray();
+        return
+        [
+            .. paths
+                .Select(path =>
+                {
+                    var info = new FileInfo(path);
+                    FontLinkKind linkKind = info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0
+                        ? FontLinkKind.SymbolicOrReparsePoint
+                        : FontLinkKind.None;
+                    string physicalIdentity = _identityProvider.GetIdentity(path);
+                    string groupingIdentity = linkKind == FontLinkKind.SymbolicOrReparsePoint ? physicalIdentity + "\0" + path : physicalIdentity;
+                    return new ObservedPath(path, groupingIdentity, physicalIdentity, linkKind, policy.GetPolicy(path));
+                })
+                .GroupBy(observed => observed.GroupingIdentity, StringComparer.Ordinal)
+                .Select(group =>
+                {
+                    ObservedPath[] members = [.. group];
+                    ObservedPath canonical = members
+                        .OrderByDescending(member => (member.Policy & FontDirectoryPolicy.Preferred) != 0)
+                        .ThenBy(member => member.Path, FontPathComparison.Comparer)
+                        .First();
+                    FontDirectoryPolicy combinedPolicy = members.Aggregate(FontDirectoryPolicy.None, (current, member) => current | member.Policy);
+                    string[] aliases = [.. members.Where(member => member.Path != canonical.Path).Select(member => member.Path).OrderBy(path => path, FontPathComparison.Comparer)];
+                    return new ObservedFile(canonical.Path, canonical.PhysicalIdentity, canonical.LinkKind, combinedPolicy, aliases);
+                })
+                .OrderBy(file => file.Path, FontPathComparison.Comparer)
+        ];
     }
 
     private static FontFileRecord CloneForGeneration(
@@ -346,7 +357,7 @@ public sealed class FontInventoryScanner : IDisposable
             PathAliases = observed.Aliases,
             DirectoryPolicy = observed.Policy,
             LinkKind = observed.LinkKind,
-            Faces = source.Faces.Select(face => face with { Id = 0 }).ToArray()
+            Faces = [.. source.Faces.Select(face => face with { Id = 0 })]
         };
     }
 

@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 
 public sealed class SqliteRenameCandidateTests
 {
-    private static readonly System.Text.Json.JsonSerializerOptions IndentedJsonOptions = new() { WriteIndented = true };
+    private static readonly System.Text.Json.JsonSerializerOptions _indentedJsonOptions = new() { WriteIndented = true };
 
     [Fact]
     public async Task Measure17543PhysicalCandidatesAndMixedDatabasePages()
@@ -68,7 +68,7 @@ public sealed class SqliteRenameCandidateTests
         }
 
         var details = new { environment = System.Runtime.InteropServices.RuntimeInformation.OSDescription, fileCount = files.Length, syntheticFontMetadata = true, realTemporaryFilesystem = true, setupMilliseconds = setupMs, generationMilliseconds = generationMs, persistenceMilliseconds = persistMs, pages };
-        string json = System.Text.Json.JsonSerializer.Serialize(details, IndentedJsonOptions);
+        string json = System.Text.Json.JsonSerializer.Serialize(details, _indentedJsonOptions);
         TestContext.Current.TestOutputHelper?.WriteLine(json);
         string? output = Environment.GetEnvironmentVariable("ASS_RENAME_MEASUREMENT_OUTPUT");
         if (output is not null) await File.WriteAllTextAsync(output, json, TestContext.Current.CancellationToken);
@@ -110,7 +110,7 @@ public sealed class SqliteRenameCandidateTests
         await fixture.SaveAsync();
         await fixture.ExecuteAsync("CREATE TRIGGER fail_candidate BEFORE INSERT ON rename_candidate BEGIN SELECT RAISE(ABORT, 'test insert failure'); END;");
         await Assert.ThrowsAsync<SqliteException>(() => fixture.Repository.SaveRenameCandidatesAsync(
-            new(fixture.State with { GeneratedUtc = DateTimeOffset.UnixEpoch.AddDays(1) }, fixture.Items.Select(item => item with { NewPath = "changed.ttf" }).ToArray()),
+            new(fixture.State with { GeneratedUtc = DateTimeOffset.UnixEpoch.AddDays(1) }, [.. fixture.Items.Select(item => item with { NewPath = "changed.ttf" })]),
             fixture.Requirements, null, CancellationToken.None));
         var loaded = await fixture.Repository.LoadRenameCandidatesAsync(null, fixture.Requirements, CancellationToken.None);
         Assert.Equal(fixture.State.GeneratedUtc, loaded.Context.State!.GeneratedUtc);
@@ -135,7 +135,7 @@ public sealed class SqliteRenameCandidateTests
     {
         await using var fixture = await Fixture.CreateAsync();
         await fixture.SaveAsync();
-        var loaded = await fixture.Repository.LoadRenameCandidatesAsync(Enumerable.Range(1, 40000).Select(id => (long)id).ToArray(), fixture.Requirements, CancellationToken.None);
+        var loaded = await fixture.Repository.LoadRenameCandidatesAsync([.. Enumerable.Range(1, 40000).Select(id => (long)id)], fixture.Requirements, CancellationToken.None);
         Assert.True(loaded.Context.IsCurrent);
         Assert.Equal(fixture.Items.Select(item => item.File.Id), loaded.Items.Select(item => item.File.Id));
         Assert.Empty((await fixture.Repository.LoadRenameCandidatesAsync([], fixture.Requirements, CancellationToken.None)).Items);
@@ -203,7 +203,7 @@ public sealed class SqliteRenameCandidateTests
         await fixture.SaveAsync();
         var store = new Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.FontOperationRequestStore(fixture.Repository, TimeProvider.System);
         var activeItems = new[] { fixture.Items[20], fixture.Items[30], fixture.Items[40] };
-        var active = await store.CreateRenameExecutionAsync(new(fixture.State.GenerationId, fixture.State.AnalysisBatchId, fixture.State.Rules, fixture.State.RuleFingerprint, activeItems.Select(CandidateItem).ToArray()), "large-active", CancellationToken.None);
+        var active = await store.CreateRenameExecutionAsync(new(fixture.State.GenerationId, fixture.State.AnalysisBatchId, fixture.State.Rules, fixture.State.RuleFingerprint, [.. activeItems.Select(CandidateItem)]), "large-active", CancellationToken.None);
         var failedItem = fixture.Items[80];
         var failed = await store.CreateRenameExecutionAsync(new(fixture.State.GenerationId, fixture.State.AnalysisBatchId, fixture.State.Rules, fixture.State.RuleFingerprint, [CandidateItem(failedItem)]), "large-failed", CancellationToken.None);
         await fixture.Repository.UpdateOperationAsync(failed with { Status = OperationRequestStatus.Failed, Error = "large failure" }, CancellationToken.None);
@@ -246,12 +246,12 @@ public sealed class SqliteRenameCandidateTests
             for (int iteration = 0; iteration < 8; iteration++)
             {
                 long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-                await fixture.Repository.WriteInventoryAsync(generation, fixture.Items.Select(item => item.File with { Id = 0, GenerationId = generation }).ToArray(), CancellationToken.None);
+                await fixture.Repository.WriteInventoryAsync(generation, [.. fixture.Items.Select(item => item.File with { Id = 0, GenerationId = generation })], CancellationToken.None);
                 var files = await fixture.Repository.LoadInventoryAsync(generation, CancellationToken.None);
                 expectedCounts[generation] = files.Count;
                 var analysis = await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = 1, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
                 var state = fixture.State with { GenerationId = generation, AnalysisBatchId = analysis.Id };
-                await fixture.Repository.SaveRenameCandidatesAsync(new(state, files.Select((file, index) => fixture.Items[index] with { File = file, SkipReason = null }).ToArray()), fixture.Requirements, null, CancellationToken.None);
+                await fixture.Repository.SaveRenameCandidatesAsync(new(state, [.. files.Select((file, index) => fixture.Items[index] with { File = file, SkipReason = null })]), fixture.Requirements, null, CancellationToken.None);
             }
         }, TestContext.Current.CancellationToken);
         do
@@ -443,6 +443,8 @@ public sealed class SqliteRenameCandidateTests
 
     internal sealed class Fixture : IAsyncDisposable
     {
+        private static readonly string[] _defaultSourceNames = ["a.ttf", "b.ttf"];
+
         private readonly FontStoragePaths _paths;
 
         private Fixture(FontStoragePaths paths, FontDatabase database, SqliteFontRepository repository, FontRenameCandidateState state, FontRenameCandidate[] items)
@@ -464,21 +466,35 @@ public sealed class SqliteRenameCandidateTests
         {
             string root = Path.Combine(Path.GetTempPath(), "ass-rename-candidates-tests", Guid.NewGuid().ToString("N"));
             var paths = new FontStoragePaths(root, Path.Combine(root, "catalog.db"), Path.Combine(root, "quarantine"), Path.Combine(root, "manifests"));
+#pragma warning disable CA2000 // The returned fixture owns the database; the catch block disposes it if setup fails.
             var database = new FontDatabase(paths);
-            var repository = new SqliteFontRepository(database);
-            await repository.InitializeAsync(CancellationToken.None);
-            long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-            await repository.WriteInventoryAsync(generation, (count == 2 ? new[] { "a.ttf", "b.ttf" } : Enumerable.Range(0, count).Select(index => "source-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf").ToArray()).Select(name => new FontFileRecord
+#pragma warning restore CA2000
+            try
             {
-                Path = Path.Combine(root, name), NormalizedPath = Path.Combine(root, name), PhysicalIdentity = name, Size = 128,
-                ModifiedUtc = DateTimeOffset.UnixEpoch, Sha256 = new byte[32], Health = FontFileHealth.Healthy, Faces = []
-            }).ToArray(), CancellationToken.None);
-            var analysis = await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = 1, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
-            var files = await repository.LoadInventoryAsync(generation, CancellationToken.None);
-            var rules = new FontNamingRules(FontNamingRules.DefaultFileNameTemplate, "", false);
-            var state = new FontRenameCandidateState(generation, analysis.Id, rules, rules.GetFingerprint(), 1, FontRenameCandidateGenerationStatus.Ready, DateTimeOffset.UnixEpoch, null, null);
-            var items = files.Select((file, index) => new FontRenameCandidate { File = file, SourceRoot = root, NewPath = Path.Combine(root, count == 2 ? (index == 0 ? "Example.ttf" : "Second.ttf") : "Target-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf"), SkipReason = count == 2 ? (index == 0 ? null : "test-skip") : (index % 7 == 0 ? "test-skip" : null) }).ToArray();
-            return new(paths, database, repository, state, items);
+                var repository = new SqliteFontRepository(database);
+                await repository.InitializeAsync(CancellationToken.None);
+                long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
+                string[] sourceNames = count == 2
+                    ? _defaultSourceNames
+                    : [.. Enumerable.Range(0, count).Select(index => "source-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf")];
+                FontFileRecord[] inventory = [.. sourceNames.Select(name => new FontFileRecord
+                {
+                    Path = Path.Combine(root, name), NormalizedPath = Path.Combine(root, name), PhysicalIdentity = name, Size = 128,
+                    ModifiedUtc = DateTimeOffset.UnixEpoch, Sha256 = new byte[32], Health = FontFileHealth.Healthy, Faces = []
+                })];
+                await repository.WriteInventoryAsync(generation, inventory, CancellationToken.None);
+                var analysis = await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = 1, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
+                var files = await repository.LoadInventoryAsync(generation, CancellationToken.None);
+                var rules = new FontNamingRules(FontNamingRules.DefaultFileNameTemplate, "", false);
+                var state = new FontRenameCandidateState(generation, analysis.Id, rules, rules.GetFingerprint(), 1, FontRenameCandidateGenerationStatus.Ready, DateTimeOffset.UnixEpoch, null, null);
+                var items = files.Select((file, index) => new FontRenameCandidate { File = file, SourceRoot = root, NewPath = Path.Combine(root, count == 2 ? (index == 0 ? "Example.ttf" : "Second.ttf") : "Target-" + index.ToString("D6", System.Globalization.CultureInfo.InvariantCulture) + ".ttf"), SkipReason = count == 2 ? (index == 0 ? null : "test-skip") : (index % 7 == 0 ? "test-skip" : null) }).ToArray();
+                return new(paths, database, repository, state, items);
+            }
+            catch
+            {
+                await database.DisposeAsync();
+                throw;
+            }
         }
 
         public async Task<(AnalysisBatch Analysis, FontRenameCandidatePreparation Prepared)> StageNextAsync(bool empty = false)
@@ -487,7 +503,7 @@ public sealed class SqliteRenameCandidateTests
             await Repository.WriteInventoryAsync(generation, empty ? [] : Items.Select(item => item.File with { Id = 0, GenerationId = generation }).ToArray(), CancellationToken.None);
             var files = await Repository.LoadInventoryAsync(generation, CancellationToken.None);
             var analysis = new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = 1, SummaryJson = "{\"faceScores\":[]}" };
-            var prepared = new FontRenameCandidatePreparation(State with { GenerationId = generation, AnalysisBatchId = 0 }, files.Select((file, index) => Items[index] with { File = file }).ToArray());
+            var prepared = new FontRenameCandidatePreparation(State with { GenerationId = generation, AnalysisBatchId = 0 }, [.. files.Select((file, index) => Items[index] with { File = file })]);
             return (analysis, prepared);
         }
 

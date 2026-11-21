@@ -13,7 +13,10 @@ public static class FontRenameStateIdentity
     /// <param name="evidence">The immutable source evidence.</param>
     /// <returns>The source-specific digest.</returns>
     public static string SourceKey(string oldPath, string newPath, FontFileRecord evidence)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", oldPath, newPath, evidence.PhysicalIdentity, Convert.ToHexString(evidence.Sha256.Span), evidence.Size, evidence.ModifiedUtc.ToUniversalTime().Ticks))));
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", oldPath, newPath, evidence.PhysicalIdentity, Convert.ToHexString(evidence.Sha256.Span), evidence.Size, evidence.ModifiedUtc.ToUniversalTime().Ticks))));
+    }
 
     internal static string PathKey(string path) => OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
 

@@ -256,10 +256,10 @@ internal static class PgsEncoder
     {
         Span<byte> header = stackalloc byte[13];
         BinaryPrimitives.WriteUInt16BigEndian(header, PgsMagic);
-        BinaryPrimitives.WriteUInt32BigEndian(header.Slice(2), (uint)(pts90 & 0xFFFFFFFF));
-        BinaryPrimitives.WriteUInt32BigEndian(header.Slice(6), 0); // DTS = 0
+        BinaryPrimitives.WriteUInt32BigEndian(header[2..], (uint)(pts90 & 0xFFFFFFFF));
+        BinaryPrimitives.WriteUInt32BigEndian(header[6..], 0); // DTS = 0
         header[10] = segmentType;
-        BinaryPrimitives.WriteUInt16BigEndian(header.Slice(11), (ushort)dataSize);
+        BinaryPrimitives.WriteUInt16BigEndian(header[11..], (ushort)dataSize);
         stream.Write(header);
     }
 
@@ -276,9 +276,9 @@ internal static class PgsEncoder
         bool isEpochStart)
     {
         // PCS data: 11 bytes base + 8 bytes per composition object
-        const int pcsBaseSize = 11;
-        const int objectEntrySize = 8;
-        int totalSize = pcsBaseSize + objectEntrySize;
+        const int PcsBaseSize = 11;
+        const int ObjectEntrySize = 8;
+        int totalSize = PcsBaseSize + ObjectEntrySize;
 
         WriteSegmentHeader(stream, pts90, SegmentTypePcs, totalSize);
 
@@ -286,13 +286,13 @@ internal static class PgsEncoder
 
         // Video dimensions
         BinaryPrimitives.WriteUInt16BigEndian(data, (ushort)videoWidth);
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(2), (ushort)videoHeight);
+        BinaryPrimitives.WriteUInt16BigEndian(data[2..], (ushort)videoHeight);
 
         // Frame rate (always 0x10 for 24fps in BD spec, but often ignored)
         data[4] = 0x10;
 
         // Composition number
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(5), compositionNumber);
+        BinaryPrimitives.WriteUInt16BigEndian(data[5..], compositionNumber);
 
         // Composition state: 0x80 = epoch start, 0x00 = normal
         data[7] = isEpochStart ? (byte)0x80 : (byte)0x00;
@@ -307,26 +307,26 @@ internal static class PgsEncoder
         data[10] = 0x01;
 
         // Composition object entry
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(11), 0); // Object ID = 0
+        BinaryPrimitives.WriteUInt16BigEndian(data[11..], 0); // Object ID = 0
         data[13] = 0x00; // Window ID = 0
         data[14] = 0x00; // Cropped flag = 0 (no cropping)
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(15), (ushort)objX); // X position
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(17), (ushort)objY); // Y position
+        BinaryPrimitives.WriteUInt16BigEndian(data[15..], (ushort)objX); // X position
+        BinaryPrimitives.WriteUInt16BigEndian(data[17..], (ushort)objY); // Y position
 
         stream.Write(data);
     }
 
     private static void WritePcsClear(Stream stream, long pts90, int videoWidth, int videoHeight, ushort compositionNumber)
     {
-        const int pcsBaseSize = 11;
+        const int PcsBaseSize = 11;
 
-        WriteSegmentHeader(stream, pts90, SegmentTypePcs, pcsBaseSize);
+        WriteSegmentHeader(stream, pts90, SegmentTypePcs, PcsBaseSize);
 
-        Span<byte> data = stackalloc byte[pcsBaseSize];
+        Span<byte> data = stackalloc byte[PcsBaseSize];
         BinaryPrimitives.WriteUInt16BigEndian(data, (ushort)videoWidth);
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(2), (ushort)videoHeight);
+        BinaryPrimitives.WriteUInt16BigEndian(data[2..], (ushort)videoHeight);
         data[4] = 0x10;
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(5), compositionNumber);
+        BinaryPrimitives.WriteUInt16BigEndian(data[5..], compositionNumber);
         data[7] = 0x00; // Normal update
         data[8] = 0x00;
         data[9] = 0x00;
@@ -337,16 +337,16 @@ internal static class PgsEncoder
 
     private static void WriteWds(Stream stream, long pts90, int x, int y, int w, int h)
     {
-        const int wdsSize = 10;
-        WriteSegmentHeader(stream, pts90, SegmentTypeWds, wdsSize);
+        const int WdsSize = 10;
+        WriteSegmentHeader(stream, pts90, SegmentTypeWds, WdsSize);
 
-        Span<byte> data = stackalloc byte[wdsSize];
+        Span<byte> data = stackalloc byte[WdsSize];
         data[0] = 0x01; // Number of windows = 1
         data[1] = 0x00; // Window ID = 0
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(2), (ushort)x);
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(4), (ushort)y);
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(6), (ushort)w);
-        BinaryPrimitives.WriteUInt16BigEndian(data.Slice(8), (ushort)h);
+        BinaryPrimitives.WriteUInt16BigEndian(data[2..], (ushort)x);
+        BinaryPrimitives.WriteUInt16BigEndian(data[4..], (ushort)y);
+        BinaryPrimitives.WriteUInt16BigEndian(data[6..], (ushort)w);
+        BinaryPrimitives.WriteUInt16BigEndian(data[8..], (ushort)h);
 
         stream.Write(data);
     }
@@ -359,9 +359,11 @@ internal static class PgsEncoder
 
         WriteSegmentHeader(stream, pts90, SegmentTypePds, pdsSize);
 
-        Span<byte> header = stackalloc byte[2];
-        header[0] = 0x00; // Palette ID
-        header[1] = 0x00; // Palette version
+        Span<byte> header =
+        [
+            0x00, // Palette ID
+            0x00, // Palette version
+        ];
         stream.Write(header);
 
         Span<byte> entry = stackalloc byte[5];
@@ -407,8 +409,8 @@ internal static class PgsEncoder
             odsHeader[6] = (byte)totalDataLength;
 
             // Object dimensions
-            BinaryPrimitives.WriteUInt16BigEndian(odsHeader.Slice(7), (ushort)width);
-            BinaryPrimitives.WriteUInt16BigEndian(odsHeader.Slice(9), (ushort)height);
+            BinaryPrimitives.WriteUInt16BigEndian(odsHeader[7..], (ushort)width);
+            BinaryPrimitives.WriteUInt16BigEndian(odsHeader[9..], (ushort)height);
 
             stream.Write(odsHeader);
             stream.Write(rleData);
@@ -453,8 +455,8 @@ internal static class PgsEncoder
                 firstFragHeader[5] = (byte)(totalDataLength >> 8);
                 firstFragHeader[6] = (byte)totalDataLength;
 
-                BinaryPrimitives.WriteUInt16BigEndian(firstFragHeader.Slice(7), (ushort)width);
-                BinaryPrimitives.WriteUInt16BigEndian(firstFragHeader.Slice(9), (ushort)height);
+                BinaryPrimitives.WriteUInt16BigEndian(firstFragHeader[7..], (ushort)width);
+                BinaryPrimitives.WriteUInt16BigEndian(firstFragHeader[9..], (ushort)height);
 
                 stream.Write(firstFragHeader);
                 stream.Write(rleData, offset, chunkSize);

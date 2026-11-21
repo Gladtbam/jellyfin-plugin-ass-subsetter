@@ -19,6 +19,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
 public sealed partial class FontMaintenanceTaskTests
 {
+    private static readonly string[] _publicationSteps = ["prepare", "validate", "publish"];
+
     [Fact]
     public async Task CancellationDuringPreparationKeepsOldSet()
     {
@@ -91,7 +93,7 @@ public sealed partial class FontMaintenanceTaskTests
                 return Task.FromResult(batch);
             });
         await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 0, new InlineProgress(_ => { }), CancellationToken.None);
-        Assert.Equal(new[] { "prepare", "validate", "publish" }, calls);
+        Assert.Equal(_publicationSteps, calls);
     }
 
     [Theory]
@@ -166,7 +168,7 @@ public sealed partial class FontMaintenanceTaskTests
                     if (drift == "superseded")
                     {
                         expectedGeneration = await repository.BeginGenerationAsync(scan.Input, [], CancellationToken.None);
-                        await repository.WriteInventoryAsync(expectedGeneration, repository.PublishedFiles.Select(file => file with { GenerationId = expectedGeneration }).ToArray(), CancellationToken.None);
+                        await repository.WriteInventoryAsync(expectedGeneration, [.. repository.PublishedFiles.Select(file => file with { GenerationId = expectedGeneration })], CancellationToken.None);
                         await repository.PublishAnalysisAsync(Analysis(expectedGeneration) with { EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion }, CancellationToken.None);
                     }
                     return scan;
@@ -235,7 +237,7 @@ public sealed partial class FontMaintenanceTaskTests
         services.AddLogging();
         using ServiceProvider provider = services.BuildServiceProvider();
 
-        FontRuntimeSnapshotStartupService startup = ActivatorUtilities.CreateInstance<FontRuntimeSnapshotStartupService>(provider);
+        using var startup = ActivatorUtilities.CreateInstance<FontRuntimeSnapshotStartupService>(provider);
 
         Assert.NotNull(startup);
     }
@@ -268,7 +270,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var calls = new List<string>();
         var repository = new InMemoryFontRepository();
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (_, _, _) =>
             {
@@ -301,7 +303,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         var values = new List<double>();
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (progress, _, _) =>
             {
@@ -372,7 +374,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.Analyze, "explicit-analyze");
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(7, true, FontAnalysisInputSnapshot.Empty, [])),
             analyze: (generationId, _) => Task.FromResult(Analysis(generationId, 91)));
@@ -393,7 +395,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.RebuildDerivedData, "rebuild-request");
-        var executor = CreateExecutor(repository, refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(1L, true, FontAnalysisInputSnapshot.Empty, [])));
+        using var executor = CreateExecutor(repository, refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(1L, true, FontAnalysisInputSnapshot.Empty, [])));
 
         FontTaskExecutionResult result = await executor.ExecutePendingOperationAsync(FontOperationKind.RebuildDerivedData, new InlineProgress(_ => { }), CancellationToken.None);
 
@@ -406,7 +408,7 @@ public sealed partial class FontMaintenanceTaskTests
     public async Task ScheduledAnalysis_SynthesizeClaimAndCompleteOneAnalyzeRequest()
     {
         var repository = new InMemoryFontRepository();
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(7, true, FontAnalysisInputSnapshot.Empty, [])),
             analyze: (generationId, _) => Task.FromResult(Analysis(generationId, 91)));
@@ -428,7 +430,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         await CreateTaskRequestAsync(repository, FontOperationKind.Analyze, "failing-analyze");
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(7, true, FontAnalysisInputSnapshot.Empty, [])),
             analyze: (_, _) => Task.FromException<AnalysisBatch>(new InvalidOperationException("analysis failure")));
@@ -447,7 +449,7 @@ public sealed partial class FontMaintenanceTaskTests
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.Analyze, "cancelled-analyze");
         using var cancellation = new CancellationTokenSource();
-        var executor = CreateExecutor(repository, refresh: async (_, _, _) =>
+        using var executor = CreateExecutor(repository, refresh: async (_, _, _) =>
         {
             await cancellation.CancelAsync();
             return await Task.FromCanceled<FontInventoryScanResult>(cancellation.Token);
@@ -466,7 +468,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         await CreateTaskRequestAsync(repository, FontOperationKind.Analyze, "stale-analyze");
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             refresh: (_, _, _) => Task.FromResult(new FontInventoryScanResult(7, true, FontAnalysisInputSnapshot.Empty, [])),
             analyze: (generationId, _) => Task.FromResult(Analysis(generationId, 91) with { Status = AnalysisBatchStatus.Stale }));
@@ -483,7 +485,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         int quarantineCalls = 0;
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             quarantine: (_, _, _) =>
             {
@@ -545,7 +547,7 @@ public sealed partial class FontMaintenanceTaskTests
             },
             CancellationToken.None);
         OperationRequest? observed = null;
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             quarantine: (request, _, _) =>
             {
@@ -574,7 +576,7 @@ public sealed partial class FontMaintenanceTaskTests
             normalizeCalls++;
             return Maintenance(52, request.Id, FontOperationKind.NormalizeNames);
         });
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             requestStore,
             restore: (request, _) =>
@@ -606,7 +608,7 @@ public sealed partial class FontMaintenanceTaskTests
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.Purge, "explicit-purge");
         int calls = 0;
-        var executor = CreateExecutor(repository, purge: _ =>
+        using var executor = CreateExecutor(repository, purge: _ =>
         {
             calls++;
             return Task.FromResult(3);
@@ -629,7 +631,7 @@ public sealed partial class FontMaintenanceTaskTests
         await repository.WriteInventoryAsync(generation, [File(1, generation)], CancellationToken.None);
         await repository.PublishAnalysisAsync(Analysis(generation), CancellationToken.None);
         int calls = 0;
-        var executor = CreateExecutor(repository, purge: _ =>
+        using var executor = CreateExecutor(repository, purge: _ =>
         {
             calls++;
             return Task.FromResult(3);
@@ -650,7 +652,7 @@ public sealed partial class FontMaintenanceTaskTests
         var repository = new InMemoryFontRepository();
         await CreateTaskRequestAsync(repository, FontOperationKind.Purge, "cancelled-purge");
         using var cancellation = new CancellationTokenSource();
-        var executor = CreateExecutor(repository, purge: async _ =>
+        using var executor = CreateExecutor(repository, purge: async _ =>
         {
             await cancellation.CancelAsync();
             return await Task.FromCanceled<int>(cancellation.Token);
@@ -667,7 +669,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         OperationRequest request = await CreateTaskRequestAsync(repository, FontOperationKind.Purge, "failing-purge");
-        var executor = CreateExecutor(
+        using var executor = CreateExecutor(
             repository,
             purge: _ => Task.FromException<int>(new InvalidOperationException("purge failure")));
 
@@ -702,7 +704,7 @@ public sealed partial class FontMaintenanceTaskTests
                         CreatedUtc = DateTimeOffset.UtcNow
                     },
                     cancellationToken));
-        var executor = CreateExecutor(repository, filenameNormalizer: normalizer);
+        using var executor = CreateExecutor(repository, filenameNormalizer: normalizer);
 
         FontTaskExecutionResult result = await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Rename, 0, new InlineProgress(_ => { }), CancellationToken.None);
 
@@ -719,7 +721,7 @@ public sealed partial class FontMaintenanceTaskTests
     {
         var repository = new InMemoryFontRepository();
         var normalizer = new RecordingFilenameNormalizer(createLatestPlanRequest: _ => Task.FromResult<OperationRequest?>(null));
-        var executor = CreateExecutor(repository, filenameNormalizer: normalizer);
+        using var executor = CreateExecutor(repository, filenameNormalizer: normalizer);
 
         FontTaskExecutionResult result = await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Rename, 0, new InlineProgress(_ => { }), CancellationToken.None);
 

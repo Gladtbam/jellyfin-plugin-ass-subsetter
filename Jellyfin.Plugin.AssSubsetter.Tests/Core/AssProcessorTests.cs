@@ -21,6 +21,7 @@ public sealed class AssProcessorTests : IDisposable
 {
     private readonly string _tempDataPath;
     private readonly PluginConfiguration _config;
+    private readonly FontCacheManagerFixture _fontCache;
     private readonly AssProcessor _assProcessor;
 
     public AssProcessorTests()
@@ -30,9 +31,9 @@ public sealed class AssProcessorTests : IDisposable
 
         _config = new PluginConfiguration();
 
-        var fontCacheManager = FontCacheManagerFixture.CreateManager();
+        _fontCache = new FontCacheManagerFixture();
         var assParser = new AssDocumentParser();
-        _assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, NullLogger<AssProcessor>.Instance);
+        _assProcessor = new AssProcessor(() => _config, _fontCache.Manager, assParser, NullLogger<AssProcessor>.Instance);
     }
 
     [Fact]
@@ -41,10 +42,10 @@ public sealed class AssProcessorTests : IDisposable
         // Arrange
         string inputAss = Path.Join(_tempDataPath, "input.ass");
         string outputAss = Path.Join(_tempDataPath, "output.ass");
-        const string content = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text";
+        const string Content = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text";
 
         // Simple text, no font overrides, no V4 Styles
-        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
         await File.WriteAllTextAsync(outputAss, "old-cache", TestContext.Current.CancellationToken);
 
         // Act
@@ -53,7 +54,7 @@ public sealed class AssProcessorTests : IDisposable
         // Assert
         Assert.True(result);
         Assert.True(File.Exists(outputAss));
-        Assert.Equal(content, await File.ReadAllTextAsync(outputAss, TestContext.Current.CancellationToken));
+        Assert.Equal(Content, await File.ReadAllTextAsync(outputAss, TestContext.Current.CancellationToken));
         Assert.Empty(Directory.GetFiles(_tempDataPath, "*.partial.ass"));
     }
 
@@ -74,13 +75,13 @@ public sealed class AssProcessorTests : IDisposable
     public async Task GenerateSubsetArtifactAsync_ShouldReturnPlainAss_WhenNoFontsUsed()
     {
         string inputAss = Path.Join(_tempDataPath, "plain.ass");
-        const string content = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text";
-        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        const string Content = "Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,Plain Text";
+        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
 
         SubsetArtifact? result = await _assProcessor.GenerateSubsetArtifactAsync(inputAss, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
-        Assert.Equal(content, result.AssContent);
+        Assert.Equal(Content, result.AssContent);
         Assert.Empty(result.Fonts);
         Assert.DoesNotContain("[Fonts]", result.AssContent, StringComparison.Ordinal);
     }
@@ -100,8 +101,8 @@ public sealed class AssProcessorTests : IDisposable
     public async Task GenerateSubsetArtifactAsync_ShouldKeepOriginalName_WhenFontCannotBeFound()
     {
         string inputAss = Path.Join(_tempDataPath, "missing-font.ass");
-        const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
-        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        const string Content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
+        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
 
         SubsetArtifact? result = await _assProcessor.GenerateSubsetArtifactAsync(inputAss, TestContext.Current.CancellationToken);
 
@@ -114,8 +115,8 @@ public sealed class AssProcessorTests : IDisposable
     public async Task GenerateSubsetArtifactAsync_ShouldPassSubtitleCharactersToFontLookup()
     {
         string inputAss = Path.Join(_tempDataPath, "coverage.ass");
-        const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,ExampleFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,AB";
-        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        const string Content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,ExampleFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,AB";
+        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
         string? requestedName = null;
         IReadOnlyCollection<uint>? requestedCharacters = null;
         var processor = new AssProcessor(
@@ -123,7 +124,7 @@ public sealed class AssProcessorTests : IDisposable
             (descriptor, characters, _) =>
             {
                 requestedName = descriptor.FontName;
-                requestedCharacters = characters.ToArray();
+                requestedCharacters = [.. characters];
                 return Task.FromResult<FontFileLease?>(null);
             },
             () => "PREFIX",
@@ -135,7 +136,7 @@ public sealed class AssProcessorTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal("ExampleFont", requestedName);
         Assert.NotNull(requestedCharacters);
-        Assert.Equal([65u, 66u], requestedCharacters.OrderBy(character => character).ToArray());
+        Assert.Equal([65u, 66u], [.. requestedCharacters.OrderBy(character => character)]);
         Assert.Empty(result.Fonts);
     }
 
@@ -143,10 +144,10 @@ public sealed class AssProcessorTests : IDisposable
     public async Task GenerateSubsetArtifactAsync_ShouldNotAccessRepositoryWhenRuntimeSnapshotIsCold()
     {
         string inputAss = Path.Join(_tempDataPath, "cold-snapshot.ass");
-        const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
-        await File.WriteAllTextAsync(inputAss, content, TestContext.Current.CancellationToken);
+        const string Content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,MissingFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Hello";
+        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
         var repository = new InMemoryFontRepository();
-        var scanner = new FontInventoryScanner(
+        using var scanner = new FontInventoryScanner(
             repository,
             () => new FontDirectoryPolicyResolver(null, null, null, includePlatformDefaults: false),
             new PathPhysicalFileIdentityProvider(),
@@ -164,6 +165,7 @@ public sealed class AssProcessorTests : IDisposable
 
     public void Dispose()
     {
+        _fontCache.Dispose();
         if (Directory.Exists(_tempDataPath))
         {
             try { Directory.Delete(_tempDataPath, true); } catch (IOException) { /* Ignore */ } catch (UnauthorizedAccessException) { /* Ignore */ }

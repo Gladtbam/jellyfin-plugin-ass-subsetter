@@ -10,22 +10,32 @@ using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Services;
 
-internal static class FontCacheManagerFixture
+internal sealed class FontCacheManagerFixture : IDisposable
 {
-    public static FontCacheManager CreateManager(IFontRepository? repository = null, FontMaintenanceCoordinator? coordinator = null)
+    private readonly FontInventoryScanner _scanner;
+
+    public FontCacheManagerFixture(IFontRepository? repository = null, FontMaintenanceCoordinator? coordinator = null)
     {
         repository ??= new InMemoryFontRepository();
-        var scanner = new FontInventoryScanner(
+        _scanner = new FontInventoryScanner(
             repository,
             () => new FontDirectoryPolicyResolver(null, null, null, includePlatformDefaults: false),
             new PathPhysicalFileIdentityProvider(),
             NullLogger<FontInventoryScanner>.Instance);
-        return new FontCacheManager(repository, scanner, coordinator ?? new FontMaintenanceCoordinator());
+        Manager = new FontCacheManager(repository, _scanner, coordinator ?? new FontMaintenanceCoordinator());
+    }
+
+    public FontCacheManager Manager { get; }
+
+    public void Dispose()
+    {
+        Manager.Dispose();
+        _scanner.Dispose();
     }
 
     public static async Task<(string Path, int FaceIndex)?> LookupAsync(FontCacheManager manager, FontDescriptor descriptor)
     {
-        await using FontFileLease? lease = await manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+        await using FontFileLease? lease = await manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
         return lease is null ? null : (lease.Path, lease.FaceIndex);
     }
 

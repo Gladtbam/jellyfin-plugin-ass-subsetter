@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
@@ -7,6 +8,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Measures classification of large fonts with small and extensive glyph differences.</summary>
 [MemoryDiagnoser]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class GlyphDifferenceBenchmarks
 {
     private readonly FontRelationshipClassifier _classifier = new();

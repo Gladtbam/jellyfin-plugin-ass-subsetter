@@ -11,7 +11,7 @@ public sealed class FontRelationshipClassifier
 {
     private const int MaxSmallGlyphDifferences = 16;
 
-    private static readonly FontSemanticGroup[] FunctionalGroups =
+    private static readonly FontSemanticGroup[] _functionalGroups =
     [
         FontSemanticGroup.Mapping,
         FontSemanticGroup.OutlinesAndMetrics,
@@ -26,6 +26,7 @@ public sealed class FontRelationshipClassifier
     /// <param name="left">Evidence for the left candidate.</param>
     /// <param name="right">Evidence for the right candidate.</param>
     /// <returns>The relationship, evidence keys, and safe direct replacement directions.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves the instance contract used by the injected duplicate analyzer and existing callers.")]
     public FontRelationshipResult Classify(FontFaceEvidence left, FontFaceEvidence right)
     {
         ArgumentNullException.ThrowIfNull(left);
@@ -139,7 +140,7 @@ public sealed class FontRelationshipClassifier
     {
         return StructuralFieldsEqual(left, right)
             && !SemanticGroupEqual(left, right, FontSemanticGroup.Metadata)
-            && SemanticGroupsEqual(left, right, FunctionalGroups)
+            && SemanticGroupsEqual(left, right, _functionalGroups)
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right)
             && CharacterEvidenceEqual(left, right);
@@ -148,7 +149,7 @@ public sealed class FontRelationshipClassifier
     private static FontRelationshipResult? CoverageSuperset(FontFaceEvidence left, FontFaceEvidence right)
     {
         if (!SameIdentity(left, right)
-            || !SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.Mapping))
+            || !SemanticGroupsEqual(left, right, _functionalGroups.Where(group => group != FontSemanticGroup.Mapping))
             || !CommonCharactersEqual(left, right))
         {
             return null;
@@ -178,7 +179,7 @@ public sealed class FontRelationshipClassifier
     private static bool CoverageVariant(FontFaceEvidence left, FontFaceEvidence right)
     {
         if (!SameIdentity(left, right)
-            || !SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.Mapping))
+            || !SemanticGroupsEqual(left, right, _functionalGroups.Where(group => group != FontSemanticGroup.Mapping))
             || !CommonCharactersEqual(left, right))
         {
             return false;
@@ -212,7 +213,7 @@ public sealed class FontRelationshipClassifier
             && comparable > 0
             && differingGlyphs.Length * 100L <= comparable
             && SameIdentity(left, right)
-            && SemanticGroupsEqual(left, right, FunctionalGroups.Where(group => group != FontSemanticGroup.OutlinesAndMetrics))
+            && SemanticGroupsEqual(left, right, _functionalGroups.Where(group => group != FontSemanticGroup.OutlinesAndMetrics))
             && CoverageEqual(left, right)
             && SelectorsEqual(left, right);
     }
@@ -280,12 +281,11 @@ public sealed class FontRelationshipClassifier
 
         // Only small differences are reported. One extra match proves the limit was exceeded;
         // later rules inspect the original evidence rather than this bounded list.
-        uint[] result = left.CharacterFingerprints
+        uint[] result = [.. left.CharacterFingerprints
             .Where(pair => !right.CharacterFingerprints.TryGetValue(pair.Key, out ReadOnlyMemory<byte> value)
                 || !Equal(pair.Value, value))
             .Select(pair => pair.Key)
-            .Take(MaxSmallGlyphDifferences + 1)
-            .ToArray();
+            .Take(MaxSmallGlyphDifferences + 1)];
         if (result.Length > MaxSmallGlyphDifferences)
         {
             return [];

@@ -25,7 +25,11 @@ internal static class FontScheduledTaskExecution
         var taskProgress = new ScheduledProgress(progress);
         taskProgress.Report(0);
         var stopwatch = Stopwatch.StartNew();
-        logger.LogInformation("[AssSubsetter] Font maintenance {Operation} started.", operation);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("[AssSubsetter] Font maintenance {Operation} started.", operation);
+        }
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -54,23 +58,30 @@ internal static class FontScheduledTaskExecution
             }
 
             taskProgress.Complete();
-            logger.LogInformation(
-                "[AssSubsetter] Font maintenance {Operation} completed. RequestId: {RequestId}; BatchId: {BatchId}; Outcome: {Outcome}; ElapsedMs: {ElapsedMs}.",
-                operation,
-                result.OperationRequestId,
-                result.BatchId,
-                result.Outcome,
-                stopwatch.ElapsedMilliseconds);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "[AssSubsetter] Font maintenance {Operation} completed. RequestId: {RequestId}; BatchId: {BatchId}; Outcome: {Outcome}; ElapsedMs: {ElapsedMs}.",
+                    operation,
+                    result.OperationRequestId,
+                    result.BatchId,
+                    result.Outcome,
+                    stopwatch.ElapsedMilliseconds);
+            }
         }
         catch (OperationCanceledException exception)
         {
-            logger.LogInformation(
-                "[AssSubsetter] Font maintenance {Operation} cancelled. RequestId: {RequestId}; BatchId: {BatchId}; Reason: {Reason}; ElapsedMs: {ElapsedMs}.",
-                operation,
-                GetOperationRequestId(exception),
-                GetBatchId(exception),
-                exception.Message,
-                stopwatch.ElapsedMilliseconds);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation(
+                    "[AssSubsetter] Font maintenance {Operation} cancelled. RequestId: {RequestId}; BatchId: {BatchId}; Reason: {Reason}; ElapsedMs: {ElapsedMs}.",
+                    operation,
+                    GetOperationRequestId(exception),
+                    GetBatchId(exception),
+                    exception.Message,
+                    stopwatch.ElapsedMilliseconds);
+            }
+
             throw;
         }
         catch (Exception exception)
@@ -101,7 +112,7 @@ internal static class FontScheduledTaskExecution
     // Ignore delayed callbacks and reserve 100 for successful task finalization.
     private sealed class ScheduledProgress(IProgress<double> target) : IProgress<double>
     {
-        private readonly object _sync = new();
+        private readonly Lock _sync = new();
         private double _last = -1;
         private bool _complete;
 

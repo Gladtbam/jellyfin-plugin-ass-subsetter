@@ -1,3 +1,4 @@
+using System;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,8 @@ public class SubtitleInterceptorStartupFilter : IConfigureOptions<MvcOptions>
     /// <inheritdoc />
     public void Configure(MvcOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         options.Filters.Add<SubtitleInterceptorResourceFilter>();
     }
 }

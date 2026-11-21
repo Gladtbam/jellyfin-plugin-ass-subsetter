@@ -67,7 +67,7 @@ public sealed partial class SqliteFontRepository
             return [];
         }
 
-        long[] ids = rows.Select(row => row.Id).ToArray();
+        long[] ids = [.. rows.Select(row => row.Id)];
         List<FontRelationRow> relations = await context.Set<FontRelationRow>().Where(row => ids.Contains(row.AnalysisBatchId))
             .OrderBy(row => row.LeftFaceId).ThenBy(row => row.RightFaceId).ToListAsync(cancellationToken).ConfigureAwait(false);
         List<DuplicateGroupRow> groups = await context.Set<DuplicateGroupRow>().Where(row => ids.Contains(row.AnalysisBatchId))
@@ -78,28 +78,59 @@ public sealed partial class SqliteFontRepository
         var relationsByBatch = relations.ToLookup(row => row.AnalysisBatchId);
         var groupsByBatch = groups.ToLookup(row => row.AnalysisBatchId);
         var membersByGroup = members.ToLookup(row => row.DuplicateGroupId);
-        return rows.Select(row => new AnalysisBatch
-        {
-            Id = row.Id, GenerationId = row.GenerationId, Status = (AnalysisBatchStatus)row.Status,
-            EvidenceVersion = row.EvidenceVersion, StartedUtc = ParseDate(row.StartedUtc), CompletedUtc = ParseNullableDate(row.CompletedUtc),
-            CandidateCount = row.CandidateCount, ComparisonCount = row.ComparisonCount, ReclaimableBytes = row.ReclaimableBytes,
-            SummaryJson = row.SummaryJson, FaceScores = ReadFaceScores(row.SummaryJson, (AnalysisBatchStatus)row.Status),
-            Relations = relationsByBatch[row.Id].Select(relation => new FontRelationRecord
+        return
+        [
+            .. rows.Select(row => new AnalysisBatch
             {
-                Id = relation.Id, LeftFaceId = relation.LeftFaceId, RightFaceId = relation.RightFaceId,
-                RelationshipKind = (FontRelationshipKind)relation.RelationshipKind, ReplacementDirection = (FontReplacementDirection)relation.ReplacementDirection,
-                EvidenceVersion = relation.EvidenceVersion, EvidenceJson = relation.EvidenceJson
-            }).ToArray(),
-            Groups = groupsByBatch[row.Id].Select(group => new DuplicateGroupRecord
-            {
-                Id = group.Id, RetainedFaceId = group.RetainedFaceId, ReclaimableBytes = group.ReclaimableBytes, EvidenceJson = group.EvidenceJson,
-                Members = membersByGroup[group.Id].Select(member => new DuplicateGroupMemberRecord
-                {
-                    Id = member.Id, FaceId = member.FaceId, FileId = member.FileId, Decision = (DuplicateGroupMemberDecision)member.Decision,
-                    RetentionScore = member.RetentionScore, ScoreJson = member.ScoreJson, Reason = member.Reason
-                }).ToArray()
-            }).ToArray()
-        }).ToArray();
+                Id = row.Id,
+                GenerationId = row.GenerationId,
+                Status = (AnalysisBatchStatus)row.Status,
+                EvidenceVersion = row.EvidenceVersion,
+                StartedUtc = ParseDate(row.StartedUtc),
+                CompletedUtc = ParseNullableDate(row.CompletedUtc),
+                CandidateCount = row.CandidateCount,
+                ComparisonCount = row.ComparisonCount,
+                ReclaimableBytes = row.ReclaimableBytes,
+                SummaryJson = row.SummaryJson,
+                FaceScores = ReadFaceScores(row.SummaryJson, (AnalysisBatchStatus)row.Status),
+                Relations =
+                [
+                    .. relationsByBatch[row.Id].Select(relation => new FontRelationRecord
+                    {
+                        Id = relation.Id,
+                        LeftFaceId = relation.LeftFaceId,
+                        RightFaceId = relation.RightFaceId,
+                        RelationshipKind = (FontRelationshipKind)relation.RelationshipKind,
+                        ReplacementDirection = (FontReplacementDirection)relation.ReplacementDirection,
+                        EvidenceVersion = relation.EvidenceVersion,
+                        EvidenceJson = relation.EvidenceJson
+                    })
+                ],
+                Groups =
+                [
+                    .. groupsByBatch[row.Id].Select(group => new DuplicateGroupRecord
+                    {
+                        Id = group.Id,
+                        RetainedFaceId = group.RetainedFaceId,
+                        ReclaimableBytes = group.ReclaimableBytes,
+                        EvidenceJson = group.EvidenceJson,
+                        Members =
+                        [
+                            .. membersByGroup[group.Id].Select(member => new DuplicateGroupMemberRecord
+                            {
+                                Id = member.Id,
+                                FaceId = member.FaceId,
+                                FileId = member.FileId,
+                                Decision = (DuplicateGroupMemberDecision)member.Decision,
+                                RetentionScore = member.RetentionScore,
+                                ScoreJson = member.ScoreJson,
+                                Reason = member.Reason
+                            })
+                        ]
+                    })
+                ]
+            })
+        ];
     }
 
     private static void ValidatePage(long offset, int pageSize)

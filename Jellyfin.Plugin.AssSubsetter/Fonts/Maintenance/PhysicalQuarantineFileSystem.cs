@@ -32,7 +32,7 @@ public sealed class PhysicalQuarantineFileSystem : IQuarantineFileSystem
     /// <returns><see langword="true"/> only when no existing component is a reparse point or symbolic link.</returns>
     public bool IsPhysicalPath(string path) => IsPhysicalPath(path, null);
 
-    internal bool IsPhysicalPath(string path, IDictionary<string, bool>? componentCache)
+    internal static bool IsPhysicalPath(string path, IDictionary<string, bool>? componentCache)
     {
         try
         {

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
@@ -7,6 +8,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 /// <summary>Measures the production bucket-bounded candidate pipeline over 20,000 generated files.</summary>
 [MemoryDiagnoser]
 [MedianColumn]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class CandidateGenerationBenchmarks
 {
     private FontFaceEvidence[] _faces = null!;

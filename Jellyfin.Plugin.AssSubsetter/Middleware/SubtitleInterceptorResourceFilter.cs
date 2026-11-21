@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -13,6 +14,9 @@ public sealed class SubtitleInterceptorResourceFilter : IAsyncResourceFilter
     /// <inheritdoc />
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+
         RequestDelegate continuation = async _ => { await next().ConfigureAwait(false); };
         var interceptor = ActivatorUtilities.CreateInstance<SubtitleInterceptorMiddleware>(
             context.HttpContext.RequestServices, continuation);

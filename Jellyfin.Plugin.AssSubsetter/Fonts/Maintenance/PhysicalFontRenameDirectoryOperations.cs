@@ -48,7 +48,7 @@ public sealed class PhysicalFontRenameDirectoryOperations : IFontRenameDirectory
                 return new(false, false, "outside-source-root");
             }
 
-            if (!_files.IsPhysicalPath(sourceFile, _previewComponents) || !_files.IsPhysicalPath(targetDirectory, _previewComponents))
+            if (!PhysicalQuarantineFileSystem.IsPhysicalPath(sourceFile, _previewComponents) || !PhysicalQuarantineFileSystem.IsPhysicalPath(targetDirectory, _previewComponents))
             {
                 return new(false, false, "linked-path");
             }
@@ -88,6 +88,7 @@ public sealed class PhysicalFontRenameDirectoryOperations : IFontRenameDirectory
     public Task<FontRenameDirectoryResult> CreateDirectoryAsync(string path, string sourceRoot, FontDirectoryPolicyResolver policy, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(policy);
         string? exclusion = ValidateDirectory(path, sourceRoot, policy);
         if (exclusion is not null)
         {
@@ -114,6 +115,7 @@ public sealed class PhysicalFontRenameDirectoryOperations : IFontRenameDirectory
     public Task<FontRenameDirectoryResult> TryRemoveEmptyAsync(string path, string sourceRoot, FontDirectoryPolicyResolver policy, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(policy);
         string? exclusion = ValidateDirectory(path, sourceRoot, policy);
         if (exclusion is not null)
         {

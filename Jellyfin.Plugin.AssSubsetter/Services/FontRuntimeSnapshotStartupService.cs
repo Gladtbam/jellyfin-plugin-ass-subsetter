@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// <summary>Recovers the font catalog and loads the last published snapshot after Jellyfin starts.</summary>
 public sealed class FontRuntimeSnapshotStartupService : BackgroundService
 {
-    private static readonly TimeSpan StartupCheckInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan _startupCheckInterval = TimeSpan.FromMilliseconds(250);
     private readonly FontCacheManager _fontCacheManager;
     private readonly ILogger<FontRuntimeSnapshotStartupService> _logger;
     private readonly IFontRepository _repository;
@@ -74,7 +74,7 @@ public sealed class FontRuntimeSnapshotStartupService : BackgroundService
             // Jellyfin runs core startup tasks after the generic host has started.
             while (!_applicationHost.CoreStartupHasCompleted)
             {
-                await Task.Delay(StartupCheckInterval, stoppingToken).ConfigureAwait(false);
+                await Task.Delay(_startupCheckInterval, stoppingToken).ConfigureAwait(false);
             }
 
             stoppingToken.ThrowIfCancellationRequested();
@@ -104,10 +104,12 @@ public sealed class FontRuntimeSnapshotStartupService : BackgroundService
     {
         var renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
         var quarantineManifests = await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-        string[] paths = renameManifests.SelectMany(manifest => manifest.Batch.RenameItems.Select(item => manifest.Request.Kind == FontOperationKind.RollbackNames ? item.NewPath : item.OldPath))
-            .Concat(quarantineManifests.SelectMany(manifest => manifest.Items.Select(item => item.SourcePath)))
-            .Distinct(FontPathComparison.Comparer)
-            .ToArray();
+        string[] paths =
+        [
+            .. renameManifests.SelectMany(manifest => manifest.Batch.RenameItems.Select(item => manifest.Request.Kind == FontOperationKind.RollbackNames ? item.NewPath : item.OldPath))
+                .Concat(quarantineManifests.SelectMany(manifest => manifest.Items.Select(item => item.SourcePath)))
+                .Distinct(FontPathComparison.Comparer)
+        ];
         if (paths.Length == 0)
         {
             return;

@@ -75,14 +75,34 @@ public sealed class FontDatabase : IAsyncDisposable
             Pooling = true
         };
         var connection = new SqliteConnection(builder.ToString());
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await ExecutePragmaAsync(connection, "PRAGMA foreign_keys = ON;", cancellationToken).ConfigureAwait(false);
-        await ExecutePragmaAsync(connection, "PRAGMA busy_timeout = 5000;", cancellationToken).ConfigureAwait(false);
-        return connection;
+        try
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await ExecutePragmaAsync(connection, "PRAGMA foreign_keys = ON;", cancellationToken).ConfigureAwait(false);
+            await ExecutePragmaAsync(connection, "PRAGMA busy_timeout = 5000;", cancellationToken).ConfigureAwait(false);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The DbContext owns the connection on success. If construction fails, the catch block disposes the connection.")]
     internal async Task<FontDbContext> OpenContextAsync(CancellationToken cancellationToken)
-        => new(await OpenConnectionAsync(cancellationToken).ConfigureAwait(false), ownsConnection: true);
+    {
+        SqliteConnection connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return new FontDbContext(connection, ownsConnection: true);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
 
     internal static FontDbContext CreateContext(SqliteConnection connection) => new(connection);
 

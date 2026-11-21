@@ -50,7 +50,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
             null!, null!, null!, _tempDataPath, new NullLogger<SubtitleCacheService>());
 
         _nextCalled = false;
-        _nextDelegate = (HttpContext context) =>
+        _nextDelegate = context =>
         {
             _nextCalled = true;
             return Task.CompletedTask;
@@ -103,8 +103,8 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
     {
         var middleware = CreateMiddleware();
         var itemId = Guid.NewGuid();
-        const string mediaSourceId = "requested-source";
-        const int requestedIndex = 3;
+        const string MediaSourceId = "requested-source";
+        const int RequestedIndex = 3;
         string requestedPath = Path.Join(_tempDataPath, "requested.ass");
         string otherPath = Path.Join(_tempDataPath, "other.ass");
         string cachedPath = Path.Join(_tempDataPath, "cached.ass");
@@ -115,15 +115,15 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         var video = new Video { Id = itemId, Path = Path.Join(_tempDataPath, "movie.mkv") };
         _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
-            .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
+            .Setup(m => m.GetMediaSource(video, MediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
             {
-                Id = mediaSourceId,
-                MediaStreams = new List<MediaStream>
-                {
+                Id = MediaSourceId,
+                MediaStreams =
+                [
                     new() { Type = MediaStreamType.Subtitle, Index = 1, IsExternal = true, Path = otherPath },
-                    new() { Type = MediaStreamType.Subtitle, Index = requestedIndex, IsExternal = true, Path = requestedPath }
-                }
+                    new() { Type = MediaStreamType.Subtitle, Index = RequestedIndex, IsExternal = true, Path = requestedPath }
+                ]
             });
         _mockCacheService
             .Setup(s => s.GetOrGenerateSubtitleAsync(itemId, requestedPath, It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
@@ -131,8 +131,8 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
 
         var (context, _) = CreateFileResultContext();
         context.Request.Path = includeStartPositionTicks
-            ? $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/{requestedIndex}/0/Stream.ass"
-            : $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/{requestedIndex}/Stream.ass";
+            ? $"/Videos/{itemId:N}/{MediaSourceId}/Subtitles/{RequestedIndex}/0/Stream.ass"
+            : $"/Videos/{itemId:N}/{MediaSourceId}/Subtitles/{RequestedIndex}/Stream.ass";
         context.Request.QueryString = new QueryString("?ApiKey=redacted");
         context.Request.Path += trailingSlash;
         context.Request.Headers.Remove("Authorization");
@@ -161,7 +161,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
     {
         var middleware = CreateMiddleware();
         var itemId = Guid.NewGuid();
-        const string mediaSourceId = "source";
+        const string MediaSourceId = "source";
         string subtitlePath = Path.Join(_tempDataPath, "subtitle" + extension);
         if (createFile)
         {
@@ -171,18 +171,18 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         var video = new Video { Id = itemId, Path = Path.Join(_tempDataPath, "movie.mkv") };
         _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
-            .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
+            .Setup(m => m.GetMediaSource(video, MediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
             {
-                Id = mediaSourceId,
-                MediaStreams = new List<MediaStream>
-                {
+                Id = MediaSourceId,
+                MediaStreams =
+                [
                     new() { Type = streamType, Index = streamIndex, IsExternal = isExternal, Path = subtitlePath }
-                }
+                ]
             });
 
         var (context, _) = CreateFileResultContext();
-        context.Request.Path = $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/3/Stream.ass";
+        context.Request.Path = $"/Videos/{itemId:N}/{MediaSourceId}/Subtitles/3/Stream.ass";
 
         await middleware.InvokeAsync(context);
 
@@ -210,8 +210,8 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
 
         var itemId = Guid.NewGuid();
         var (context, capture) = CreateFileResultContext();
-        const string mediaSourceId = "stream";
-        context.Request.Path = $"/Videos/{itemId:N}/{mediaSourceId}/Subtitles/2/Stream.ass";
+        const string MediaSourceId = "stream";
+        context.Request.Path = $"/Videos/{itemId:N}/{MediaSourceId}/Subtitles/2/Stream.ass";
 
         string videoPath = Path.Join(_tempDataPath, "movie.mkv");
         string originalAssPath = Path.Join(_tempDataPath, "movie.ass");
@@ -224,14 +224,14 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         var video = new Video { Id = itemId, Path = videoPath };
         _mockLibraryManager.Setup(m => m.GetItemById<Video>(itemId, It.IsAny<Guid>())).Returns(video);
         _mockMediaSourceManager
-            .Setup(m => m.GetMediaSource(video, mediaSourceId, null, false, It.IsAny<CancellationToken>()))
+            .Setup(m => m.GetMediaSource(video, MediaSourceId, null, false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new MediaSourceInfo
             {
-                Id = mediaSourceId,
-                MediaStreams = new List<MediaStream>
-                {
+                Id = MediaSourceId,
+                MediaStreams =
+                [
                     new() { Type = MediaStreamType.Subtitle, Index = 2, IsExternal = true, Path = originalAssPath }
-                }
+                ]
             });
 
         _mockCacheService
@@ -283,11 +283,10 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
                         : AuthenticateResult.Fail("Invalid credentials");
                 }
 
-                var principal = new ClaimsPrincipal(new ClaimsIdentity(new[]
-                {
+                var principal = new ClaimsPrincipal(new ClaimsIdentity([
                     new Claim("Jellyfin-UserId", (apiKey ? Guid.Empty : _userId).ToString("N")),
                     new Claim("Jellyfin-IsApiKey", apiKey.ToString())
-                }, "Jellyfin-Test"));
+                ], "Jellyfin-Test"));
                 return AuthenticateResult.Success(new AuthenticationTicket(principal, "Jellyfin-Test"));
             });
         authentication.Setup(x => x.ChallengeAsync(It.IsAny<HttpContext>(), "Jellyfin-Test", It.IsAny<AuthenticationProperties>()))
@@ -323,7 +322,7 @@ public sealed class SubtitleInterceptorMiddlewareTests : IDisposable
         context.Request.Method = method;
         context.Request.Path = $"/Videos/{Guid.NewGuid():N}/source/Subtitles/0/Stream.ass";
         // A prepopulated principal must not turn a failed host authentication into success.
-        context.User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim("Jellyfin-IsApiKey", "True") }, "untrusted"));
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("Jellyfin-IsApiKey", "True")], "untrusted"));
 
         await CreateMiddleware().InvokeAsync(context);
 

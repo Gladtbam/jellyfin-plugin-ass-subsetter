@@ -21,8 +21,8 @@ public sealed class AssProcessorAttachmentTests
             using SKData data = SKData.Create(stream);
             await File.WriteAllBytesAsync(fontPath, data.ToArray(), TestContext.Current.CancellationToken);
             string input = Path.Join(root, "input.ass");
-            const string content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Bold, Italic\nStyle: Regular,Example,20,0,0\nStyle: Bold,Example,20,-1,0\nStyle: Italic,Example,20,0,-1\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Regular,A\nDialogue: 0,0:00:00.00,0:00:01.00,Bold,B\nDialogue: 0,0:00:00.00,0:00:01.00,Italic,C";
-            await File.WriteAllTextAsync(input, content, TestContext.Current.CancellationToken);
+            const string Content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Bold, Italic\nStyle: Regular,Example,20,0,0\nStyle: Bold,Example,20,-1,0\nStyle: Italic,Example,20,0,-1\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Regular,A\nDialogue: 0,0:00:00.00,0:00:01.00,Bold,B\nDialogue: 0,0:00:00.00,0:00:01.00,Italic,C";
+            await File.WriteAllTextAsync(input, Content, TestContext.Current.CancellationToken);
             var processor = new AssProcessor(
                 () => new PluginConfiguration(),
                 (_, _, _) => Task.FromResult<FontFileLease?>(new FontFileLease(fontPath, 0, () => ValueTask.CompletedTask)),

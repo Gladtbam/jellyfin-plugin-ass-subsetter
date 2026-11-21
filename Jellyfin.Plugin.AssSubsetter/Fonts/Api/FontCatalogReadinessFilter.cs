@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Services;
@@ -21,6 +22,8 @@ public sealed class FontCatalogReadinessFilter(FontCatalogReadiness readiness, I
     /// <remarks>The request abort token and the host stopping token both cancel the wait.</remarks>
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
         // The settings page validates naming rules even when the catalog is unavailable.
         if (context.ActionDescriptor is ControllerActionDescriptor { MethodInfo.Name: nameof(FontManagementController.ValidateNamingRules) })
         {

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AssSubsetter.Native;
@@ -13,7 +14,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Native;
 internal static partial class LibassNative
 {
     private const string LibassLibrary = "libass";
-    private static readonly object _resolverLock = new();
+    private static readonly Lock _resolverLock = new();
     private static bool _resolverRegistered;
 
     /// <summary>
@@ -31,7 +32,7 @@ internal static partial class LibassNative
     /// </summary>
     /// <returns>ASS_Library handle, or <see cref="IntPtr.Zero" /> on failure.</returns>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_library_init")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial IntPtr AssLibraryInit();
 
     /// <summary>
@@ -39,7 +40,7 @@ internal static partial class LibassNative
     /// </summary>
     /// <param name="library">ASS_Library handle to destroy.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_library_done")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssLibraryDone(IntPtr library);
 
     /// <summary>
@@ -48,7 +49,7 @@ internal static partial class LibassNative
     /// <param name="library">ASS_Library handle.</param>
     /// <returns>ASS_Renderer handle, or <see cref="IntPtr.Zero" /> on failure.</returns>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_renderer_init")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial IntPtr AssRendererInit(IntPtr library);
 
     /// <summary>
@@ -56,7 +57,7 @@ internal static partial class LibassNative
     /// </summary>
     /// <param name="renderer">ASS_Renderer handle to destroy.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_renderer_done")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssRendererDone(IntPtr renderer);
 
     /// <summary>
@@ -66,7 +67,7 @@ internal static partial class LibassNative
     /// <param name="w">Frame width in pixels.</param>
     /// <param name="h">Frame height in pixels.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_set_frame_size")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssSetFrameSize(IntPtr renderer, int w, int h);
 
     /// <summary>
@@ -76,7 +77,7 @@ internal static partial class LibassNative
     /// <param name="w">Storage width in pixels.</param>
     /// <param name="h">Storage height in pixels.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_set_storage_size")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssSetStorageSize(IntPtr renderer, int w, int h);
 
     /// <summary>
@@ -89,7 +90,7 @@ internal static partial class LibassNative
     /// <param name="config">Fontconfig config path, or null.</param>
     /// <param name="update">Whether to update fontconfig cache (1 = yes).</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_set_fonts", StringMarshalling = StringMarshalling.Utf8)]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssSetFonts(
         IntPtr renderer,
         string? defaultFont,
@@ -104,19 +105,19 @@ internal static partial class LibassNative
     /// <param name="library">ASS_Library handle.</param>
     /// <param name="fontsDir">Path to directory containing font files.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_set_fonts_dir", StringMarshalling = StringMarshalling.Utf8)]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssSetFontsDir(
         IntPtr library,
         string fontsDir);
 
     /// <summary>Registers a font attachment supplied in memory.</summary>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_add_font", StringMarshalling = StringMarshalling.Utf8)]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial void AssAddFont(IntPtr library, string name, byte* data, int dataSize);
 
     /// <summary>Reads an ASS subtitle script from memory.</summary>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_read_memory", StringMarshalling = StringMarshalling.Utf8)]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static unsafe partial IntPtr AssReadMemory(IntPtr library, byte* data, nuint dataSize, string? codepage);
 
     /// <summary>
@@ -127,7 +128,7 @@ internal static partial class LibassNative
     /// <param name="codepage">Character encoding, or null for auto-detection.</param>
     /// <returns>ASS_Track handle, or <see cref="IntPtr.Zero" /> on failure.</returns>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_read_file", StringMarshalling = StringMarshalling.Utf8)]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial IntPtr AssReadFile(
         IntPtr library,
         string fname,
@@ -138,7 +139,7 @@ internal static partial class LibassNative
     /// </summary>
     /// <param name="track">ASS_Track handle to free.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_free_track")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssFreeTrack(IntPtr track);
 
     /// <summary>
@@ -150,7 +151,7 @@ internal static partial class LibassNative
     /// <param name="detectChange">Output: non-zero if the rendered image changed.</param>
     /// <returns>Pointer to the first ASS_Image in a linked list, or <see cref="IntPtr.Zero" />.</returns>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_render_frame")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial IntPtr AssRenderFrame(
         IntPtr renderer,
         IntPtr track,
@@ -164,7 +165,7 @@ internal static partial class LibassNative
     /// <param name="callback">Log callback delegate, or null to disable logging.</param>
     /// <param name="userData">User data pointer passed to the callback.</param>
     [LibraryImport(LibassLibrary, EntryPoint = "ass_set_message_cb")]
-    [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial void AssSetMessageCb(
         IntPtr library,
         AssLogCallback? callback,
@@ -201,14 +202,22 @@ internal static partial class LibassNative
                         var libassPath = Path.Join(ffmpegDir, "lib", GetPlatformLibName());
                         if (File.Exists(libassPath) && NativeLibrary.TryLoad(libassPath, out var handle1))
                         {
-                            logger?.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
+                            if (logger?.IsEnabled(LogLevel.Information) == true)
+                            {
+                                logger.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
+                            }
+
                             return handle1;
                         }
 
                         libassPath = Path.Join(ffmpegDir, GetPlatformLibName());
                         if (File.Exists(libassPath) && NativeLibrary.TryLoad(libassPath, out var handle2))
                         {
-                            logger?.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
+                            if (logger?.IsEnabled(LogLevel.Information) == true)
+                            {
+                                logger.LogInformation("[AssSubsetter] Loaded libass from ffmpeg directory: {Path}", libassPath);
+                            }
+
                             return handle2;
                         }
                     }
@@ -228,7 +237,11 @@ internal static partial class LibassNative
                     {
                         if (File.Exists(path) && NativeLibrary.TryLoad(path, out var handle3))
                         {
-                            logger?.LogInformation("[AssSubsetter] Loaded libass from well-known path: {Path}", path);
+                            if (logger?.IsEnabled(LogLevel.Information) == true)
+                            {
+                                logger.LogInformation("[AssSubsetter] Loaded libass from well-known path: {Path}", path);
+                            }
+
                             return handle3;
                         }
                     }
@@ -271,33 +284,33 @@ internal static partial class LibassNative
     internal struct AssImage
     {
         /// <summary>Bitmap width.</summary>
-        public int W;
+        public int _w;
 
         /// <summary>Bitmap height.</summary>
-        public int H;
+        public int _h;
 
         /// <summary>Bitmap stride (bytes per row).</summary>
-        public int Stride;
+        public int _stride;
 
         /// <summary>Pointer to 1-byte-per-pixel alpha buffer.</summary>
-        public IntPtr Bitmap;
+        public IntPtr _bitmap;
 
         /// <summary>
         ///     Bitmap color and alpha, RGBA format.
         ///     Note: ASS alpha is inverted (0 = opaque, 255 = transparent).
         /// </summary>
-        public uint Color;
+        public uint _color;
 
         /// <summary>Destination X coordinate on the video frame.</summary>
-        public int DstX;
+        public int _dstX;
 
         /// <summary>Destination Y coordinate on the video frame.</summary>
-        public int DstY;
+        public int _dstY;
 
         /// <summary>Pointer to next ASS_Image in linked list, or IntPtr.Zero.</summary>
-        public IntPtr Next;
+        public IntPtr _next;
 
         /// <summary>Image type: 0=CHARACTER, 1=OUTLINE, 2=SHADOW.</summary>
-        public int Type;
+        public int _type;
     }
 }

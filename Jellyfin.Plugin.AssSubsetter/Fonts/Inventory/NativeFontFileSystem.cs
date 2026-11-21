@@ -17,18 +17,18 @@ internal static class NativeFontFileSystem
         {
             if (OperatingSystem.IsWindows())
             {
-                const uint backupSemantics = 0x02000000;
-                using SafeFileHandle handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, 3, backupSemantics, IntPtr.Zero);
+                const uint BackupSemantics = 0x02000000;
+                using SafeFileHandle handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, 3, BackupSemantics, IntPtr.Zero);
                 return !handle.IsInvalid && GetFileInformationByHandle(handle, out ByHandleFileInformation information)
-                    ? $"win:{information.VolumeSerialNumber:x8}" : null;
+                    ? $"win:{information._volumeSerialNumber:x8}" : null;
             }
 
             if (OperatingSystem.IsLinux())
             {
-                const uint mountIdMask = 0x00001000;
-                return Statx(AtFileDescriptorCurrentWorkingDirectory, path, 0, StatxBasicStats | mountIdMask, out StatxBuffer information) == 0
-                    && (information.Mask & mountIdMask) != 0
-                    ? $"unix:{information.DeviceMajor:x8}:{information.DeviceMinor:x8}:{information.MountId:x16}" : null;
+                const uint MountIdMask = 0x00001000;
+                return Statx(AtFileDescriptorCurrentWorkingDirectory, path, 0, StatxBasicStats | MountIdMask, out StatxBuffer information) == 0
+                    && (information._mask & MountIdMask) != 0
+                    ? $"unix:{information._deviceMajor:x8}:{information._deviceMinor:x8}:{information._mountId:x16}" : null;
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DllNotFoundException or EntryPointNotFoundException)
@@ -129,16 +129,16 @@ internal static class NativeFontFileSystem
     [StructLayout(LayoutKind.Sequential)]
     internal struct ByHandleFileInformation
     {
-        public uint FileAttributes;
-        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
-        public uint VolumeSerialNumber;
-        public uint FileSizeHigh;
-        public uint FileSizeLow;
-        public uint NumberOfLinks;
-        public uint FileIndexHigh;
-        public uint FileIndexLow;
+        public uint _fileAttributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME _creationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME _lastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME _lastWriteTime;
+        public uint _volumeSerialNumber;
+        public uint _fileSizeHigh;
+        public uint _fileSizeLow;
+        public uint _numberOfLinks;
+        public uint _fileIndexHigh;
+        public uint _fileIndexLow;
     }
 
     // Linux uapi statx: device IDs at 0x88/0x8c, mount ID at 0x90.
@@ -146,21 +146,21 @@ internal static class NativeFontFileSystem
     internal struct StatxBuffer
     {
         [FieldOffset(0)]
-        public uint Mask;
+        public uint _mask;
 
         [FieldOffset(16)]
-        public uint NumberOfLinks;
+        public uint _numberOfLinks;
 
         [FieldOffset(32)]
-        public ulong Inode;
+        public ulong _inode;
 
         [FieldOffset(136)]
-        public uint DeviceMajor;
+        public uint _deviceMajor;
 
         [FieldOffset(140)]
-        public uint DeviceMinor;
+        public uint _deviceMinor;
 
         [FieldOffset(144)]
-        public ulong MountId;
+        public ulong _mountId;
     }
 }

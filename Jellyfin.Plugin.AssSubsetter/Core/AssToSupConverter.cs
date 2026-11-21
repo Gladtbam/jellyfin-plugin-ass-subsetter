@@ -21,7 +21,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Core;
 ///     Service that converts ASS subtitle files to SUP (PGS) format
 ///     using libass for rendering and a pure C# PGS encoder for output.
 /// </summary>
-public class AssToSupConverter : IDisposable
+public partial class AssToSupConverter : IDisposable
 {
     private readonly Func<PluginConfiguration> _configFactory;
     private readonly ILogger<AssToSupConverter> _logger;
@@ -59,7 +59,7 @@ public class AssToSupConverter : IDisposable
     /// <param name="videoHeight">Video frame height in pixels.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if conversion succeeded.</returns>
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are sanitized and guided by server side configurations.")]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Failed native rendering returns control to the original subtitle pipeline.")]
     public async Task<bool> ConvertAsync(
         string inputAssPath,
         string outputSupPath,
@@ -69,7 +69,10 @@ public class AssToSupConverter : IDisposable
     {
         try
         {
-            _logger.LogInformation("[AssSubsetter] Starting ASS to SUP conversion for {File} ({Width}x{Height})...", inputAssPath, videoWidth, videoHeight);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Starting ASS to SUP conversion for {File} ({Width}x{Height})...", inputAssPath, videoWidth, videoHeight);
+            }
 
             SubsetArtifact? artifact = _assProcessor is null ? null :
                 await _assProcessor.GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
@@ -81,7 +84,11 @@ public class AssToSupConverter : IDisposable
             var events = ParseArtifactEvents(artifact.AssContent);
             if (events.Count == 0)
             {
-                _logger.LogInformation("[AssSubsetter] No dialogue events found in {File}. Skipping conversion.", inputAssPath);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] No dialogue events found in {File}. Skipping conversion.", inputAssPath);
+                }
+
                 return false;
             }
 
@@ -101,7 +108,7 @@ public class AssToSupConverter : IDisposable
                 _logger,
                 cancellationToken).ConfigureAwait(false);
 
-            if (result)
+            if (result && _logger.IsEnabled(LogLevel.Information))
             {
                 _logger.LogInformation("[AssSubsetter] ASS to SUP conversion completed successfully: {Output}", outputSupPath);
             }
@@ -203,7 +210,10 @@ public class AssToSupConverter : IDisposable
             // Build sorted list of all interesting time points
             var timePoints = BuildTimePoints(events, frameIntervalMs);
 
-            _logger.LogDebug("[AssSubsetter] Processing {Count} time points for rendering...", timePoints.Count);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug("[AssSubsetter] Processing {Count} time points for rendering...", timePoints.Count);
+            }
 
             foreach (long timeMs in timePoints)
             {
@@ -336,21 +346,21 @@ public class AssToSupConverter : IDisposable
         {
             var img = Marshal.PtrToStructure<LibassNative.AssImage>(current);
 
-            if (img.W > 0 && img.H > 0 && img.Bitmap != IntPtr.Zero)
+            if (img._w > 0 && img._h > 0 && img._bitmap != IntPtr.Zero)
             {
                 // Extract color components from RGBA format
-                byte r = (byte)((img.Color >> 24) & 0xFF);
-                byte g = (byte)((img.Color >> 16) & 0xFF);
-                byte b = (byte)((img.Color >> 8) & 0xFF);
-                byte a = (byte)(255 - (img.Color & 0xFF)); // ASS alpha is inverted
+                byte r = (byte)((img._color >> 24) & 0xFF);
+                byte g = (byte)((img._color >> 16) & 0xFF);
+                byte b = (byte)((img._color >> 8) & 0xFF);
+                byte a = (byte)(255 - (img._color & 0xFF)); // ASS alpha is inverted
 
                 BlendImage(rgba, width, height, img, r, g, b, a);
 
                 // Update bounding box
-                int imgMaxX = Math.Min(img.DstX + img.W, width);
-                int imgMaxY = Math.Min(img.DstY + img.H, height);
-                int imgMinX = Math.Max(img.DstX, 0);
-                int imgMinY = Math.Max(img.DstY, 0);
+                int imgMaxX = Math.Min(img._dstX + img._w, width);
+                int imgMaxY = Math.Min(img._dstY + img._h, height);
+                int imgMinX = Math.Max(img._dstX, 0);
+                int imgMinY = Math.Max(img._dstY, 0);
 
                 if (imgMinX < minX)
                 {
@@ -373,7 +383,7 @@ public class AssToSupConverter : IDisposable
                 }
             }
 
-            current = img.Next;
+            current = img._next;
         }
 
         if (maxX <= minX || maxY <= minY)
@@ -404,26 +414,26 @@ public class AssToSupConverter : IDisposable
         byte b,
         byte baseAlpha)
     {
-        int srcStride = img.Stride;
+        int srcStride = img._stride;
 
-        for (int y = 0; y < img.H; y++)
+        for (int y = 0; y < img._h; y++)
         {
-            int dstY = img.DstY + y;
+            int dstY = img._dstY + y;
             if (dstY < 0 || dstY >= canvasHeight)
             {
                 continue;
             }
 
-            for (int x = 0; x < img.W; x++)
+            for (int x = 0; x < img._w; x++)
             {
-                int dstX = img.DstX + x;
+                int dstX = img._dstX + x;
                 if (dstX < 0 || dstX >= canvasWidth)
                 {
                     continue;
                 }
 
                 // Read alpha coverage from bitmap
-                byte coverage = Marshal.ReadByte(img.Bitmap, (y * srcStride) + x);
+                byte coverage = Marshal.ReadByte(img._bitmap, (y * srcStride) + x);
                 if (coverage == 0)
                 {
                     continue;
@@ -478,7 +488,7 @@ public class AssToSupConverter : IDisposable
     ///     Builds a sorted list of all time points that need to be rendered.
     ///     Combines event start/end times with animation frame sampling.
     /// </summary>
-    private List<long> BuildTimePoints(List<AssEvent> events, int frameIntervalMs)
+    private static List<long> BuildTimePoints(List<AssEvent> events, int frameIntervalMs)
     {
         var timeSet = new SortedSet<long>();
 
@@ -510,7 +520,7 @@ public class AssToSupConverter : IDisposable
             }
         }
 
-        return timeSet.ToList();
+        return [.. timeSet];
     }
 
     /// <summary>
@@ -544,7 +554,7 @@ public class AssToSupConverter : IDisposable
 
             if (line.StartsWith("Format:", StringComparison.OrdinalIgnoreCase))
             {
-                var columns = line.Substring(7).Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
+                var columns = line[7..].Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
                 startIdx = columns.IndexOf("start");
                 endIdx = columns.IndexOf("end");
                 textIdx = columns.IndexOf("text");
@@ -561,7 +571,7 @@ public class AssToSupConverter : IDisposable
                 continue;
             }
 
-            string content = line.Substring(9);
+            string content = line[9..];
             // Split by comma, but only up to the text field (text can contain commas)
             int maxSplits = Math.Max(startIdx, Math.Max(endIdx, textIdx >= 0 ? textIdx : 0));
             string[] parts = content.Split(',', maxSplits + 1);
@@ -602,8 +612,7 @@ public class AssToSupConverter : IDisposable
     /// </summary>
     private static long ParseAssTimestamp(string timestamp)
     {
-        // Format: H:MM:SS.CC (centiseconds)
-        var match = Regex.Match(timestamp, @"(\d+):(\d{2}):(\d{2})\.(\d{2})");
+        var match = AssTimestampRegex().Match(timestamp);
         if (!match.Success)
         {
             return -1;
@@ -616,6 +625,9 @@ public class AssToSupConverter : IDisposable
 
         return (((hours * 3600L) + (minutes * 60L) + seconds) * 1000L) + (centiseconds * 10L);
     }
+
+    [GeneratedRegex(@"(\d+):(\d{2}):(\d{2})\.(\d{2})")]
+    private static partial Regex AssTimestampRegex();
 
     /// <summary>
     ///     Releases resources.

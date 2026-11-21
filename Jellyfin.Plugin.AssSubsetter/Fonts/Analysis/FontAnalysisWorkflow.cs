@@ -33,11 +33,11 @@ public sealed class FontAnalysisWorkflow
     public FontAnalysisWorkflow(IFontRepository repository, FontCacheManager fontCacheManager, FontDuplicateAnalyzer analyzer, FontRenameCandidateService candidateService, ILogger<FontAnalysisWorkflow> logger)
         : this(
             repository,
-            fontCacheManager.StageInventoryAsync,
-            analyzer.AnalyzeAsync,
+            (fontCacheManager ?? throw new ArgumentNullException(nameof(fontCacheManager))).StageInventoryAsync,
+            (analyzer ?? throw new ArgumentNullException(nameof(analyzer))).AnalyzeAsync,
             (batch, prepared, token) => fontCacheManager.PublishAnalyzedGenerationAsync(batch, token, prepared),
             (scan, progress, token) => fontCacheManager.ValidatePublicationInputsAsync(scan, token, progress),
-            candidateService.PrepareForPublicationAsync,
+            (candidateService ?? throw new ArgumentNullException(nameof(candidateService))).PrepareForPublicationAsync,
             repairCandidates: async (requestId, token) =>
             {
                 var context = await repository.GetRenameCandidateContextAsync(candidateService.ReadRequirements(), token).ConfigureAwait(false);
@@ -118,7 +118,11 @@ public sealed class FontAnalysisWorkflow
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, current.Id, stopwatch.ElapsedMilliseconds);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, current.Id, stopwatch.ElapsedMilliseconds);
+            }
+
             return new FontAnalysisWorkflowResult(current, scan);
         }
 
@@ -138,14 +142,22 @@ public sealed class FontAnalysisWorkflow
             LogStage(operationRequestId, "publish-analysis", stopwatch);
             batch = await _publish(batch, prepared, cancellationToken).ConfigureAwait(false);
             progress.Report(99);
-            _logger.LogInformation("[AssSubsetter] Analysis published. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ChangeReasons: {ChangeReasons}; Relations: {RelationCount}; RenameCandidates: {CandidateCount}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, batch.Id, string.Join(",", scan.ChangeReasons), batch.Relations.Count, prepared?.Items.Count ?? 0, stopwatch.ElapsedMilliseconds);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Analysis published. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ChangeReasons: {ChangeReasons}; Relations: {RelationCount}; RenameCandidates: {CandidateCount}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, batch.Id, string.Join(",", scan.ChangeReasons), batch.Relations.Count, prepared?.Items.Count ?? 0, stopwatch.ElapsedMilliseconds);
+            }
         }
 
         return new FontAnalysisWorkflowResult(batch, scan);
     }
 
     private void LogStage(long requestId, string stage, Stopwatch stopwatch)
-        => _logger.LogInformation("[AssSubsetter] Font analysis stage. RequestId: {RequestId}; Stage: {Stage}; ElapsedMs: {ElapsedMs}.", requestId, stage, stopwatch.ElapsedMilliseconds);
+    {
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Font analysis stage. RequestId: {RequestId}; Stage: {Stage}; ElapsedMs: {ElapsedMs}.", requestId, stage, stopwatch.ElapsedMilliseconds);
+        }
+    }
 
     private sealed class ScaledProgress(IProgress<double> target, double minimum, double maximum) : IProgress<double>
     {

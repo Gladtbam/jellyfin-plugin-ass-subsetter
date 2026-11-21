@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Executes durable restore requests without exposing a Jellyfin scheduled task.</summary>
 public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRequestDispatcher
 {
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(5);
     private readonly IFontMaintenanceTaskExecutor _executor;
     private readonly ILogger<FontRestoreRequestWorker> _logger;
     private readonly FontCatalogReadiness? _readiness;
@@ -44,6 +44,7 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
     /// <summary>Waits for catalog recovery, drains persisted restore requests, and listens for new requests.</summary>
     /// <param name="stoppingToken">Cancels waits for recovery or new requests and is passed to restore operations.</param>
     /// <returns>The restore worker task, which exits on shutdown or when catalog recovery fails.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A restore failure is logged and the hosted worker continues monitoring its durable queue.")]
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
@@ -63,7 +64,7 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
                 }
                 else if (result.Outcome == "task-active")
                 {
-                    await _signal.WaitAsync(RetryDelay, stoppingToken).ConfigureAwait(false);
+                    await _signal.WaitAsync(_retryDelay, stoppingToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -73,7 +74,7 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
             catch (Exception exception)
             {
                 _logger.LogError(exception, "Failed to process a quarantined-font restore request.");
-                await _signal.WaitAsync(RetryDelay, stoppingToken).ConfigureAwait(false);
+                await _signal.WaitAsync(_retryDelay, stoppingToken).ConfigureAwait(false);
             }
         }
     }

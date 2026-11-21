@@ -83,7 +83,7 @@ public sealed class FontFingerprintBuilderTests
     {
         byte[] bytes = TestFontBuilder.Sfnt().WithHead(123)
             .WithStyleMetadata(400, 5, false, false).WithName("Example").Build();
-        byte[] original = bytes.ToArray();
+        byte[] original = [.. bytes];
         OpenTypeFace face = OpenTypeFontReader.Read(bytes).Faces[0];
 
         FontFaceFingerprints first = FontFingerprintBuilder.BuildFace(face);

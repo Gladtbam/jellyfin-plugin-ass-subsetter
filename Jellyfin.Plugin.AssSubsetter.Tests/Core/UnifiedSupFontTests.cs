@@ -40,7 +40,7 @@ public sealed class UnifiedSupFontTests
             {
                 bool observed = false;
                 bool released = false;
-                var lease = missing ? null : new Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.FontFileLease(font, 0, () => { released = true; return ValueTask.CompletedTask; });
+                await using var lease = missing ? null : new Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.FontFileLease(font, 0, () => { released = true; return ValueTask.CompletedTask; });
                 var processor = new AssProcessor(() => new PluginConfiguration(), (_, _, _) => Task.FromResult(lease),
                     () => "test", new AssDocumentParser(), NullLogger<AssProcessor>.Instance,
                     (descriptor, characters, actualLease, actualBytes) =>

@@ -27,6 +27,7 @@ public sealed class FileRenameManifestStore
     /// <returns>A task representing durable publication.</returns>
     public async Task SaveAsync(RenameManifest manifest, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
         Validate(manifest);
         string directory = BatchDirectory(manifest.Batch.Id);
         Directory.CreateDirectory(directory);

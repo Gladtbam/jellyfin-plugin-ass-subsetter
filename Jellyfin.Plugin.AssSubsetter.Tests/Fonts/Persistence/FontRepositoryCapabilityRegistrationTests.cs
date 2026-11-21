@@ -56,7 +56,8 @@ public sealed class FontRepositoryCapabilityRegistrationTests
         // These entry points are activated outside ordinary singleton resolution in production.
         Assert.NotNull(ActivatorUtilities.CreateInstance<FontManagementController>(provider));
         Assert.NotNull(ActivatorUtilities.CreateInstance<FontRenameStateQuery>(provider));
-        Assert.NotNull(ActivatorUtilities.CreateInstance<FontRuntimeSnapshotStartupService>(provider));
+        using var startup = ActivatorUtilities.CreateInstance<FontRuntimeSnapshotStartupService>(provider);
+        Assert.NotNull(startup);
 
         // Resolution must neither initialize storage nor execute maintenance work.
         repository.VerifyNoOtherCalls();

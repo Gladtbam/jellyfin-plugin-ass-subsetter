@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Plans deterministic filenames from typed identity evidence and executes recoverable moves.</summary>
 public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor, IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IFontRepository _repository;
     private readonly FontMaintenanceCoordinator _coordinator;
     private readonly IQuarantineFileSystem _fileSystem;
@@ -99,7 +99,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
         IReadOnlyList<RenameManifest> manifests = await _manifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
         foreach (RenameManifest manifest in manifests)
         {
-            await _repository.ImportMaintenanceBatchAsync(WithSummary(manifest).Batch, manifest.Request.Kind == FontOperationKind.NormalizeNames ? FontOperationRequestPayloadCodec.ParseRenameExecution(manifest.Request.RequestJson).AnalysisBatchId : JsonSerializer.Deserialize<FontOperationRequestPayload>(manifest.Request.RequestJson, JsonOptions)!.BatchId, manifest.Request.IdempotencyKey, manifest.Request.RequestJson, cancellationToken).ConfigureAwait(false);
+            await _repository.ImportMaintenanceBatchAsync(WithSummary(manifest).Batch, manifest.Request.Kind == FontOperationKind.NormalizeNames ? FontOperationRequestPayloadCodec.ParseRenameExecution(manifest.Request.RequestJson).AnalysisBatchId : JsonSerializer.Deserialize<FontOperationRequestPayload>(manifest.Request.RequestJson, _jsonOptions)!.BatchId, manifest.Request.IdempotencyKey, manifest.Request.RequestJson, cancellationToken).ConfigureAwait(false);
         }
 
         // Reserve every historical request identity before a refresh can allocate a new analysis request.
@@ -150,7 +150,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
         string ruleFingerprint;
         if (rollback)
         {
-            FontOperationRequestPayload payload = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, JsonOptions)
+            FontOperationRequestPayload payload = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, _jsonOptions)
                 ?? throw new InvalidOperationException("Invalid rollback authorization.");
             MaintenanceBatch original = await _repository.GetMaintenanceBatchAsync(payload.BatchId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("The rename batch is absent.");
@@ -162,7 +162,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
             RenameManifest originalManifest = (await _manifests.LoadAllAsync(cancellationToken).ConfigureAwait(false)).Single(manifest => manifest.Batch.Id == original.Id);
             rules = originalManifest.Rules;
             ruleFingerprint = originalManifest.RuleFingerprint;
-            items = payload.SelectedFileIds.Select(id => original.RenameItems.Single(item => item.FileId == id && item.Status == RenameItemStatus.Renamed) with { Status = RenameItemStatus.Pending, Error = null }).ToArray();
+            items = [.. payload.SelectedFileIds.Select(id => original.RenameItems.Single(item => item.FileId == id && item.Status == RenameItemStatus.Renamed) with { Status = RenameItemStatus.Pending, Error = null })];
         }
         else
         {
@@ -179,12 +179,13 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
 
         MaintenanceBatch batch = await _repository.GetMaintenanceBatchByOperationRequestAsync(request.Id, cancellationToken).ConfigureAwait(false)
             ?? await _repository.SaveMaintenanceBatchAsync(new MaintenanceBatch { OperationRequestId = request.Id, Kind = request.Kind, Status = MaintenanceBatchStatus.Running, StartedUtc = DateTimeOffset.UtcNow, SummaryJson = "{}" }, cancellationToken).ConfigureAwait(false);
-        batch = batch with { RenameItems = items.Select(item => item with { TemporaryPath = Path.Combine(Path.GetDirectoryName(item.OldPath)!, ".ass-subsetter-rename-" + batch.Id.ToString(CultureInfo.InvariantCulture) + "-" + item.FileId.ToString(CultureInfo.InvariantCulture) + ".tmp") }).ToArray() };
+        batch = batch with { RenameItems = [.. items.Select(item => item with { TemporaryPath = Path.Combine(Path.GetDirectoryName(item.OldPath)!, ".ass-subsetter-rename-" + batch.Id.ToString(CultureInfo.InvariantCulture) + "-" + item.FileId.ToString(CultureInfo.InvariantCulture) + ".tmp") })] };
         var created = new RenameManifest(request, batch, false) { Rules = rules, RuleFingerprint = ruleFingerprint };
         await PersistAsync(created).ConfigureAwait(false);
         return await RunAsync(created, cancellationToken, progress).ConfigureAwait(false);
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "After acquisition succeeds, an await using scope owns the lease for each rename or rollback attempt.")]
     private async Task<MaintenanceBatch> RunAsync(RenameManifest manifest, CancellationToken cancellationToken, IProgress<double>? progress = null)
     {
         bool rollback = manifest.Batch.Kind == FontOperationKind.RollbackNames;
@@ -469,11 +470,11 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
     }
 
     private static RenameManifest WithSummary(RenameManifest manifest)
-        => manifest with { Batch = manifest.Batch with { SummaryJson = JsonSerializer.Serialize(new { SourceBatchId = manifest.Request.Kind == FontOperationKind.NormalizeNames ? FontOperationRequestPayloadCodec.ParseRenameExecution(manifest.Request.RequestJson).AnalysisBatchId : JsonSerializer.Deserialize<FontOperationRequestPayload>(manifest.Request.RequestJson, JsonOptions)!.BatchId, manifest.RefreshRequired, manifest.Rules, manifest.RuleFingerprint, manifest.Directories }) } };
+        => manifest with { Batch = manifest.Batch with { SummaryJson = JsonSerializer.Serialize(new { SourceBatchId = manifest.Request.Kind == FontOperationKind.NormalizeNames ? FontOperationRequestPayloadCodec.ParseRenameExecution(manifest.Request.RequestJson).AnalysisBatchId : JsonSerializer.Deserialize<FontOperationRequestPayload>(manifest.Request.RequestJson, _jsonOptions)!.BatchId, manifest.RefreshRequired, manifest.Rules, manifest.RuleFingerprint, manifest.Directories }) } };
 
     private static RenameManifest WithItem(RenameManifest manifest, int index, RenameItemRecord item)
     {
-        RenameItemRecord[] items = manifest.Batch.RenameItems.ToArray();
+        RenameItemRecord[] items = [.. manifest.Batch.RenameItems];
         items[index] = item;
         return manifest with { Batch = manifest.Batch with { RenameItems = items } };
     }

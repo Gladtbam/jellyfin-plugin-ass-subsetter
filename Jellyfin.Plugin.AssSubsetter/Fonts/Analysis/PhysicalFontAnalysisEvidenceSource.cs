@@ -64,19 +64,21 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         Volatile.Write(ref _inventorySnapshot, new InventorySnapshot(
             generationId,
             inventory.ToDictionary(file => file.Id)));
-        FontFileRecord[] generationFiles = inventory.Where(file => file.Faces.Count > 0).ToArray();
+        FontFileRecord[] generationFiles = [.. inventory.Where(file => file.Faces.Count > 0)];
         var faces = new List<FontFaceEvidence>(generationFiles.Sum(file => file.Faces.Count));
         var retentionFiles = new List<FontRetentionFile>(generationFiles.Length);
         foreach (FontFileRecord file in generationFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FontRetentionFace[] retentionFaces = file.Faces
-                .Select(face => new FontRetentionFace(
-                    face.Id,
-                    face.Technology,
-                    file.Health == FontFileHealth.Healthy,
-                    new FontRetentionQualityEvidence(new HashSet<FontQualitySignal>(), null)))
-                .ToArray();
+            FontRetentionFace[] retentionFaces =
+            [
+                .. file.Faces
+                    .Select(face => new FontRetentionFace(
+                        face.Id,
+                        face.Technology,
+                        file.Health == FontFileHealth.Healthy,
+                        new FontRetentionQualityEvidence(new HashSet<FontQualitySignal>(), null)))
+            ];
             foreach (FontFaceRecord face in file.Faces)
             {
                 faces.Add(LightweightFace(file, face));
@@ -100,7 +102,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(generationId);
         ArgumentNullException.ThrowIfNull(fileIds);
-        HashSet<long> requested = fileIds.ToHashSet();
+        HashSet<long> requested = [.. fileIds];
         if (requested.Count != fileIds.Count || requested.Any(fileId => fileId <= 0))
         {
             throw new ArgumentException("Candidate physical-file identifiers must be distinct and positive.", nameof(fileIds));
@@ -119,11 +121,13 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             Volatile.Write(ref _inventorySnapshot, snapshot);
         }
 
-        FontFileRecord[] selected = requested
-            .Where(snapshot.Files.ContainsKey)
-            .Select(fileId => snapshot.Files[fileId])
-            .OrderBy(file => file.Id)
-            .ToArray();
+        FontFileRecord[] selected =
+        [
+            .. requested
+                .Where(snapshot.Files.ContainsKey)
+                .Select(fileId => snapshot.Files[fileId])
+                .OrderBy(file => file.Id)
+        ];
         if (selected.Length != requested.Count)
         {
             throw new InvalidOperationException("One or more candidate physical files are absent from the requested inventory.");
@@ -182,9 +186,9 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             return null;
         }
 
-        FontFaceEvidence[] cachedFaces = cached.Faces.OrderBy(face => face.FaceIndex).ToArray();
-        FontFaceRecord[] currentFaces = file.Faces.OrderBy(face => face.FaceIndex).ToArray();
-        FontRetentionFace[] cachedRetention = cached.Files[0].Faces.OrderBy(face => face.FaceId).ToArray();
+        FontFaceEvidence[] cachedFaces = [.. cached.Faces.OrderBy(face => face.FaceIndex)];
+        FontFaceRecord[] currentFaces = [.. file.Faces.OrderBy(face => face.FaceIndex)];
+        FontRetentionFace[] cachedRetention = [.. cached.Files[0].Faces.OrderBy(face => face.FaceId)];
         if (cachedFaces.Select(face => face.FaceId).Order().SequenceEqual(cachedRetention.Select(face => face.FaceId).Order()) is false)
         {
             return null;
@@ -289,7 +293,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                     UnicodeCoverage = inspected.UnicodeCoverage,
                     VariationSelectors = inspected.VariationSelectors.ToHashSet(),
                     VariationFingerprints = variations,
-                    CharacterFingerprints = characters ?? new Dictionary<uint, ReadOnlyMemory<byte>>()
+                    CharacterFingerprints = characters ?? []
                 });
                 retentionFaces.Add(new FontRetentionFace(
                     record.Id,
@@ -353,7 +357,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         out Dictionary<ulong, ReadOnlyMemory<byte>> variations,
         out string? error)
     {
-        variations = new Dictionary<ulong, ReadOnlyMemory<byte>>();
+        variations = [];
         error = null;
         using SKData nativeData = SKData.CreateCopy(data);
         using SKTypeface? typeface = SKTypeface.FromData(nativeData, faceIndex);
@@ -424,12 +428,12 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
     private static ReadOnlyMemory<byte> FingerprintGlyph(SKFont font, SKPaint paint, ushort glyph)
     {
-        Span<ushort> glyphs = stackalloc ushort[1] { glyph };
+        Span<ushort> glyphs = [glyph];
         Span<float> widths = stackalloc float[1];
         Span<SKRect> bounds = stackalloc SKRect[1];
         font.GetGlyphWidths(glyphs, widths, bounds, paint);
         Span<byte> metrics = stackalloc byte[20];
-        BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(0, 4), BitConverter.SingleToInt32Bits(widths[0]));
+        BinaryPrimitives.WriteInt32LittleEndian(metrics[..4], BitConverter.SingleToInt32Bits(widths[0]));
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(4, 4), BitConverter.SingleToInt32Bits(bounds[0].Left));
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(8, 4), BitConverter.SingleToInt32Bits(bounds[0].Top));
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(12, 4), BitConverter.SingleToInt32Bits(bounds[0].Right));

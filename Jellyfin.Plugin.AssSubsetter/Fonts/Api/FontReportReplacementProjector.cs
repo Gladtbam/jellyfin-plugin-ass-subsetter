@@ -21,22 +21,28 @@ internal static class FontReportReplacementProjector
                 continue;
             }
 
-            FontReportFileDto[] summaries = group.Members.GroupBy(member => member.FileId)
-                .Select(members =>
-                {
-                    FontFileRecord file = files[members.Key];
-                    HashSet<long> candidates = members
-                        .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-                        .Select(member => member.FaceId).ToHashSet();
-                    bool wholeFile = file.Faces.Count > 0 && file.Faces.All(face => candidates.Contains(face.Id));
-                    return new FontReportFileDto(
-                        file.Id,
-                        file.Path,
-                        file.Faces.Count,
-                        wholeFile ? DuplicateGroupMemberDecision.QuarantineCandidate : DuplicateGroupMemberDecision.Retained,
-                        members.Select(member => member.Reason).Where(reason => !string.IsNullOrWhiteSpace(reason)).Distinct().ToArray());
-                })
-                .OrderBy(file => file.Decision).ThenBy(file => file.FileId).ToArray();
+            FontReportFileDto[] summaries =
+            [
+                .. group.Members.GroupBy(member => member.FileId)
+                    .Select(members =>
+                    {
+                        FontFileRecord file = files[members.Key];
+                        HashSet<long> candidates =
+                        [
+                            .. members
+                                .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
+                                .Select(member => member.FaceId)
+                        ];
+                        bool wholeFile = file.Faces.Count > 0 && file.Faces.All(face => candidates.Contains(face.Id));
+                        return new FontReportFileDto(
+                            file.Id,
+                            file.Path,
+                            file.Faces.Count,
+                            wholeFile ? DuplicateGroupMemberDecision.QuarantineCandidate : DuplicateGroupMemberDecision.Retained,
+                            [.. members.Select(member => member.Reason).Where(reason => !string.IsNullOrWhiteSpace(reason)).Distinct()]);
+                    })
+                    .OrderBy(file => file.Decision).ThenBy(file => file.FileId)
+            ];
             if (summaries.Any(file => file.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
                 && summaries.Any(file => file.Decision == DuplicateGroupMemberDecision.Retained))
             {
@@ -66,20 +72,23 @@ internal static class FontReportReplacementProjector
         var rows = new List<FontReportItemDto>(plans.Count);
         foreach (var plan in plans.Values)
         {
-            FontRelationshipKind[] kinds = relationsByGroup[plan.Group.Id]
-                .Select(relation => relation.RelationshipKind).Distinct().Order().ToArray();
-            FontFileRecord[] related = plan.Files.Select(file => files[file.FileId]).ToArray();
+            FontRelationshipKind[] kinds =
+            [
+                .. relationsByGroup[plan.Group.Id]
+                    .Select(relation => relation.RelationshipKind).Distinct().Order()
+            ];
+            FontFileRecord[] related = [.. plan.Files.Select(file => files[file.FileId])];
             rows.Add(new FontReportItemDto(
                 batch.Id,
                 null,
                 kinds.Length > 0 ? kinds[0] : null,
                 false,
                 FontReportAction.QuarantineCandidate,
-                plan.Files.Select(file => file.FileId).ToArray(),
-                related.SelectMany(file => file.Faces).Select(face => face.Id).Order().ToArray(),
-                plan.Files.Select(file => file.Path).ToArray(),
-                related.Select(file => Path.GetDirectoryName(file.Path) ?? string.Empty).Distinct(FontPathComparison.Comparer).ToArray(),
-                related.SelectMany(file => file.Faces).Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct().ToArray(),
+                [.. plan.Files.Select(file => file.FileId)],
+                [.. related.SelectMany(file => file.Faces).Select(face => face.Id).Order()],
+                [.. plan.Files.Select(file => file.Path)],
+                [.. related.Select(file => Path.GetDirectoryName(file.Path) ?? string.Empty).Distinct(FontPathComparison.Comparer)],
+                [.. related.SelectMany(file => file.Faces).Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct()],
                 null,
                 null,
                 [],

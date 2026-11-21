@@ -14,6 +14,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Analysis;
 
 public sealed class PhysicalFontAnalysisEvidenceSourceTests
 {
+    private static readonly string[] _nativeLoaderNames = ["skia", "harfbuzz", "freetype", "libass"];
+
     [Fact]
     public async Task LoadFiles_ShouldRejectIncompleteNativeVerificationFromTheRealVerifier()
     {
@@ -30,9 +32,11 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
 
             FontFaceEvidence face = Assert.Single(deep.Faces);
             Assert.NotEmpty(face.CharacterFingerprints);
-            KeyValuePair<string, FontVerificationStatus>[] blocked = deep.Files[0].Faces[0].Quality.Verification
-                .Where(pair => pair.Key is "skia" or "harfbuzz" or "freetype" or "libass" && pair.Value != FontVerificationStatus.Passed)
-                .ToArray();
+            KeyValuePair<string, FontVerificationStatus>[] blocked =
+            [
+                .. deep.Files[0].Faces[0].Quality.Verification
+                    .Where(pair => pair.Key is "skia" or "harfbuzz" or "freetype" or "libass" && pair.Value != FontVerificationStatus.Passed)
+            ];
             Assert.NotEmpty(blocked); // The generated fixture has no renderable outlines for libass.
             Assert.False(face.IsClassifiable);
             Assert.False(face.IsDeepEvidenceComplete);
@@ -415,8 +419,7 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
 
             Assert.Equal(checksumCredit, signals.Contains(FontQualitySignal.ValidChecksums));
             Assert.Equal(embeddingCredit, signals.Contains(FontQualitySignal.EmbeddingRights));
-            bool allNativeLoadersPassed = new[] { "skia", "harfbuzz", "freetype", "libass" }
-                .All(name => deep.Files[0].Faces[0].Quality.Verification[name] == FontVerificationStatus.Passed);
+            bool allNativeLoadersPassed = _nativeLoaderNames.All(name => deep.Files[0].Faces[0].Quality.Verification[name] == FontVerificationStatus.Passed);
             Assert.Equal(allNativeLoadersPassed, signals.Contains(FontQualitySignal.StableNativeLoaders));
             Assert.DoesNotContain(FontQualitySignal.LayoutComplete, signals);
             Assert.DoesNotContain(FontQualitySignal.ColorGlyphsComplete, signals);
@@ -542,7 +545,7 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
             await repository.WriteInventoryAsync(generation, [left with { GenerationId = generation }, right with { GenerationId = generation }], TestContext.Current.CancellationToken);
             await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, TestContext.Current.CancellationToken);
             var source = SourceWithPassingExternalNativeChecks(repository);
-            FontDeepAnalysisEvidence deep = await source.LoadFilesAsync(generation, repository.PublishedFiles.Select(file => file.Id).ToArray(), TestContext.Current.CancellationToken);
+            FontDeepAnalysisEvidence deep = await source.LoadFilesAsync(generation, [.. repository.PublishedFiles.Select(file => file.Id)], TestContext.Current.CancellationToken);
             FontFaceEvidence replacement = deep.Faces.Single(face => face.FileId == repository.PublishedFiles.Single(file => file.Path == left.Path).Id);
             FontFaceEvidence removed = deep.Faces.Single(face => face.FileId == repository.PublishedFiles.Single(file => file.Path == right.Path).Id);
 
@@ -602,7 +605,7 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
     {
         var repository = new Mock<IFontRepository>();
         repository.Setup(value => value.LoadInventoryAsync(1, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { file with { GenerationId = 1 } });
+            .ReturnsAsync([file with { GenerationId = 1 }]);
         repository.Setup(value => value.LoadReusableDeepEvidenceAsync(It.IsAny<FontFileRecord>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(payload);
         return repository;

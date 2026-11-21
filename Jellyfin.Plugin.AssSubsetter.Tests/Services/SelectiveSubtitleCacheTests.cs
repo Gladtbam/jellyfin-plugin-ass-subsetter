@@ -26,7 +26,8 @@ public sealed class SelectiveSubtitleCacheTests
             string source = Path.Combine(root, "locked.ass");
             await File.WriteAllTextAsync(source, "locked", TestContext.Current.CancellationToken);
             using var exclusive = new FileStream(source, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-            using var manager = FontCacheManagerFixture.CreateManager();
+            using var managerFixture = new FontCacheManagerFixture();
+            var manager = managerFixture.Manager;
             var config = new PluginConfiguration { SubtitleMode = mode, FallbackToOriginalOnError = fallback };
             var processor = new AssProcessor(() => config, manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
             using var service = new SubtitleCacheService(() => config, processor, null, null, Path.Combine(root, "cache"), NullLogger<SubtitleCacheService>.Instance, manager);
@@ -56,7 +57,8 @@ public sealed class SelectiveSubtitleCacheTests
             IReadOnlyList<RuntimeFontFace> faces = [];
             var repository = new Mock<IFontRepository>();
             repository.Setup(r => r.LoadPublishedRuntimeFacesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => faces);
-            using var manager = FontCacheManagerFixture.CreateManager(repository.Object);
+            using var managerFixture = new FontCacheManagerFixture(repository.Object);
+            var manager = managerFixture.Manager;
             var config = new PluginConfiguration { SubtitleMode = mode };
             var processor = new AssProcessor(() => config, manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
             using var service = new SubtitleCacheService(() => config, processor, null, null, Path.Combine(root, "cache"), NullLogger<SubtitleCacheService>.Instance, manager);
@@ -115,15 +117,16 @@ public sealed class SelectiveSubtitleCacheTests
         try
         {
             string source = Path.Combine(root, "source.ass");
-            const string document = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Bold, Italic\nStyle: Default,Example,20,0,0\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,A";
-            await File.WriteAllTextAsync(source, document, TestContext.Current.CancellationToken);
+            const string Document = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Bold, Italic\nStyle: Default,Example,20,0,0\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,A";
+            await File.WriteAllTextAsync(source, Document, TestContext.Current.CancellationToken);
             string fontPath = Path.Combine(root, "font.ttf");
             byte[] bytes = [1, 2, 3];
             await File.WriteAllBytesAsync(fontPath, bytes, TestContext.Current.CancellationToken);
             IReadOnlyList<RuntimeFontFace> faces = [];
             var repository = new Mock<IFontRepository>();
             repository.Setup(r => r.LoadPublishedRuntimeFacesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => faces);
-            using var manager = FontCacheManagerFixture.CreateManager(repository.Object);
+            using var managerFixture = new FontCacheManagerFixture(repository.Object);
+            var manager = managerFixture.Manager;
             var config = new PluginConfiguration { SubtitleMode = mode };
             var processor = new Mock<AssProcessor>((Func<PluginConfiguration>)(() => config), manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance) { CallBase = true };
             int generated = 0;
@@ -139,7 +142,7 @@ public sealed class SelectiveSubtitleCacheTests
                         manager.ValidateFontDependency(request.Key, request.Value, lease, consumed);
                     }
 
-                    return new Jellyfin.Plugin.AssSubsetter.Models.SubsetArtifact(document, []);
+                    return new Jellyfin.Plugin.AssSubsetter.Models.SubsetArtifact(Document, []);
                 });
             var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", async (info, token) =>
             {
@@ -206,7 +209,8 @@ public sealed class SelectiveSubtitleCacheTests
         {
             string source = Path.Combine(root, "source.ass");
             await File.WriteAllTextAsync(source, "[V4+ Styles]\nFormat: Name, Fontname, Fontsize, Bold, Italic\nStyle: Default,Example,20,0,0\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,A", TestContext.Current.CancellationToken);
-            using var manager = FontCacheManagerFixture.CreateManager();
+            using var managerFixture = new FontCacheManagerFixture();
+            var manager = managerFixture.Manager;
             var config = new PluginConfiguration { SubtitleMode = mode };
             using var service = new SubtitleCacheService(() => config, null!, null, null, Path.Combine(root, "cache"), NullLogger<SubtitleCacheService>.Instance, manager);
             Guid item = Guid.NewGuid();
@@ -234,7 +238,8 @@ public sealed class SelectiveSubtitleCacheTests
             IReadOnlyList<RuntimeFontFace> faces = [];
             var repository = new Mock<IFontRepository>();
             repository.Setup(r => r.LoadPublishedRuntimeFacesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => faces);
-            using var manager = FontCacheManagerFixture.CreateManager(repository.Object);
+            using var managerFixture = new FontCacheManagerFixture(repository.Object);
+            var manager = managerFixture.Manager;
             async Task<string> Identity()
             {
                 await manager.LoadPublishedSnapshotAsync(null, TestContext.Current.CancellationToken);
@@ -278,7 +283,8 @@ public sealed class SelectiveSubtitleCacheTests
             IReadOnlyList<RuntimeFontFace> faces = [];
             var repository = new Mock<IFontRepository>();
             repository.Setup(r => r.LoadPublishedRuntimeFacesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => faces);
-            using var manager = FontCacheManagerFixture.CreateManager(repository.Object);
+            using var managerFixture = new FontCacheManagerFixture(repository.Object);
+            var manager = managerFixture.Manager;
             var processor = new AssProcessor(() => config, manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
             var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", async (info, token) =>
             {

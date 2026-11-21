@@ -24,7 +24,8 @@ public sealed class FontCacheManagerTests
         var oldFile = Assert.Single(await fixture.Repository.LoadInventoryAsync(oldGeneration, CancellationToken.None));
         var oldPrepared = new FontRenameCandidatePreparation(fixture.State with { GenerationId = oldGeneration, AnalysisBatchId = 0 }, [new FontRenameCandidate { File = oldFile, SourceRoot = root, NewPath = Path.Combine(root, "OldFont.ttf") }]);
         var oldAnalysis = await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = oldGeneration, Status = AnalysisBatchStatus.Complete, EvidenceVersion = 1, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None, oldPrepared);
-        using var manager = FontCacheManagerFixture.CreateManager(fixture.Repository);
+        using var managerFixture = new FontCacheManagerFixture(fixture.Repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, CancellationToken.None);
         Assert.Equal(oldFile.Path, (await FontCacheManagerFixture.LookupAsync(manager, new FontDescriptor("OldFont", null, false, false)))?.Path);
         long next = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
@@ -46,7 +47,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/old.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         repository.RuntimeSnapshotReadDelay = token =>
@@ -68,7 +70,7 @@ public sealed class FontCacheManagerTests
         await manager.PublishAnalyzedGenerationAsync(analysis, TestContext.Current.CancellationToken);
         Assert.Empty(repository.PublishedFiles);
         await using FontFileLease? lease = await manager.AcquireFontAsync(
-            new FontDescriptor("FakeFont", null, false, false), Array.Empty<uint>(), TestContext.Current.CancellationToken);
+            new FontDescriptor("FakeFont", null, false, false), [], TestContext.Current.CancellationToken);
         Assert.Null(lease);
     }
 
@@ -77,7 +79,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/old.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         long staged = (await manager.StageInventoryAsync(cancellationToken: TestContext.Current.CancellationToken)).GenerationId;
 
@@ -93,7 +96,8 @@ public sealed class FontCacheManagerTests
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/old.ttf"));
         var coordinator = new FontMaintenanceCoordinator();
-        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         coordinator.SetRenamePathAvailable("/fonts/old.ttf", false);
         coordinator.SetPathAvailable("/fonts/quarantined.ttf", false);
@@ -118,7 +122,8 @@ public sealed class FontCacheManagerTests
         await repository.WriteInventoryAsync(generation, [RuntimeFile("FakeFont", "/fonts/new.ttf") with { GenerationId = generation }], TestContext.Current.CancellationToken);
         AnalysisBatch analysis = new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{}" };
         var coordinator = new FontMaintenanceCoordinator();
-        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Task startup = manager.LoadPublishedSnapshotAsync(async token =>
@@ -143,7 +148,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/previous.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         long generationId = (await manager.StageInventoryAsync(cancellationToken: TestContext.Current.CancellationToken)).GenerationId;
         AnalysisBatch analysis = new AnalysisBatch { GenerationId = generationId, Status = AnalysisBatchStatus.Complete, SummaryJson = "{}" };
@@ -191,7 +197,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/previous.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         long generationId = (await manager.StageInventoryAsync(cancellationToken: TestContext.Current.CancellationToken)).GenerationId;
         AnalysisBatch analysis = new AnalysisBatch { GenerationId = generationId, Status = AnalysisBatchStatus.Complete, SummaryJson = "{}" };
@@ -227,7 +234,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/previous.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         repository.InitializationDelay = _ => Task.FromException(new IOException("Controlled scan initialization failure."));
 
@@ -245,10 +253,11 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/published.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         var descriptor = new FontDescriptor("FakeFont", null, false, false);
 
-        await using FontFileLease? lease = await manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+        await using FontFileLease? lease = await manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
         Assert.Null(lease);
         Assert.Equal(0, repository.InitializeCallCount);
         Assert.Equal(0, repository.RuntimeSnapshotLoadCallCount);
@@ -260,7 +269,8 @@ public sealed class FontCacheManagerTests
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/published.ttf"));
         var coordinator = new FontMaintenanceCoordinator();
-        using FontCacheManager manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
@@ -299,7 +309,8 @@ public sealed class FontCacheManagerTests
             }
         };
         var coordinator = new FontMaintenanceCoordinator();
-        using FontCacheManager manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
@@ -315,7 +326,7 @@ public sealed class FontCacheManagerTests
             Volatile.Write(ref hostStarted, true);
             await initializing.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
             var descriptor = new FontDescriptor("FakeFont", null, false, false);
-            Task<FontFileLease?> lookup = manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+            Task<FontFileLease?> lookup = manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
 
             Assert.True(lookup.IsCompletedSuccessfully);
             Assert.Null(await lookup);
@@ -344,7 +355,8 @@ public sealed class FontCacheManagerTests
         });
         var repository = new InMemoryFontRepository();
         var coordinator = new FontMaintenanceCoordinator();
-        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
@@ -366,7 +378,8 @@ public sealed class FontCacheManagerTests
         var normalizer = new Mock<IFontFilenameNormalizationExecutor>();
         normalizer.Setup(item => item.ReconcileAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new IOException("Maintenance journal unavailable."));
         var coordinator = new FontMaintenanceCoordinator();
-        using var manager = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = FontCacheManagerFixture.CreateStartupService(manager, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),
@@ -385,13 +398,14 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/first.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
         await PublishAsync(repository, RuntimeFile("FakeFont", "/fonts/second.ttf"));
 
         await using FontFileLease? lease = await manager.AcquireFontAsync(
             new FontDescriptor("FakeFont", null, false, false),
-            Array.Empty<uint>(),
+            [],
             TestContext.Current.CancellationToken);
 
         Assert.NotNull(lease);
@@ -408,9 +422,10 @@ public sealed class FontCacheManagerTests
         FontFileRecord complete = RuntimeFile("Example", "/fonts/complete.ttf");
         await PublishAsync(
             repository,
-            partial with { Faces = partial.Faces.Select(face => face with { UnicodeCoverage = [new UnicodeRange('A', 'A')], RetentionScore = 90 }).ToArray() },
-            complete with { Faces = complete.Faces.Select(face => face with { UnicodeCoverage = [new UnicodeRange('A', 'B')], RetentionScore = 10 }).ToArray() });
-        using FontCacheManager manager = CreateManager(repository);
+            partial with { Faces = [.. partial.Faces.Select(face => face with { UnicodeCoverage = [new UnicodeRange('A', 'A')], RetentionScore = 90 })] },
+            complete with { Faces = [.. complete.Faces.Select(face => face with { UnicodeCoverage = [new UnicodeRange('A', 'B')], RetentionScore = 10 })] });
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
 
         await using FontFileLease? lease = await manager.AcquireFontAsync(
@@ -428,7 +443,8 @@ public sealed class FontCacheManagerTests
     {
         var repository = new InMemoryFontRepository();
         await PublishAsync(repository, RuntimeFile("Comic Sans MS", "/fonts/comic.ttf"));
-        using FontCacheManager manager = CreateManager(repository);
+        using var managerFixture = new FontCacheManagerFixture(repository);
+        var manager = managerFixture.Manager;
         await manager.LoadPublishedSnapshotAsync(restoreFencesAsync: null, TestContext.Current.CancellationToken);
 
         (string Path, int FaceIndex)? result = await FontCacheManagerFixture.LookupAsync(manager, new FontDescriptor("Comic Sans", null, false, false));
@@ -442,7 +458,7 @@ public sealed class FontCacheManagerTests
         int initialized = repository.InitializeCallCount;
         int loaded = repository.RuntimeSnapshotLoadCallCount;
         var descriptor = new FontDescriptor("FakeFont", null, false, false);
-        Task<FontFileLease?> lookup = manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+        Task<FontFileLease?> lookup = manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
         Assert.True(lookup.IsCompletedSuccessfully);
         await using FontFileLease? lease = await lookup;
         Assert.NotNull(lease);
@@ -451,13 +467,10 @@ public sealed class FontCacheManagerTests
         Assert.Equal(loaded, repository.RuntimeSnapshotLoadCallCount);
     }
 
-    private static FontCacheManager CreateManager(IFontRepository repository)
-        => FontCacheManagerFixture.CreateManager(repository);
-
     private static async Task PublishAsync(InMemoryFontRepository repository, params FontFileRecord[] files)
     {
         long generationId = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], TestContext.Current.CancellationToken);
-        await repository.WriteInventoryAsync(generationId, files.Select(file => file with { GenerationId = generationId }).ToArray(), TestContext.Current.CancellationToken);
+        await repository.WriteInventoryAsync(generationId, [.. files.Select(file => file with { GenerationId = generationId })], TestContext.Current.CancellationToken);
         await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generationId, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, TestContext.Current.CancellationToken);
     }
 

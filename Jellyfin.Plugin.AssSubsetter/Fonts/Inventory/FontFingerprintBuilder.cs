@@ -11,7 +11,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 /// </summary>
 public static class FontFingerprintBuilder
 {
-    private static readonly uint HeadTag = OpenTypeTag.FromString("head");
+    private static readonly uint _headTag = OpenTypeTag.FromString("head");
 
     /// <summary>Builds strict and semantic digests for one validated Face.</summary>
     /// <param name="face">The validated Face table directory.</param>
@@ -19,7 +19,7 @@ public static class FontFingerprintBuilder
     public static FontFaceFingerprints BuildFace(OpenTypeFace face)
     {
         ArgumentNullException.ThrowIfNull(face);
-        OpenTypeTable[] orderedTables = face.Tables.Values.OrderBy(table => table.Tag).ToArray();
+        OpenTypeTable[] orderedTables = [.. face.Tables.Values.OrderBy(table => table.Tag)];
         ReadOnlyMemory<byte> strict = HashTables(orderedTables);
         var semantic = new Dictionary<FontSemanticGroup, ReadOnlyMemory<byte>>();
         IReadOnlyList<KeyValuePair<FontSemanticGroup, OpenTypeTable>> semanticTables = FontSemanticCanonicalizer.Build(face, out bool complete);
@@ -37,7 +37,7 @@ public static class FontFingerprintBuilder
         Span<byte> header = stackalloc byte[8];
         foreach (OpenTypeTable table in tables)
         {
-            BinaryPrimitives.WriteUInt32BigEndian(header.Slice(0, 4), table.Tag);
+            BinaryPrimitives.WriteUInt32BigEndian(header[..4], table.Tag);
             BinaryPrimitives.WriteUInt32BigEndian(header.Slice(4, 4), checked((uint)table.Length));
             hash.AppendData(header);
             AppendCanonicalTable(hash, table);
@@ -49,17 +49,17 @@ public static class FontFingerprintBuilder
     private static void AppendCanonicalTable(IncrementalHash hash, OpenTypeTable table)
     {
         ReadOnlySpan<byte> data = table.Data.Span;
-        if (table.Tag != HeadTag || data.Length < 12)
+        if (table.Tag != _headTag || data.Length < 12)
         {
             hash.AppendData(data);
             return;
         }
 
-        hash.AppendData(data.Slice(0, 8));
+        hash.AppendData(data[..8]);
         Span<byte> zeroAdjustment = stackalloc byte[4];
         zeroAdjustment.Clear();
         hash.AppendData(zeroAdjustment);
-        hash.AppendData(data.Slice(12));
+        hash.AppendData(data[12..]);
     }
 
     internal static FontSemanticGroup Classify(uint tag)

@@ -18,15 +18,17 @@ public static class FontInventoryInputComparer
     /// <returns>Canonical fingerprints.</returns>
     public static FontAnalysisInputSnapshot Capture(IReadOnlyList<FontFileRecord> files, FontDirectoryPolicyResolver policy, string evidenceKey)
     {
+        ArgumentNullException.ThrowIfNull(policy);
+
         var stable = files.OrderBy(file => file.NormalizedPath, StringComparer.Ordinal).Select(file => file with
         {
             Id = 0,
             GenerationId = 0,
             Error = null,
-            PathAliases = file.PathAliases.OrderBy(path => path, FontPathComparison.Comparer).ToArray(),
-            Faces = file.Faces.OrderBy(face => face.FaceIndex).Select(face => face with { Id = 0, RetentionScore = 0, IsRuntimePreferred = false }).ToArray()
+            PathAliases = [.. file.PathAliases.OrderBy(path => path, FontPathComparison.Comparer)],
+            Faces = [.. file.Faces.OrderBy(face => face.FaceIndex).Select(face => face with { Id = 0, RetentionScore = 0, IsRuntimePreferred = false })]
         });
-        return new(Hash(JsonSerializer.Serialize(stable)), Hash(JsonSerializer.Serialize(policy.GetConfiguredRoots())), Hash(evidenceKey));
+        return new(Hash(JsonSerializer.Serialize(stable)), Hash(JsonSerializer.Serialize(policy.ConfiguredRoots)), Hash(evidenceKey));
     }
 
     /// <summary>Explains the changed inputs.</summary>
@@ -35,6 +37,8 @@ public static class FontInventoryInputComparer
     /// <returns>Stable reason codes.</returns>
     public static IReadOnlyList<string> GetChangeReasons(FontAnalysisInputSnapshot? previous, FontAnalysisInputSnapshot current)
     {
+        ArgumentNullException.ThrowIfNull(current);
+
         if (previous is null)
         {
             return ["initial-scan"];

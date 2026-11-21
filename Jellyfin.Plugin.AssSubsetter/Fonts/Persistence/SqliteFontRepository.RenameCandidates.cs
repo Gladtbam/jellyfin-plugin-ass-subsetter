@@ -413,7 +413,7 @@ public sealed partial class SqliteFontRepository
             return new(context, items);
         }
 
-        IEnumerable<long[]?> chunks = fileIds is null ? new long[]?[] { null } : fileIds.Distinct().Chunk(200).Select(chunk => (long[]?)chunk);
+        IEnumerable<long[]?> chunks = fileIds is null ? [null] : fileIds.Distinct().Chunk(200).Select(chunk => (long[]?)chunk);
         foreach (var chunk in chunks)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -423,7 +423,7 @@ public sealed partial class SqliteFontRepository
             command.CommandText = "SELECT item_json FROM rename_candidate";
             if (chunk is not null)
             {
-                string[] names = chunk.Select((_, index) => "$id" + index.ToString(CultureInfo.InvariantCulture)).ToArray();
+                string[] names = [.. chunk.Select((_, index) => "$id" + index.ToString(CultureInfo.InvariantCulture))];
                 command.CommandText += " WHERE file_id IN (" + string.Join(",", names) + ")";
                 for (int index = 0; index < chunk.Length; index++)
                 {
@@ -440,7 +440,7 @@ public sealed partial class SqliteFontRepository
             }
         }
 
-        return new(context, items.OrderBy(item => item.File.Id).ToArray());
+        return new(context, [.. items.OrderBy(item => item.File.Id)]);
     }
 
     /// <inheritdoc/>
@@ -568,7 +568,7 @@ public sealed partial class SqliteFontRepository
         command.Parameters.AddWithValue("$analysis", state.AnalysisBatchId);
         command.Parameters.AddWithValue("$rules", state.RuleFingerprint);
         command.Parameters.AddWithValue("$status", (int)state.Status);
-        command.Parameters.AddWithValue("$request", (object?)state.OperationRequestId ?? DBNull.Value);
+        command.Parameters.AddWithValue("$request", state.OperationRequestId is long requestId ? requestId : DBNull.Value);
         command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(state));
         await command.ExecuteNonQueryAsync(token).ConfigureAwait(false);
     }
@@ -621,6 +621,5 @@ public sealed partial class SqliteFontRepository
         }
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1849:Call async methods when in an async method", Justification = "Microsoft.Data.Sqlite has no asynchronous deferred transaction overload; deferred reads retain WAL concurrency.")]
     private static SqliteTransaction BeginRenameReadTransaction(SqliteConnection connection) => connection.BeginTransaction(deferred: true);
 }

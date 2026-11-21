@@ -5,6 +5,21 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Configuration;
 
 public class ConfigPageTests
 {
+    private static readonly string[] _relationshipExplanationFields =
+    [
+        "differingCodePoints",
+        "differenceTypes",
+        "leftCanReplaceRight",
+        "rightCanReplaceLeft",
+        "collectionFaceImpact",
+        "retentionScore",
+        "scoreComponents",
+        "retainedRationale",
+        "renderReportEvidence",
+        "relationshipLabels",
+        "actionLabels",
+    ];
+
     [Fact]
     public void EmbeddedConfigPage_ShouldReferenceRegisteredExternalScript()
     {
@@ -254,7 +269,7 @@ public class ConfigPageTests
     {
         string html = GetConfigPageAssets();
 
-        Assert.All(new[] { "differingCodePoints", "differenceTypes", "leftCanReplaceRight", "rightCanReplaceLeft", "collectionFaceImpact", "retentionScore", "scoreComponents", "retainedRationale", "renderReportEvidence", "relationshipLabels", "actionLabels" },
+        Assert.All(_relationshipExplanationFields,
             value => Assert.Contains(value, html, StringComparison.Ordinal));
         Assert.Contains("className = 'fontPathGrid'", html, StringComparison.Ordinal);
         Assert.Contains("className = 'fontScoreGrid'", html, StringComparison.Ordinal);

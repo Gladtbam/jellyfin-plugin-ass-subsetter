@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 public sealed class FontManagementQuery
 {
     private const int MaximumPageSize = 200;
-    private static readonly string[] Technologies = ["TrueType", "OpenType", "OpenType CFF", "OpenType CFF2"];
+    private static readonly string[] _technologies = ["TrueType", "OpenType", "OpenType CFF", "OpenType CFF2"];
     private readonly IFontManagementReader _repository;
     private readonly Func<FontDirectoryPolicyResolver>? _policy;
 
@@ -61,7 +61,7 @@ public sealed class FontManagementQuery
             eligibleQuarantineCount,
             currentAnalysis?.ReclaimableBytes ?? 0,
             ToDto(health),
-            samples.Select(ToDto).ToArray())
+            [.. samples.Select(ToDto)])
         {
             LastScan = ReadScanResult(await _repository.GetLatestCompletedAnalysisOperationAsync(cancellationToken).ConfigureAwait(false))
         };
@@ -114,7 +114,7 @@ public sealed class FontManagementQuery
         groups = sort == "reclaimableBytes"
             ? groups.OrderByDescending(group => group.ReclaimableBytes).ThenBy(group => group.Id)
             : groups.OrderBy(group => group.Id);
-        FontGroupDto[] mapped = groups.Select(group => ToDto(batch.Id, group)).ToArray();
+        FontGroupDto[] mapped = [.. groups.Select(group => ToDto(batch.Id, group))];
         return Page(mapped, page, pageSize);
     }
 
@@ -175,22 +175,24 @@ public sealed class FontManagementQuery
                 relation.RelationshipKind,
                 relation.RelationshipKind == FontRelationshipKind.Unclassifiable,
                 GetAction(relation.RelationshipKind, membersByFace[relation.LeftFaceId].Concat(membersByFace[relation.RightFaceId])),
-                evidence.Select(item => item.File.Id).Distinct().Order().ToArray(),
-                evidence.Select(item => item.Face.Id).Distinct().Order().ToArray(),
-                evidence.Select(item => item.File.Path).Distinct(FontPathComparison.Comparer).Order(FontPathComparison.Comparer).ToArray(),
-                evidence.Select(item => Path.GetDirectoryName(item.File.Path) ?? string.Empty).Distinct(FontPathComparison.Comparer).Order(FontPathComparison.Comparer).ToArray(),
-                evidence.Select(item => item.Face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+                [.. evidence.Select(item => item.File.Id).Distinct().Order()],
+                [.. evidence.Select(item => item.Face.Id).Distinct().Order()],
+                [.. evidence.Select(item => item.File.Path).Distinct(FontPathComparison.Comparer).Order(FontPathComparison.Comparer)],
+                [.. evidence.Select(item => Path.GetDirectoryName(item.File.Path) ?? string.Empty).Distinct(FontPathComparison.Comparer).Order(FontPathComparison.Comparer)],
+                [.. evidence.Select(item => item.Face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
                 null,
                 ToPairEvidence(relation, faces),
-                evidence.Select(item => item.Face.Id)
-                    .Where(scoresByFace.ContainsKey)
-                    .Select(faceId => ToReportScore(scoresByFace[faceId]))
-                    .ToArray(),
-                membersByFace[relation.LeftFaceId].Concat(membersByFace[relation.RightFaceId])
-                    .Select(member => member.Reason)
-                    .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                    .Distinct(StringComparer.Ordinal)
-                    .ToArray()));
+                [
+                    .. evidence.Select(item => item.Face.Id)
+                        .Where(scoresByFace.ContainsKey)
+                        .Select(faceId => ToReportScore(scoresByFace[faceId]))
+                ],
+                [
+                    .. membersByFace[relation.LeftFaceId].Concat(membersByFace[relation.RightFaceId])
+                        .Select(member => member.Reason)
+                        .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                        .Distinct(StringComparer.Ordinal)
+                ]));
         }
 
         rows.AddRange(files.Where(file => file.Health == FontFileHealth.Unclassifiable).Select(file => new FontReportItemDto(
@@ -200,16 +202,17 @@ public sealed class FontManagementQuery
             true,
             FontReportAction.Retain,
             [file.Id],
-            file.Faces.Select(face => face.Id).Order().ToArray(),
+            [.. file.Faces.Select(face => face.Id).Order()],
             [file.Path],
             [Path.GetDirectoryName(file.Path) ?? string.Empty],
-            file.Faces.Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray(),
+            [.. file.Faces.Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
             file.Error,
             null,
-            file.Faces.Select(face => face.Id)
-                .Where(scoresByFace.ContainsKey)
-                .Select(faceId => ToReportScore(scoresByFace[faceId]))
-                .ToArray(),
+            [
+                .. file.Faces.Select(face => face.Id)
+                    .Where(scoresByFace.ContainsKey)
+                    .Select(faceId => ToReportScore(scoresByFace[faceId]))
+            ],
             [])));
 
         IEnumerable<FontReportItemDto> filtered = rows;
@@ -239,13 +242,15 @@ public sealed class FontManagementQuery
             filtered = filtered.Where(item => item.Action == action.Value);
         }
 
-        FontReportItemDto[] ordered = filtered
-            .OrderBy(item => item.IsUnclassifiable)
-            .ThenBy(item => item.Replacement is null)
-            .ThenByDescending(item => item.Replacement?.ReclaimableBytes ?? 0)
-            .ThenBy(item => item.Replacement?.GroupId ?? item.RelationId ?? long.MaxValue)
-            .ThenBy(item => item.FileIds.Count == 0 ? 0 : item.FileIds[0])
-            .ToArray();
+        FontReportItemDto[] ordered =
+        [
+            .. filtered
+                .OrderBy(item => item.IsUnclassifiable)
+                .ThenBy(item => item.Replacement is null)
+                .ThenByDescending(item => item.Replacement?.ReclaimableBytes ?? 0)
+                .ThenBy(item => item.Replacement?.GroupId ?? item.RelationId ?? long.MaxValue)
+                .ThenBy(item => item.FileIds.Count == 0 ? 0 : item.FileIds[0])
+        ];
         return Page(ordered, page, pageSize);
     }
 
@@ -267,26 +272,34 @@ public sealed class FontManagementQuery
         Dictionary<long, (FontFileRecord File, FontFaceRecord Face)> faceFiles = files
             .SelectMany(file => file.Faces.Select(face => (face.Id, Value: (File: file, Face: face))))
             .ToDictionary(pair => pair.Id, pair => pair.Value);
-        HashSet<long> faces = group.Members.Select(member => member.FaceId).ToHashSet();
-        PairEvidenceDto[] pairs = batch.Relations
-            .Where(relation => faces.Contains(relation.LeftFaceId) && faces.Contains(relation.RightFaceId))
-            .Select(relation => ToPairEvidence(relation, faceFiles))
-            .ToArray();
-        string[] constraints = pairs.SelectMany(pair => pair.EvidenceKeys)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        string[] skipReasons = group.Members
-            .Where(member => member.Decision != DuplicateGroupMemberDecision.QuarantineCandidate)
-            .Select(member => member.Reason)
-            .Where(reason => !string.IsNullOrWhiteSpace(reason))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        HashSet<long> faces = [.. group.Members.Select(member => member.FaceId)];
+        PairEvidenceDto[] pairs =
+        [
+            .. batch.Relations
+                .Where(relation => faces.Contains(relation.LeftFaceId) && faces.Contains(relation.RightFaceId))
+                .Select(relation => ToPairEvidence(relation, faceFiles))
+        ];
+        string[] constraints =
+        [
+            .. pairs.SelectMany(pair => pair.EvidenceKeys)
+                .Distinct(StringComparer.Ordinal)
+        ];
+        string[] skipReasons =
+        [
+            .. group.Members
+                .Where(member => member.Decision != DuplicateGroupMemberDecision.QuarantineCandidate)
+                .Select(member => member.Reason)
+                .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                .Distinct(StringComparer.Ordinal)
+        ];
         FontGroupDto groupDto = ToDto(batch.Id, group);
-        FontGroupMemberDto[] members = groupDto.Members
-            .Select(member => faceFiles.TryGetValue(member.FaceId, out var inventory)
-                ? member with { Face = ToFaceComparison(inventory.File, inventory.Face) }
-                : member)
-            .ToArray();
+        FontGroupMemberDto[] members =
+        [
+            .. groupDto.Members
+                .Select(member => faceFiles.TryGetValue(member.FaceId, out var inventory)
+                    ? member with { Face = ToFaceComparison(inventory.File, inventory.Face) }
+                    : member)
+        ];
         return new FontGroupDetailDto(groupDto with { Members = members }, pairs, constraints, skipReasons);
     }
 
@@ -301,7 +314,7 @@ public sealed class FontManagementQuery
         (int normalizedPage, int normalizedSize) = NormalizePage(page, pageSize);
         long offset = checked(((long)normalizedPage - 1) * normalizedSize);
         FontRepositoryPage<MaintenanceBatch> result = await _repository.LoadMaintenanceBatchPageAsync(offset, normalizedSize, kinds, cancellationToken).ConfigureAwait(false);
-        return new PagedResult<MaintenanceBatchDto>(result.Items.Select(ToDto).ToArray(), normalizedPage, normalizedSize, result.TotalCount);
+        return new PagedResult<MaintenanceBatchDto>([.. result.Items.Select(ToDto)], normalizedPage, normalizedSize, result.TotalCount);
     }
 
     /// <summary>Loads the latest active quarantine state for each source path across batches.</summary>
@@ -312,17 +325,17 @@ public sealed class FontManagementQuery
     /// <returns>The bounded quarantine item page.</returns>
     public async Task<PagedResult<QuarantineItemDto>> GetQuarantineItemsPageAsync(int page, int pageSize, string status, CancellationToken cancellationToken)
     {
-        IReadOnlySet<QuarantineItemStatus> statuses = status?.Trim().ToLowerInvariant() switch
+        HashSet<QuarantineItemStatus> statuses = status?.Trim().ToLowerInvariant() switch
         {
-            "pending" => new HashSet<QuarantineItemStatus> { QuarantineItemStatus.Pending, QuarantineItemStatus.Staged, QuarantineItemStatus.Promoted, QuarantineItemStatus.Cancelled },
-            "quarantined" => new HashSet<QuarantineItemStatus> { QuarantineItemStatus.Quarantined, QuarantineItemStatus.Restoring },
-            "failed" => new HashSet<QuarantineItemStatus> { QuarantineItemStatus.EvidenceDrift, QuarantineItemStatus.ReplacementMissing, QuarantineItemStatus.DestinationOccupied, QuarantineItemStatus.FailedVerification, QuarantineItemStatus.FailedIo },
+            "pending" => [QuarantineItemStatus.Pending, QuarantineItemStatus.Staged, QuarantineItemStatus.Promoted, QuarantineItemStatus.Cancelled],
+            "quarantined" => [QuarantineItemStatus.Quarantined, QuarantineItemStatus.Restoring],
+            "failed" => [QuarantineItemStatus.EvidenceDrift, QuarantineItemStatus.ReplacementMissing, QuarantineItemStatus.DestinationOccupied, QuarantineItemStatus.FailedVerification, QuarantineItemStatus.FailedIo],
             _ => throw new ArgumentException("The quarantine status must be pending, quarantined, or failed.", nameof(status))
         };
         (int normalizedPage, int normalizedSize) = NormalizePage(page, pageSize);
         long offset = checked(((long)normalizedPage - 1) * normalizedSize);
         FontRepositoryPage<QuarantineItemRecord> result = await _repository.LoadQuarantineItemPageAsync(offset, normalizedSize, statuses, cancellationToken).ConfigureAwait(false);
-        return new PagedResult<QuarantineItemDto>(result.Items.Select(ToDto).ToArray(), normalizedPage, normalizedSize, result.TotalCount);
+        return new PagedResult<QuarantineItemDto>([.. result.Items.Select(ToDto)], normalizedPage, normalizedSize, result.TotalCount);
     }
 
     /// <summary>Loads persisted quarantine items for one durable maintenance batch.</summary>
@@ -363,7 +376,7 @@ public sealed class FontManagementQuery
     public async Task<IReadOnlyList<PerformanceSampleDto>> GetPerformanceSamplesAsync(int maximumCount, CancellationToken cancellationToken)
     {
         IReadOnlyList<PerformanceSample> samples = await _repository.LoadRecentPerformanceSamplesAsync(Math.Clamp(maximumCount, 1, MaximumPageSize), cancellationToken).ConfigureAwait(false);
-        return samples.Select(ToDto).ToArray();
+        return [.. samples.Select(ToDto)];
     }
 
     /// <summary>Explains why a saved analysis can or cannot authorize current work.</summary>
@@ -372,6 +385,7 @@ public sealed class FontManagementQuery
     /// <returns>The report with explicit stale reasons.</returns>
     public async Task<AnalysisBatchDto> GetAnalysisStateAsync(AnalysisBatch batch, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(batch);
         var health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
         var latest = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
         var reasons = new List<string>();
@@ -427,14 +441,14 @@ public sealed class FontManagementQuery
 
     internal static PerformanceSampleDto ToDto(PerformanceSample sample) => new(sample.GenerationId, sample.Phase, sample.Duration, sample.ItemCount, sample.ReusedCount, sample.RecordedUtc);
 
-    private static FontGroupDto ToDto(long batchId, DuplicateGroupRecord group) => new(group.Id, batchId, group.RetainedFaceId, group.ReclaimableBytes, group.Members.Select(member => new FontGroupMemberDto(member.FileId, member.FaceId, member.Decision, member.RetentionScore, member.Reason, ReadScore(member.ScoreJson))).ToArray());
+    private static FontGroupDto ToDto(long batchId, DuplicateGroupRecord group) => new(group.Id, batchId, group.RetainedFaceId, group.ReclaimableBytes, [.. group.Members.Select(member => new FontGroupMemberDto(member.FileId, member.FaceId, member.Decision, member.RetentionScore, member.Reason, ReadScore(member.ScoreJson)))]);
 
     private static (int Page, int PageSize) NormalizePage(int page, int pageSize) => (Math.Max(page, 1), Math.Clamp(pageSize, 1, MaximumPageSize));
 
     private static PagedResult<T> Page<T>(IReadOnlyList<T> items, int page, int pageSize)
     {
         long offset = checked(((long)page - 1) * pageSize);
-        T[] selected = offset >= items.Count ? [] : items.Skip((int)offset).Take(pageSize).ToArray();
+        T[] selected = offset >= items.Count ? [] : [.. items.Skip((int)offset).Take(pageSize)];
         return new PagedResult<T>(selected, page, pageSize, items.Count);
     }
 
@@ -502,7 +516,7 @@ public sealed class FontManagementQuery
         }
 
         string trimmed = value.Trim();
-        return Technologies
+        return _technologies
             .FirstOrDefault(candidate => string.Equals(candidate, trimmed, StringComparison.OrdinalIgnoreCase))
             ?? throw new ArgumentException("The technology filter is not supported.", nameof(value));
     }
@@ -550,12 +564,14 @@ public sealed class FontManagementQuery
             faceFiles.TryGetValue(relation.RightFaceId, out var right);
             string[] sharedNames = left.Face is null || right.Face is null
                 ? []
-                : left.Face.Names.Intersect(right.Face.Names, StringComparer.OrdinalIgnoreCase)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Order(StringComparer.OrdinalIgnoreCase)
-                    .Take(12)
-                    .ToArray();
+                :
+                [
+                    .. left.Face.Names.Intersect(right.Face.Names, StringComparer.OrdinalIgnoreCase)
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Order(StringComparer.OrdinalIgnoreCase)
+                        .Take(12)
+                ];
             return new PairEvidenceDto(
                 relation.LeftFaceId,
                 relation.RightFaceId,
@@ -589,7 +605,7 @@ public sealed class FontManagementQuery
             string[] keys = ReadStringArray(root, "evidenceKeys");
             string[] differenceTypes = ReadStringArray(root, "differenceTypes");
             uint[] differing = root.TryGetProperty("differingCodePoints", out JsonElement points) && points.ValueKind == JsonValueKind.Array
-                ? points.EnumerateArray().Where(point => point.TryGetUInt32(out _)).Select(point => point.GetUInt32()).ToArray()
+                ? [.. points.EnumerateArray().Where(point => point.TryGetUInt32(out _)).Select(point => point.GetUInt32())]
                 : [];
             bool leftCanReplace = root.TryGetProperty("leftCanReplaceRight", out JsonElement leftValue) && leftValue.ValueKind == JsonValueKind.True;
             bool rightCanReplace = root.TryGetProperty("rightCanReplaceLeft", out JsonElement rightValue) && rightValue.ValueKind == JsonValueKind.True;
@@ -662,7 +678,7 @@ public sealed class FontManagementQuery
         }
     }
 
-    private static string[] ReadStringArray(JsonElement root, string name) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Array ? value.EnumerateArray().Where(element => element.ValueKind == JsonValueKind.String).Select(element => element.GetString()!).ToArray() : [];
+    private static string[] ReadStringArray(JsonElement root, string name) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Array ? [.. value.EnumerateArray().Where(element => element.ValueKind == JsonValueKind.String).Select(element => element.GetString()!)] : [];
 
     private static int ReadInt(JsonElement root, string name) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int result) ? result : 0;
 }

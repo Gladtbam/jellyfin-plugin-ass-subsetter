@@ -71,6 +71,7 @@ public sealed class FontOperationRequestStore
     /// <returns>The new request or the identical existing request.</returns>
     public async Task<OperationRequest> CreateRenameExecutionAsync(FontRenameExecutionPayload payload, string idempotencyKey, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
         var request = new OperationRequest
         {

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
@@ -6,6 +7,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Measures exact retention search for directly equivalent two-Face collections.</summary>
 [MemoryDiagnoser]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class RetentionSearchBenchmarks
 {
     private readonly FontRetentionSelector _selector = new();
@@ -21,20 +23,23 @@ public class RetentionSearchBenchmarks
     public void Setup()
     {
         var quality = new FontRetentionQualityEvidence(Enum.GetValues<FontQualitySignal>().ToHashSet(), 2m);
-        FontRetentionFile[] files = Enumerable.Range(1, FileCount).Select(index => new FontRetentionFile
-        {
-            FileId = index,
-            Path = $"copy-{index:D2}.ttc",
-            NormalizedPath = $"COPY-{index:D2}.TTC",
-            Size = 100,
-            ModifiedUtc = DateTimeOffset.UnixEpoch,
-            Health = FontFileHealth.Healthy,
-            Faces =
-            [
-                new FontRetentionFace((index * 2) - 1, "TrueType", true, quality),
-                new FontRetentionFace(index * 2, "TrueType", true, quality)
-            ]
-        }).ToArray();
+        FontRetentionFile[] files =
+        [
+            .. Enumerable.Range(1, FileCount).Select(index => new FontRetentionFile
+            {
+                FileId = index,
+                Path = $"copy-{index:D2}.ttc",
+                NormalizedPath = $"COPY-{index:D2}.TTC",
+                Size = 100,
+                ModifiedUtc = DateTimeOffset.UnixEpoch,
+                Health = FontFileHealth.Healthy,
+                Faces =
+                [
+                    new FontRetentionFace((index * 2) - 1, "TrueType", true, quality),
+                    new FontRetentionFace(index * 2, "TrueType", true, quality)
+                ]
+            })
+        ];
         var relations = new List<FontRelationRecord>();
         for (int left = 0; left < files.Length; left++)
         {
@@ -56,7 +61,7 @@ public class RetentionSearchBenchmarks
         }
 
         _snapshot = new DirectoryPolicySnapshot(files);
-        _relations = relations.ToArray();
+        _relations = [.. relations];
     }
 
     /// <summary>Chooses the minimum retained set using the production search and safety rules.</summary>

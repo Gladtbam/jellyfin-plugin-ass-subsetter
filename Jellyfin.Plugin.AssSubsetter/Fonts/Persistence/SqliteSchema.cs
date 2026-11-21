@@ -24,6 +24,7 @@ public static class SqliteSchema
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "PRAGMA statements contain only the compile-time schema version.")]
     public static async Task EnsureCreatedAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(connection);
         SqliteCommand command = connection.CreateCommand();
         await using var commandScope = command.ConfigureAwait(false);
         command.CommandText = "PRAGMA user_version;";

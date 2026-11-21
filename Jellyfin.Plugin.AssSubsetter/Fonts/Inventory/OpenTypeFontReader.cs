@@ -25,7 +25,7 @@ public static class OpenTypeFontReader
     public static OpenTypeContainer Read(ReadOnlyMemory<byte> data)
     {
         EnsureRange(data.Length, 0, 4, "font signature");
-        uint signature = BinaryPrimitives.ReadUInt32BigEndian(data.Span.Slice(0, 4));
+        uint signature = BinaryPrimitives.ReadUInt32BigEndian(data.Span[..4]);
         if (signature != TrueTypeCollectionTag)
         {
             return new OpenTypeContainer(false, [ReadFace(data, 0, 0)]);
@@ -66,7 +66,7 @@ public static class OpenTypeFontReader
     {
         EnsureRange(data.Length, directoryOffset, 12, "SFNT offset table");
         ReadOnlySpan<byte> header = data.Span.Slice(directoryOffset, 12);
-        uint scalerType = BinaryPrimitives.ReadUInt32BigEndian(header.Slice(0, 4));
+        uint scalerType = BinaryPrimitives.ReadUInt32BigEndian(header[..4]);
         if (scalerType is not TrueTypeScaler and not CffScaler and not AppleTrueScaler and not TypeOneScaler)
         {
             throw new InvalidDataException("The SFNT scaler signature is unsupported.");
@@ -86,7 +86,7 @@ public static class OpenTypeFontReader
         {
             int recordOffset = CheckedAdd(tableDirectoryOffset, CheckedMultiply(tableIndex, 16, "SFNT table record"), "SFNT table record");
             ReadOnlySpan<byte> record = data.Span.Slice(recordOffset, 16);
-            uint tag = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(0, 4));
+            uint tag = BinaryPrimitives.ReadUInt32BigEndian(record[..4]);
             uint checksum = BinaryPrimitives.ReadUInt32BigEndian(record.Slice(4, 4));
             int tableOffset = CheckedUInt32ToInt(BinaryPrimitives.ReadUInt32BigEndian(record.Slice(8, 4)), "table offset");
             int tableLength = CheckedUInt32ToInt(BinaryPrimitives.ReadUInt32BigEndian(record.Slice(12, 4)), "table length");

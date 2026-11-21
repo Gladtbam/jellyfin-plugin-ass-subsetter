@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Selects retained physical files after hard constraints, fixed scoring, and deterministic optimization.</summary>
 public sealed class FontRetentionSelector
 {
-    private static readonly Dictionary<FontQualitySignal, int> ContentWeights = new()
+    private static readonly Dictionary<FontQualitySignal, int> _contentWeights = new()
     {
         [FontQualitySignal.CommonGlyphContentCorrect] = 10,
         [FontQualitySignal.CoverageComplete] = 8,
@@ -21,13 +21,13 @@ public sealed class FontRetentionSelector
         [FontQualitySignal.VariationAxesComplete] = 3
     };
 
-    private static readonly Dictionary<FontQualitySignal, int> VersionWeights = new()
+    private static readonly Dictionary<FontQualitySignal, int> _versionWeights = new()
     {
         [FontQualitySignal.ReliableVersion] = 10,
         [FontQualitySignal.ConsistentVersionSources] = 5
     };
 
-    private static readonly Dictionary<FontQualitySignal, int> TechnicalWeights = new()
+    private static readonly Dictionary<FontQualitySignal, int> _technicalWeights = new()
     {
         [FontQualitySignal.ValidChecksums] = 4,
         [FontQualitySignal.ValidTables] = 5,
@@ -37,7 +37,7 @@ public sealed class FontRetentionSelector
         [FontQualitySignal.CoherentVendor] = 2
     };
 
-    private static readonly Dictionary<FontQualitySignal, int> NameWeights = new()
+    private static readonly Dictionary<FontQualitySignal, int> _nameWeights = new()
     {
         [FontQualitySignal.PostScriptName] = 2,
         [FontQualitySignal.TypographicNames] = 2,
@@ -48,7 +48,7 @@ public sealed class FontRetentionSelector
         [FontQualitySignal.AliasesComplete] = 2
     };
 
-    private static readonly HashSet<FontRelationshipKind> AutomaticKinds =
+    private static readonly HashSet<FontRelationshipKind> _automaticKinds =
     [
         FontRelationshipKind.IdenticalFileHash,
         FontRelationshipKind.StrictFaceDuplicate,
@@ -61,6 +61,7 @@ public sealed class FontRetentionSelector
     /// <param name="relations">Terminal direct Face relationships from one immutable analysis batch.</param>
     /// <param name="policySnapshot">The physical-file safety and quality snapshot for the same generation.</param>
     /// <returns>A deterministic file-level retention plan and its direct groups.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves the instance contract used by the injected duplicate analyzer and existing callers.")]
     public RetentionPlan Select(IReadOnlyList<FontRelationRecord> relations, DirectoryPolicySnapshot policySnapshot)
     {
         ArgumentNullException.ThrowIfNull(relations);
@@ -88,13 +89,15 @@ public sealed class FontRetentionSelector
         Dictionary<long, (long Bytes, int Count)> potential = files.Values.ToDictionary(
             file => file.FileId,
             file => PotentialSavings(file, automaticNeighbors[file.FileId].Select(fileId => files[fileId]), scores, relationsByPair));
-        FontRetentionFile[] ordered = files.Values
-            .OrderByDescending(file => scores[file.FileId].Total)
-            .ThenByDescending(file => file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred))
-            .ThenByDescending(file => potential[file.FileId].Bytes)
-            .ThenByDescending(file => potential[file.FileId].Count)
-            .ThenBy(file => file.NormalizedPath, StringComparer.Ordinal)
-            .ToArray();
+        FontRetentionFile[] ordered =
+        [
+            .. files.Values
+                .OrderByDescending(file => scores[file.FileId].Total)
+                .ThenByDescending(file => file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred))
+                .ThenByDescending(file => potential[file.FileId].Bytes)
+                .ThenByDescending(file => potential[file.FileId].Count)
+                .ThenBy(file => file.NormalizedPath, StringComparer.Ordinal)
+        ];
 
         var retained = files.Values.Where(file => !IsSafeToQuarantine(file)).Select(file => file.FileId).ToHashSet();
         var quarantined = new HashSet<long>();
@@ -116,8 +119,8 @@ public sealed class FontRetentionSelector
                 continue;
             }
 
-            HashSet<long> componentRetainedSet = componentRetained.ToHashSet();
-            HashSet<long> componentQuarantined = component.Select(file => file.FileId).Where(fileId => !componentRetainedSet.Contains(fileId)).ToHashSet();
+            HashSet<long> componentRetainedSet = [.. componentRetained];
+            HashSet<long> componentQuarantined = [.. component.Select(file => file.FileId).Where(fileId => !componentRetainedSet.Contains(fileId))];
             retained.UnionWith(componentRetainedSet);
             quarantined.UnionWith(componentQuarantined);
             foreach (FontRetentionFile target in component.Where(file => componentQuarantined.Contains(file.FileId)))
@@ -144,18 +147,20 @@ public sealed class FontRetentionSelector
             }
 
             retained.Add(candidate.FileId);
-            FontRetentionFile[] removals = automaticNeighbors[candidate.FileId]
-                .Select(fileId => files[fileId])
-                .Where(other => other.FileId != candidate.FileId
-                    && !handled.Contains(other.FileId)
-                    && !retained.Contains(other.FileId)
-                    && !quarantined.Contains(other.FileId)
-                    && scores[candidate.FileId].Total >= scores[other.FileId].Total
-                    && IsSafeToQuarantine(other)
-                    && CanReplaceFile(candidate, other, relationsByPair))
-                .OrderByDescending(other => other.Size)
-                .ThenBy(other => other.NormalizedPath, StringComparer.Ordinal)
-                .ToArray();
+            FontRetentionFile[] removals =
+            [
+                .. automaticNeighbors[candidate.FileId]
+                    .Select(fileId => files[fileId])
+                    .Where(other => other.FileId != candidate.FileId
+                                    && !handled.Contains(other.FileId)
+                                    && !retained.Contains(other.FileId)
+                                    && !quarantined.Contains(other.FileId)
+                                    && scores[candidate.FileId].Total >= scores[other.FileId].Total
+                                    && IsSafeToQuarantine(other)
+                                    && CanReplaceFile(candidate, other, relationsByPair))
+                    .OrderByDescending(other => other.Size)
+                    .ThenBy(other => other.NormalizedPath, StringComparer.Ordinal)
+            ];
             if (removals.Length == 0)
             {
                 continue;
@@ -170,7 +175,7 @@ public sealed class FontRetentionSelector
             groups.Add(new DuplicateGroupPlan(
                 candidate.FileId,
                 candidate.Faces[0].FaceId,
-                removals.Select(file => file.FileId).ToArray(),
+                [.. removals.Select(file => file.FileId)],
                 removals.Sum(file => file.Size)));
         }
 
@@ -189,22 +194,26 @@ public sealed class FontRetentionSelector
         }
 
         HashSet<long> runtimePreferred = SelectRuntimePreferred(retained, files, filesByFace, relations, scores, potential);
-        RetentionFileDecision[] retainedDecisions = retained
-            .Select(fileId => Decision(
-                files[fileId],
-                scores[fileId],
-                HardConstraintReason(files[fileId]) ?? "Selected by quality and deterministic tie-breaks.",
-                runtimePreferred.Contains(fileId)))
-            .OrderBy(decision => decision.FileId)
-            .ToArray();
-        RetentionFileDecision[] quarantineDecisions = quarantined
-            .Select(fileId => Decision(
-                files[fileId],
-                scores[fileId],
-                $"Directly replaced by retained file {replacementReasons[fileId]}.",
-                false))
-            .OrderBy(decision => decision.FileId)
-            .ToArray();
+        RetentionFileDecision[] retainedDecisions =
+        [
+            .. retained
+                .Select(fileId => Decision(
+                    files[fileId],
+                    scores[fileId],
+                    HardConstraintReason(files[fileId]) ?? "Selected by quality and deterministic tie-breaks.",
+                    runtimePreferred.Contains(fileId)))
+                .OrderBy(decision => decision.FileId)
+        ];
+        RetentionFileDecision[] quarantineDecisions =
+        [
+            .. quarantined
+                .Select(fileId => Decision(
+                    files[fileId],
+                    scores[fileId],
+                    $"Directly replaced by retained file {replacementReasons[fileId]}.",
+                    false))
+                .OrderBy(decision => decision.FileId)
+        ];
         return new RetentionPlan(retainedDecisions, quarantineDecisions, groups);
     }
 
@@ -216,7 +225,7 @@ public sealed class FontRetentionSelector
         Dictionary<long, HashSet<long>> neighbors = files.Keys.ToDictionary(fileId => fileId, _ => new HashSet<long>());
         foreach (FontRelationRecord relation in relations)
         {
-            if (!AutomaticKinds.Contains(relation.RelationshipKind)
+            if (!_automaticKinds.Contains(relation.RelationshipKind)
                 || !filesByFace.TryGetValue(relation.LeftFaceId, out FontRetentionFile? left)
                 || !filesByFace.TryGetValue(relation.RightFaceId, out FontRetentionFile? right)
                 || left.FileId == right.FileId)
@@ -260,7 +269,7 @@ public sealed class FontRetentionSelector
                 }
             }
 
-            components.Add(component.OrderBy(file => file.NormalizedPath, StringComparer.Ordinal).ToArray());
+            components.Add([.. component.OrderBy(file => file.NormalizedPath, StringComparer.Ordinal)]);
         }
 
         return components;
@@ -291,16 +300,18 @@ public sealed class FontRetentionSelector
             for (int faceIndex = 0; faceIndex < target.Faces.Count; faceIndex++)
             {
                 FontRetentionFace targetFace = target.Faces[faceIndex];
-                int[] eligible = Enumerable.Range(0, component.Length)
-                    .Where(candidateIndex => candidateIndex != targetIndex
-                        && scores[component[candidateIndex].FileId].Total >= scores[target.FileId].Total
-                        && (scores[component[candidateIndex].FileId].Total > scores[target.FileId].Total
-                            || !target.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred)
-                            || component[candidateIndex].DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred))
-                        && component[candidateIndex].Faces.Any(candidateFace =>
-                            string.Equals(candidateFace.Technology, targetFace.Technology, StringComparison.Ordinal)
-                            && CanReplaceFace(candidateFace.FaceId, targetFace.FaceId, relations)))
-                    .ToArray();
+                int[] eligible =
+                [
+                    .. Enumerable.Range(0, component.Length)
+                        .Where(candidateIndex => candidateIndex != targetIndex
+                                                 && scores[component[candidateIndex].FileId].Total >= scores[target.FileId].Total
+                                                 && (scores[component[candidateIndex].FileId].Total > scores[target.FileId].Total
+                                                     || !target.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred)
+                                                     || component[candidateIndex].DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred))
+                                                 && component[candidateIndex].Faces.Any(candidateFace =>
+                                                     string.Equals(candidateFace.Technology, targetFace.Technology, StringComparison.Ordinal)
+                                                     && CanReplaceFace(candidateFace.FaceId, targetFace.FaceId, relations)))
+                ];
                 if (eligible.Length == 0)
                 {
                     mandatory |= 1 << targetIndex;
@@ -370,10 +381,12 @@ public sealed class FontRetentionSelector
             }
         }
 
-        return Enumerable.Range(0, component.Length)
-            .Where(index => (bestRetained & (1 << index)) != 0)
-            .Select(index => component[index].FileId)
-            .ToArray();
+        return
+        [
+            .. Enumerable.Range(0, component.Length)
+                .Where(index => (bestRetained & (1 << index)) != 0)
+                .Select(index => component[index].FileId)
+        ];
     }
 
     private static bool PreferEarlierPaths(int candidate, int current, int fileCount)
@@ -408,19 +421,21 @@ public sealed class FontRetentionSelector
         for (int faceIndex = 0; faceIndex < target.Faces.Count; faceIndex++)
         {
             FontRetentionFace targetFace = target.Faces[faceIndex];
-            FontRetentionFile[] eligible = files.Where(file => file.FileId != target.FileId
-                    && !quarantined.Contains(file.FileId)
-                    && scores[file.FileId].Total >= scores[target.FileId].Total
-                    && file.Faces.Any(face => string.Equals(face.Technology, targetFace.Technology, StringComparison.Ordinal)
-                        && CanReplaceFace(face.FaceId, targetFace.FaceId, relations)))
-                .ToArray();
+            FontRetentionFile[] eligible =
+            [
+                .. files.Where(file => file.FileId != target.FileId
+                                       && !quarantined.Contains(file.FileId)
+                                       && scores[file.FileId].Total >= scores[target.FileId].Total
+                                       && file.Faces.Any(face => string.Equals(face.Technology, targetFace.Technology, StringComparison.Ordinal)
+                                                                 && CanReplaceFace(face.FaceId, targetFace.FaceId, relations)))
+            ];
             if (eligible.Length == 0)
             {
                 return null;
             }
 
             int quality = eligible.Max(file => scores[file.FileId].Total);
-            eligible = eligible.Where(file => scores[file.FileId].Total == quality).ToArray();
+            eligible = [.. eligible.Where(file => scores[file.FileId].Total == quality)];
             bool hasPreferred = eligible.Any(file => file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred));
             foreach (FontRetentionFile file in eligible.Where(file => !hasPreferred || file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Preferred)))
             {
@@ -434,10 +449,12 @@ public sealed class FontRetentionSelector
         }
 
         Dictionary<long, FontRetentionFile> filesById = files.ToDictionary(file => file.FileId);
-        (long FileId, long Size, string Path, ulong Coverage)[] options = candidates
-            .Select(pair => (FileId: pair.Key, Size: retained.Contains(pair.Key) ? 0 : filesById[pair.Key].Size, Path: filesById[pair.Key].NormalizedPath, Coverage: pair.Value))
-            .OrderBy(option => option.Path, StringComparer.Ordinal)
-            .ToArray();
+        (long FileId, long Size, string Path, ulong Coverage)[] options =
+        [
+            .. candidates
+                .Select(pair => (FileId: pair.Key, Size: retained.Contains(pair.Key) ? 0 : filesById[pair.Key].Size, Path: filesById[pair.Key].NormalizedPath, Coverage: pair.Value))
+                .OrderBy(option => option.Path, StringComparer.Ordinal)
+        ];
         ulong allFaces = (1UL << target.Faces.Count) - 1;
         long bestBytes = target.Size;
         int[]? best = null;
@@ -455,7 +472,7 @@ public sealed class FontRetentionSelector
 
             if (covered == allFaces)
             {
-                int[] current = selected.Order().ToArray();
+                int[] current = [.. selected.Order()];
                 if (bytes < bestBytes
                     || (bytes == bestBytes && (best is null || current.Length < best.Length
                         || (current.Length == best.Length && ComparePaths(current, best) < 0))))
@@ -520,7 +537,7 @@ public sealed class FontRetentionSelector
         }
 
         Search(0, 0);
-        return exhausted || best is null ? null : best.Select(index => options[index].FileId).ToArray();
+        return exhausted || best is null ? null : [.. best.Select(index => options[index].FileId)];
     }
 
     private static Dictionary<long, FontRetentionFile> ValidateSnapshot(DirectoryPolicySnapshot snapshot)
@@ -545,7 +562,7 @@ public sealed class FontRetentionSelector
 
     private static RetentionScore ScoreFile(FontRetentionFile file, decimal? newestVersion, DateTimeOffset newestModified)
     {
-        RetentionScore[] faceScores = file.Faces.Select(face => ScoreFace(face, newestVersion)).ToArray();
+        RetentionScore[] faceScores = [.. file.Faces.Select(face => ScoreFace(face, newestVersion))];
         var reasons = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (RetentionScore score in faceScores)
         {
@@ -602,16 +619,16 @@ public sealed class FontRetentionSelector
     private static RetentionScore ScoreFace(FontRetentionFace face, decimal? newestVersion)
     {
         var reasons = new Dictionary<string, int>(StringComparer.Ordinal);
-        int content = AddSignals(face.Quality.Signals, ContentWeights, "Content", reasons);
-        int version = AddSignals(face.Quality.Signals, VersionWeights, "Version", reasons);
+        int content = AddSignals(face.Quality.Signals, _contentWeights, "Content", reasons);
+        int version = AddSignals(face.Quality.Signals, _versionWeights, "Version", reasons);
         if (face.Quality.Version.HasValue && face.Quality.Version == newestVersion)
         {
             version += 10;
             reasons["Version.Newest"] = 10;
         }
 
-        int technical = AddSignals(face.Quality.Signals, TechnicalWeights, "Technical", reasons);
-        int names = AddSignals(face.Quality.Signals, NameWeights, "Names", reasons);
+        int technical = AddSignals(face.Quality.Signals, _technicalWeights, "Technical", reasons);
+        int names = AddSignals(face.Quality.Signals, _nameWeights, "Names", reasons);
         return new RetentionScore(content, version, technical, names, 0, reasons);
     }
 
@@ -640,10 +657,13 @@ public sealed class FontRetentionSelector
         Dictionary<long, RetentionScore> scores,
         IReadOnlyDictionary<(long Left, long Right), FontRelationRecord> relations)
     {
-        FontRetentionFile[] removable = files.Where(other => other.FileId != candidate.FileId
-            && scores[candidate.FileId].Total >= scores[other.FileId].Total
-            && IsSafeToQuarantine(other)
-            && CanReplaceFile(candidate, other, relations)).ToArray();
+        FontRetentionFile[] removable =
+        [
+            .. files.Where(other => other.FileId != candidate.FileId
+                                    && scores[candidate.FileId].Total >= scores[other.FileId].Total
+                                    && IsSafeToQuarantine(other)
+                                    && CanReplaceFile(candidate, other, relations))
+        ];
         return (removable.Sum(file => file.Size), removable.Length);
     }
 
@@ -694,7 +714,7 @@ public sealed class FontRetentionSelector
         long left = Math.Min(candidateFaceId, targetFaceId);
         long right = Math.Max(candidateFaceId, targetFaceId);
         if (!relations.TryGetValue((left, right), out FontRelationRecord? relation)
-            || !AutomaticKinds.Contains(relation.RelationshipKind))
+            || !_automaticKinds.Contains(relation.RelationshipKind))
         {
             return false;
         }

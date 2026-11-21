@@ -129,6 +129,8 @@ public sealed class FontCacheManager : IDisposable
     /// <param name="preparedCandidates">The candidate result prepared before final input validation.</param>
     public async Task<AnalysisBatch> PublishAnalyzedGenerationAsync(AnalysisBatch batch, CancellationToken cancellationToken, FontRenameCandidatePreparation? preparedCandidates = null)
     {
+        ArgumentNullException.ThrowIfNull(batch);
+
         await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -139,9 +141,12 @@ public sealed class FontCacheManager : IDisposable
 
             IReadOnlyList<RuntimeFontFace> faces = await _repository.LoadRuntimeFacesAsync(batch.GenerationId, cancellationToken).ConfigureAwait(false);
             Dictionary<long, FontFaceAnalysisRecord> scores = batch.FaceScores.ToDictionary(face => face.FaceId);
-            var prepared = new RuntimeFontIndex(faces.Select(face => scores.TryGetValue(face.FaceId, out FontFaceAnalysisRecord? score)
-                ? face with { RetentionScore = score.RetentionScore, IsRuntimePreferred = score.IsRuntimePreferred }
-                : face).ToArray());
+            var prepared = new RuntimeFontIndex(
+            [
+                .. faces.Select(face => scores.TryGetValue(face.FaceId, out FontFaceAnalysisRecord? score)
+                    ? face with { RetentionScore = score.RetentionScore, IsRuntimePreferred = score.IsRuntimePreferred }
+                    : face)
+            ]);
             cancellationToken.ThrowIfCancellationRequested();
             AnalysisBatch published = await _repository.PublishAnalysisAsync(batch, cancellationToken, preparedCandidates).ConfigureAwait(false);
             Volatile.Write(ref _runtimeIndex, prepared);

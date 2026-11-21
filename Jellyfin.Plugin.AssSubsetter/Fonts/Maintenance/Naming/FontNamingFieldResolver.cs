@@ -11,9 +11,9 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.Naming;
 
-internal static class FontNamingFieldResolver
+internal static partial class FontNamingFieldResolver
 {
-    private static readonly IReadOnlyDictionary<string, ushort> NameIds = new Dictionary<string, ushort>(StringComparer.Ordinal)
+    private static readonly IReadOnlyDictionary<string, ushort> _nameIds = new Dictionary<string, ushort>(StringComparer.Ordinal)
     {
         ["fullName"] = 4,
         ["postscript"] = 6,
@@ -30,7 +30,7 @@ internal static class FontNamingFieldResolver
         var selections = new List<FontNamingSelectionEvidence>();
         var faces = file.Faces.OrderBy(face => face.FaceIndex).Select(face => ReadFace(face, selections)).ToArray();
         var values = new Dictionary<string, FontNamingFieldValue>(StringComparer.Ordinal);
-        foreach (var field in NameIds)
+        foreach (var field in _nameIds)
         {
             bool optional = FontNamingFieldCatalog.Fields.Single(descriptor => descriptor.Name == field.Key).MissingBehavior == "empty";
             values.Add(field.Key, Aggregate(field.Key, faces.Select(face => face.Raw[field.Key]), optional));
@@ -59,23 +59,26 @@ internal static class FontNamingFieldResolver
         string fingerprint = string.Empty;
         if (fingerprintReason is null)
         {
-            byte[] digest = faces.Length == 1 ? faces[0].Face.StrictFingerprint.ToArray() : SHA256.HashData(faces.SelectMany(face => face.Face.StrictFingerprint.ToArray()).ToArray());
+            byte[] digest = faces.Length == 1 ? faces[0].Face.StrictFingerprint.ToArray() : SHA256.HashData([.. faces.SelectMany(face => face.Face.StrictFingerprint.ToArray())]);
             fingerprint = Convert.ToHexString(digest.AsSpan(0, 4)).ToLowerInvariant();
         }
 
         values.Add("fingerprint", FileValue("fingerprint", fingerprint, fingerprintReason, fingerprintReason is not null, "canonical-fingerprint", []));
-        return new(new ReadOnlyDictionary<string, FontNamingFieldValue>(values), Array.AsReadOnly(selections.ToArray()));
+        return new(new ReadOnlyDictionary<string, FontNamingFieldValue>(values), Array.AsReadOnly([.. selections]));
     }
 
     internal static string? NormalizeVersion(string? version)
     {
-        Match match = Regex.Match(version ?? string.Empty, @"(?:^|Version\s+)([0-9]+(?:\.[0-9]+)+)(?:$|[;\s])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        Match match = FontVersionRegex().Match(version ?? string.Empty);
         return match.Success ? match.Groups[1].Value : null;
     }
 
+    [GeneratedRegex(@"(?:^|Version\s+)([0-9]+(?:\.[0-9]+)+)(?:$|[;\s])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex FontVersionRegex();
+
     private static FaceNames ReadFace(FontFaceRecord face, List<FontNamingSelectionEvidence> selections)
     {
-        var raw = NameIds.ToDictionary(pair => pair.Key, pair => ReadName(face, pair.Value), StringComparer.Ordinal);
+        var raw = _nameIds.ToDictionary(pair => pair.Key, pair => ReadName(face, pair.Value), StringComparer.Ordinal);
         FaceValue family;
         FaceValue style;
         string kind;
@@ -160,7 +163,7 @@ internal static class FontNamingFieldResolver
     {
         var inputs = source.ToArray();
         string? reason = inputs.Length == 0 ? "no-faces" : inputs.FirstOrDefault(value => value.Reason is not null)?.Reason;
-        string[] distinct = inputs.Select(value => value.Text).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        string[] distinct = [.. inputs.Select(value => value.Text).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
         if (reason is null && !join && distinct.Length != 1)
         {
             reason = "inconsistent-face-field";
@@ -173,7 +176,7 @@ internal static class FontNamingFieldResolver
             evidence.Add(new(name, null, null, "collection-summary", text) { MissingReason = reason });
         }
 
-        return new(text, reason, !optional && reason is not null, Array.AsReadOnly(evidence.ToArray()));
+        return new(text, reason, !optional && reason is not null, Array.AsReadOnly([.. evidence]));
     }
 
     private static FontNamingFieldValue Suffix(string name, FontNamingFieldValue value, string prefix)
@@ -203,7 +206,7 @@ internal static class FontNamingFieldResolver
     }
 
     private static FontNamingFieldValue FileValue(string name, string text, string? reason, bool blocks, string source, IReadOnlyList<FontNamingFieldEvidence> dependencies)
-        => new(text, reason, blocks, Array.AsReadOnly(dependencies.Append(new FontNamingFieldEvidence(name, null, null, source, text) { MissingReason = reason }).ToArray()));
+        => new(text, reason, blocks, Array.AsReadOnly([.. dependencies, new FontNamingFieldEvidence(name, null, null, source, text) { MissingReason = reason }]));
 
     private sealed record FaceValue(string Text, int? NameId, int FaceIndex, string? Reason);
 

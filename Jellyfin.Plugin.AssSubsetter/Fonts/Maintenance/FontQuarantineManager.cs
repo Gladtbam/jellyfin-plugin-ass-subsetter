@@ -18,8 +18,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Executes recoverable, per-file quarantine lifecycle transitions from immutable requests.</summary>
 public sealed class FontQuarantineManager
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private static readonly HashSet<FontRelationshipKind> AutomaticRelationshipKinds =
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<FontRelationshipKind> _automaticRelationshipKinds =
     [
         FontRelationshipKind.IdenticalFileHash,
         FontRelationshipKind.StrictFaceDuplicate,
@@ -80,7 +80,7 @@ public sealed class FontQuarantineManager
             throw new ArgumentException("A persisted quarantine request with an analysis batch is required.", nameof(request));
         }
 
-        FontOperationRequestPayload payload = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, JsonOptions)
+        FontOperationRequestPayload payload = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, _jsonOptions)
             ?? throw new InvalidOperationException("The operation request payload is invalid.");
         if (payload.BatchId != request.AnalysisBatchId.Value)
         {
@@ -212,7 +212,7 @@ public sealed class FontQuarantineManager
         manifest.ValidateCurrentFormat();
         MaintenanceBatch batch = await _repository.GetMaintenanceBatchAsync(payload.BatchId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("The referenced quarantine batch does not exist.");
-        HashSet<long> selected = payload.SelectedFileIds.ToHashSet();
+        HashSet<long> selected = [.. payload.SelectedFileIds];
         if (!selected.IsSubsetOf(manifest.Items.Select(item => item.FileId)))
         {
             throw new InvalidOperationException("The restore request contains a physical Font File outside the referenced manifest.");
@@ -315,7 +315,11 @@ public sealed class FontQuarantineManager
         long inspected = 0;
         long eligible = 0;
         var blocked = new Dictionary<string, int>(StringComparer.Ordinal);
-        _logger.LogInformation("[AssSubsetter] Quarantine expiry started. Manifests: {ManifestCount}; Items: {ItemCount}; ThresholdUtc: {ThresholdUtc}.", manifests.Count, total, threshold);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Quarantine expiry started. Manifests: {ManifestCount}; Items: {ItemCount}; ThresholdUtc: {ThresholdUtc}.", manifests.Count, total, threshold);
+        }
+
         foreach (QuarantineManifest loaded in manifests)
         {
             QuarantineManifest manifest = loaded;
@@ -413,7 +417,11 @@ public sealed class FontQuarantineManager
             _logger.LogWarning("[AssSubsetter] Quarantine expiry blocked. Reason: {Reason}; Items: {ItemCount}.", reason, count);
         }
 
-        _logger.LogInformation("[AssSubsetter] Quarantine expiry completed. Inspected: {Inspected}; Eligible: {Eligible}; Purged: {Purged}; Blocked: {Blocked}.", inspected, eligible, purged, blocked.Values.Sum());
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Quarantine expiry completed. Inspected: {Inspected}; Eligible: {Eligible}; Purged: {Purged}; Blocked: {Blocked}.", inspected, eligible, purged, blocked.Values.Sum());
+        }
+
         progress?.Report(100);
         return purged;
     }
@@ -742,7 +750,7 @@ public sealed class FontQuarantineManager
     {
         Dictionary<(long Left, long Right), FontRelationRecord> relations = analysis.Relations
             .ToDictionary(relation => (relation.LeftFaceId, relation.RightFaceId));
-        QuarantineManifestItem[] items = selectedFileIds.Distinct().Order().Select(fileId =>
+        QuarantineManifestItem[] items = [.. selectedFileIds.Distinct().Order().Select(fileId =>
         {
             if (!files.TryGetValue(fileId, out FontFileRecord? file))
             {
@@ -756,33 +764,28 @@ public sealed class FontQuarantineManager
                 throw new InvalidOperationException($"Selected physical Font File {fileId} is protected or unsafe.");
             }
 
-            DuplicateGroupRecord[] groups = analysis.Groups
+            DuplicateGroupRecord[] groups = [.. analysis.Groups
                 .Where(group => group.Members.Any(member => member.FileId == fileId
-                    && member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate))
-                .ToArray();
+                    && member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate))];
             if (groups.Length == 0)
             {
                 throw new InvalidOperationException($"Selected physical Font File {fileId} is not a verified quarantine candidate.");
             }
 
-            FontFileRecord[] retainedFiles = groups
+            FontFileRecord[] retainedFiles = [.. groups
                 .SelectMany(group => group.Members)
                 .Where(member => member.Decision == DuplicateGroupMemberDecision.Retained)
                 .Select(member => files[member.FileId])
-                .DistinctBy(replacement => replacement.Id)
-                .ToArray();
-            QuarantineFaceReplacementProof[] faceProofs = file.Faces
-                .Select(face => CreateFaceReplacementProof(face, retainedFiles, relations))
-                .ToArray();
-            QuarantineReplacementEvidence[] replacements = faceProofs
+                .DistinctBy(replacement => replacement.Id)];
+            QuarantineFaceReplacementProof[] faceProofs = [.. file.Faces.Select(face => CreateFaceReplacementProof(face, retainedFiles, relations))];
+            QuarantineReplacementEvidence[] replacements = [.. faceProofs
                 .Select(proof => files[proof.ReplacementFileId])
                 .DistinctBy(replacement => replacement.Id)
                 .Select(replacement => new QuarantineReplacementEvidence(
                     replacement.Id,
                     replacement.Path,
                     replacement.Size,
-                    replacement.Sha256))
-                .ToArray();
+                    replacement.Sha256))];
             if (replacements.Length == 0)
             {
                 throw new InvalidOperationException($"Selected physical Font File {fileId} has no retained replacement.");
@@ -804,7 +807,7 @@ public sealed class FontQuarantineManager
                 FaceReplacementProofs = faceProofs,
                 Status = QuarantineItemStatus.Pending
             };
-        }).ToArray();
+        })];
         return new QuarantineManifest
         {
             Version = 2,
@@ -836,7 +839,7 @@ public sealed class FontQuarantineManager
                 long left = Math.Min(replacement.Id, target.Id);
                 long right = Math.Max(replacement.Id, target.Id);
                 if (!relations.TryGetValue((left, right), out FontRelationRecord? relation)
-                    || !AutomaticRelationshipKinds.Contains(relation.RelationshipKind)
+                    || !_automaticRelationshipKinds.Contains(relation.RelationshipKind)
                     || (relation.ReplacementDirection != FontReplacementDirection.Both
                         && !(replacement.Id == left && relation.ReplacementDirection == FontReplacementDirection.LeftReplacesRight)
                         && !(replacement.Id == right && relation.ReplacementDirection == FontReplacementDirection.RightReplacesLeft)))
@@ -888,6 +891,7 @@ public sealed class FontQuarantineManager
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The finally block awaits release of the acquired lease after file mutation and recovery handling.")]
     private async Task<QuarantineManifestItem> QuarantineItemAsync(
         long batchId,
         QuarantineManifestItem item,
@@ -1256,7 +1260,7 @@ public sealed class FontQuarantineManager
             return false;
         }
 
-        HashSet<long> replacementFileIds = item.Replacements.Select(replacement => replacement.FileId).ToHashSet();
+        HashSet<long> replacementFileIds = [.. item.Replacements.Select(replacement => replacement.FileId)];
         return item.FaceReplacementProofs.All(proof =>
         {
             long left = Math.Min(proof.ReplacementFaceId, proof.TargetFaceId);
@@ -1265,7 +1269,7 @@ public sealed class FontQuarantineManager
                 || (proof.ReplacementFaceId == left && proof.ReplacementDirection == FontReplacementDirection.LeftReplacesRight)
                 || (proof.ReplacementFaceId == right && proof.ReplacementDirection == FontReplacementDirection.RightReplacesLeft);
             return replacementFileIds.Contains(proof.ReplacementFileId)
-                && AutomaticRelationshipKinds.Contains(proof.RelationshipKind)
+                && _automaticRelationshipKinds.Contains(proof.RelationshipKind)
                 && directionValid
                 && !string.IsNullOrWhiteSpace(proof.Technology);
         });
@@ -1336,7 +1340,7 @@ public sealed class FontQuarantineManager
         MaintenanceBatchStatus status,
         DateTimeOffset? completedUtc)
     {
-        QuarantineItemRecord[] items = manifest.Items.Select(item => new QuarantineItemRecord
+        QuarantineItemRecord[] items = [.. manifest.Items.Select(item => new QuarantineItemRecord
         {
             MaintenanceBatchId = batch.Id,
             FileId = item.FileId,
@@ -1350,7 +1354,7 @@ public sealed class FontQuarantineManager
             ExpiresUtc = item.ExpiresUtc,
             RestoredUtc = item.RestoredUtc,
             Error = item.Error
-        }).ToArray();
+        })];
         string summary = JsonSerializer.Serialize(
             new
             {
@@ -1358,13 +1362,13 @@ public sealed class FontQuarantineManager
                 quarantined = items.Count(item => item.Status == QuarantineItemStatus.Quarantined),
                 failed = items.Count(item => item.Status is not QuarantineItemStatus.Quarantined)
             },
-            JsonOptions);
+            _jsonOptions);
         return batch with { Status = status, CompletedUtc = completedUtc, SummaryJson = summary, Items = items };
     }
 
     private static QuarantineManifest ReplaceItem(QuarantineManifest manifest, int index, QuarantineManifestItem item)
     {
-        QuarantineManifestItem[] items = manifest.Items.ToArray();
+        QuarantineManifestItem[] items = [.. manifest.Items];
         items[index] = item;
         return manifest with { Items = items };
     }
@@ -1377,7 +1381,7 @@ public sealed class FontQuarantineManager
             throw new ArgumentException($"A persisted {expectedKind} request is required.", nameof(request));
         }
 
-        return JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, JsonOptions)
+        return JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, _jsonOptions)
             ?? throw new InvalidOperationException("The operation request payload is invalid.");
     }
 

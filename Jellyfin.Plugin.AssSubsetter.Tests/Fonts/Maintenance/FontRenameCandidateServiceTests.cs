@@ -52,7 +52,7 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
         }, token);
 
         OperationRequest request = Assert.IsType<OperationRequest>(await service.CreateScheduledRequestAsync(token));
-        string[] paths = FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items.Select(item => item.OldPath).ToArray();
+        string[] paths = [.. FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items.Select(item => item.OldPath)];
 
         Assert.Equal(protectedPath ? 1 : 2, paths.Length);
         Assert.Equal(!protectedPath, paths.Contains(retained.Path));
@@ -188,10 +188,9 @@ public sealed class FontRenameCandidateServiceTests : IDisposable
         var policy = new FontDirectoryPolicyResolver(root, null, null, false);
         var input = FontInventoryInputComparer.Capture([], policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
         long generation = await fixture.Repository.BeginGenerationAsync(input, [], CancellationToken.None);
-        await fixture.Repository.WriteInventoryAsync(generation, fixture.Items.Select(item => item.File with
-        {
-            Id = 0, GenerationId = generation, Faces = [FontNamingTestData.Face(names: [(1, "Example")])]
-        }).ToArray(), CancellationToken.None);
+        await fixture.Repository.WriteInventoryAsync(generation, [
+            .. fixture.Items.Select(item => item.File with { Id = 0, GenerationId = generation, Faces = [FontNamingTestData.Face(names: [(1, "Example")])] })
+        ], CancellationToken.None);
         var analysis = new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion, SummaryJson = "{\"faceScores\":[]}" };
         var directories = new ReadOnlyDirectories(() => _duringProbe?.Invoke());
         var service = new FontRenameCandidateService(fixture.Repository, new FontRenamePlanner(directories), () => _rules, () => policy, TimeProvider.System, new PhysicalQuarantineFileSystem(), directories, new FontMaintenanceCoordinator());

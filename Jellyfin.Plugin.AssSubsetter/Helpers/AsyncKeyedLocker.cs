@@ -13,7 +13,7 @@ internal sealed class AsyncKeyedLocker<TKey>
     where TKey : notnull
 {
     private readonly Dictionary<TKey, Entry> _entries;
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="AsyncKeyedLocker{TKey}" /> class.

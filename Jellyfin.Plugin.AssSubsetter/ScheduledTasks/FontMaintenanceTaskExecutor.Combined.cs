@@ -62,12 +62,16 @@ public sealed partial class FontMaintenanceTaskExecutor
                 double start = 100d * index / steps.Count;
                 double end = 100d * (index + 1) / steps.Count;
                 result = await execute(new ScaledProgress(progress, start, end), cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation(
-                    "[AssSubsetter] Font maintenance stage {Stage} ended. RequestId: {RequestId}. BatchId: {BatchId}. Outcome: {Outcome}.",
-                    stage,
-                    result.OperationRequestId,
-                    result.BatchId,
-                    result.Outcome);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation(
+                        "[AssSubsetter] Font maintenance stage {Stage} ended. RequestId: {RequestId}. BatchId: {BatchId}. Outcome: {Outcome}.",
+                        stage,
+                        result.OperationRequestId,
+                        result.BatchId,
+                        result.Outcome);
+                }
+
                 if (FontScheduledTaskExecution.IsIncompleteOutcome(result.Outcome))
                 {
                     return result;
@@ -91,7 +95,10 @@ public sealed partial class FontMaintenanceTaskExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
             var (deletedBatches, deletedGenerations) = await PruneHistoryCoreAsync(retentionCount, new ScaledProgress(progress, 90, 99), cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[AssSubsetter] Analysis history pruning completed. RequestId: {RequestId}; DeletedBatches: {DeletedBatches}; DeletedGenerations: {DeletedGenerations}.", result.OperationRequestId, deletedBatches, deletedGenerations);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Analysis history pruning completed. RequestId: {RequestId}; DeletedBatches: {DeletedBatches}; DeletedGenerations: {DeletedGenerations}.", result.OperationRequestId, deletedBatches, deletedGenerations);
+            }
         }
 
         return result;
@@ -108,7 +115,10 @@ public sealed partial class FontMaintenanceTaskExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
             FontTaskExecutionResult cleanup = await RunPurgeCoreAsync(new ScaledProgress(progress, 90, 99), true, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("[AssSubsetter] Quarantine cleanup completed. QuarantineRequestId: {QuarantineRequestId}; PurgeRequestId: {PurgeRequestId}; Outcome: {Outcome}.", result.OperationRequestId, cleanup.OperationRequestId, cleanup.Outcome);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Quarantine cleanup completed. QuarantineRequestId: {QuarantineRequestId}; PurgeRequestId: {PurgeRequestId}; Outcome: {Outcome}.", result.OperationRequestId, cleanup.OperationRequestId, cleanup.Outcome);
+            }
         }
 
         return result;

@@ -66,7 +66,7 @@ public static class FontNamingTemplate
                     }
 
                     ValidateLiteralComponent(parts);
-                    components.Add(Array.AsReadOnly(parts.ToArray()));
+                    components.Add(Array.AsReadOnly([.. parts]));
                     parts.Clear();
                     position++;
                 }
@@ -114,8 +114,8 @@ public static class FontNamingTemplate
             }
 
             ValidateLiteralComponent(parts);
-            components.Add(Array.AsReadOnly(parts.ToArray()));
-            return new(new FontNamingProgram(kind, Array.AsReadOnly(components.ToArray())), []);
+            components.Add(Array.AsReadOnly([.. parts]));
+            return new(new FontNamingProgram(kind, Array.AsReadOnly([.. components])), []);
         }
         catch (NamingSyntaxException exception)
         {
@@ -134,7 +134,7 @@ public static class FontNamingTemplate
             return [new("FormatVersion", "unsupported-rule-version", 0)];
         }
 
-        return Compile(rules.FileNameTemplate, FontTemplateKind.FileName).Errors.Concat(Compile(rules.FolderTemplate, FontTemplateKind.Folder).Errors).ToArray();
+        return [.. Compile(rules.FileNameTemplate, FontTemplateKind.FileName).Errors, .. Compile(rules.FolderTemplate, FontTemplateKind.Folder).Errors];
     }
 
     internal static FontTemplateResult Expand(FontNamingProgram program, FontNamingFields fields)
@@ -233,7 +233,7 @@ public static class FontNamingTemplate
             suffix = string.Empty;
         }
 
-        return new(Array.AsReadOnly(components.ToArray()), new(Array.AsReadOnly(evidence.Distinct().ToArray()), Array.AsReadOnly(selections.Distinct().ToArray())), failure)
+        return new(Array.AsReadOnly([.. components]), new(Array.AsReadOnly([.. evidence.Distinct()]), Array.AsReadOnly([.. selections.Distinct()])), failure)
         {
             ProtectedSuffix = suffix,
             PreserveSourceDirectory = program.Kind == FontTemplateKind.Folder && program.Components.Count == 0

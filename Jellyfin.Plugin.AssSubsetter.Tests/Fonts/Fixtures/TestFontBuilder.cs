@@ -26,7 +26,7 @@ internal sealed class TestFontBuilder
 
     public TestFontBuilder WithNames(params (ushort NameId, string Value)[] names)
     {
-        byte[][] encoded = names.Select(name => Encoding.BigEndianUnicode.GetBytes(name.Value)).ToArray();
+        byte[][] encoded = [.. names.Select(name => Encoding.BigEndianUnicode.GetBytes(name.Value))];
         int recordsLength = checked(names.Length * 12);
         int stringOffset = checked(6 + recordsLength);
         byte[] data = new byte[checked(stringOffset + encoded.Sum(value => value.Length))];

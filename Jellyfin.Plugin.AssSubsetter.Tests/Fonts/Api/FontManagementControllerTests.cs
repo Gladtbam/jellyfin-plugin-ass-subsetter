@@ -291,29 +291,32 @@ public sealed class FontManagementControllerTests
     private static async Task<long> SeedCurrentAnalysisAsync(InMemoryFontRepository repository, IReadOnlyList<long> candidateFileIds)
     {
         long generationId = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-        FontFileRecord[] files = candidateFileIds.Select(fileId => new FontFileRecord
-        {
-            Id = fileId,
-            GenerationId = generationId,
-            Path = $"font-{fileId}.ttf",
-            NormalizedPath = $"FONT-{fileId}.TTF",
-            PhysicalIdentity = $"physical-{fileId}",
-            Sha256 = new byte[] { 1 },
-            Health = FontFileHealth.Healthy,
-            Faces =
-            [
-                new FontFaceRecord
-                {
-                    Id = fileId * 10,
-                    FaceIndex = 0,
-                    StrictFingerprint = new byte[] { 2 },
-                    FamilyName = "Example",
-                    StyleName = "Regular",
-                    Names = ["Example"],
-                    Technology = "TrueType"
-                }
-            ]
-        }).ToArray();
+        FontFileRecord[] files =
+        [
+            .. candidateFileIds.Select(fileId => new FontFileRecord
+            {
+                Id = fileId,
+                GenerationId = generationId,
+                Path = $"font-{fileId}.ttf",
+                NormalizedPath = $"FONT-{fileId}.TTF",
+                PhysicalIdentity = $"physical-{fileId}",
+                Sha256 = new byte[] { 1 },
+                Health = FontFileHealth.Healthy,
+                Faces =
+                [
+                    new FontFaceRecord
+                    {
+                        Id = fileId * 10,
+                        FaceIndex = 0,
+                        StrictFingerprint = new byte[] { 2 },
+                        FamilyName = "Example",
+                        StyleName = "Regular",
+                        Names = ["Example"],
+                        Technology = "TrueType"
+                    }
+                ]
+            })
+        ];
         await repository.WriteInventoryAsync(generationId, files, CancellationToken.None);
 
         AnalysisBatch batch = await repository.PublishAnalysisAsync(new AnalysisBatch
@@ -330,14 +333,17 @@ public sealed class FontManagementControllerTests
                 {
                     RetainedFaceId = 1,
                     EvidenceJson = "{}",
-                    Members = candidateFileIds.Select(fileId => new DuplicateGroupMemberRecord
-                    {
-                        FaceId = fileId * 10,
-                        FileId = fileId,
-                        Decision = DuplicateGroupMemberDecision.QuarantineCandidate,
-                        ScoreJson = "{}",
-                        Reason = "candidate"
-                    }).ToArray()
+                    Members =
+                    [
+                        .. candidateFileIds.Select(fileId => new DuplicateGroupMemberRecord
+                        {
+                            FaceId = fileId * 10,
+                            FileId = fileId,
+                            Decision = DuplicateGroupMemberDecision.QuarantineCandidate,
+                            ScoreJson = "{}",
+                            Reason = "candidate"
+                        })
+                    ]
                 }
             ]
         }, CancellationToken.None);

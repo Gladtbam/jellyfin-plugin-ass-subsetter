@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Buffers.Binary;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
@@ -6,6 +7,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Measures semantic serialization of dense Unicode maps.</summary>
 [MemoryDiagnoser]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class MappingFingerprintBenchmarks
 {
     private OpenTypeFace _face = null!;

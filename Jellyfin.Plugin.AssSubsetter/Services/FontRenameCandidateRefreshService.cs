@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
@@ -77,6 +78,7 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
     /// <summary>Waits for catalog recovery, recovers interrupted candidate work, and queues refreshes for the current naming rules as needed.</summary>
     /// <param name="stoppingToken">Cancels startup waits, configuration signal waits, or queue operations.</param>
     /// <returns>The refresh worker task, which exits on shutdown or when catalog recovery fails.</returns>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A scheduling failure is retried by the hosted refresh loop without stopping Jellyfin.")]
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
@@ -110,7 +112,11 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
                 var request = await _queue.EnsureCurrentAsync(stoppingToken).ConfigureAwait(false);
                 if (request is not null)
                 {
-                    _logger.LogDebug("Accepted rename candidate refresh {RequestId} for naming rules {Fingerprint}.", request.Id, fingerprint);
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogDebug("Accepted rename candidate refresh {RequestId} for naming rules {Fingerprint}.", request.Id, fingerprint);
+                    }
+
                     _dispatcher.Signal();
                 }
             }

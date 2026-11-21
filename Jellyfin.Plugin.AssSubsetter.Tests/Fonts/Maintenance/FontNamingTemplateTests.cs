@@ -69,6 +69,8 @@ public class FontNamingTemplateTests
     [InlineData("upper(\"family\")")]
     public void OldLanguageIsRejectedWithPosition(string expression)
     {
+        ArgumentNullException.ThrowIfNull(expression);
+
         var error = Assert.Single(Compile("  {" + expression + "} ").Errors);
         Assert.InRange(error.Offset, 3, expression.Length + 3);
     }

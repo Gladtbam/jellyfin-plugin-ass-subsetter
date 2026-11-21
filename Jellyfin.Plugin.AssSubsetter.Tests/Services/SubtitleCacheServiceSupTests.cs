@@ -19,6 +19,7 @@ public sealed class SubtitleCacheServiceSupTests : IDisposable
     private readonly string _tempDataPath;
     private readonly string _customCachePath;
     private readonly PluginConfiguration _config;
+    private readonly FontCacheManagerFixture _fontCache;
     private readonly SubtitleCacheService _cacheService;
 
     public SubtitleCacheServiceSupTests()
@@ -42,9 +43,9 @@ public sealed class SubtitleCacheServiceSupTests : IDisposable
             FallbackToOriginalOnError = true,
         };
 
-        var fontCacheManager = FontCacheManagerFixture.CreateManager();
+        _fontCache = new FontCacheManagerFixture();
         var assParser = new AssDocumentParser();
-        var assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
+        var assProcessor = new AssProcessor(() => _config, _fontCache.Manager, assParser, new NullLogger<AssProcessor>());
 
         // Use null converter — tests that need converter will use Mock<SubtitleCacheService>
         _cacheService = new SubtitleCacheService(
@@ -362,6 +363,8 @@ public sealed class SubtitleCacheServiceSupTests : IDisposable
 
     public void Dispose()
     {
+        _cacheService.Dispose();
+        _fontCache.Dispose();
         if (Directory.Exists(_tempDataPath))
         {
             try

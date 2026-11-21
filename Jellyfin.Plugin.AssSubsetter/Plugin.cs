@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
@@ -16,6 +17,7 @@ namespace Jellyfin.Plugin.AssSubsetter;
 /// <summary>
 ///     The main plugin.
 /// </summary>
+[SuppressMessage("Naming", "CA1724:Type names should not match namespaces", Justification = "Preserves the public Jellyfin plugin entry point despite the Jellyfin.Plugin namespace segment.")]
 public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     /// <summary>
@@ -25,8 +27,10 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <param name="xmlSerializer">Instance of the <see cref="IXmlSerializer" /> interface.</param>
     /// <param name="configManager">Instance of the <see cref="IServerConfigurationManager" /> interface.</param>
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, IServerConfigurationManager configManager)
-        : base(applicationPaths, xmlSerializer)
+        : base(applicationPaths ?? throw new ArgumentNullException(nameof(applicationPaths)), xmlSerializer)
     {
+        ArgumentNullException.ThrowIfNull(configManager);
+
         Instance = this;
 
         StoragePaths = FontStoragePaths.Create(applicationPaths.DataPath);

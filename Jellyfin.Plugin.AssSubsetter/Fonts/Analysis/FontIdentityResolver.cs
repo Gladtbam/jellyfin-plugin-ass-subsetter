@@ -10,10 +10,10 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Resolves deterministic identity and version evidence from an inspected Face.</summary>
 public static class FontIdentityResolver
 {
-    private static readonly (ushort Family, ushort Subfamily)[] FamilyPairs = [(16, 17), (21, 22), (1, 2)];
-    private static readonly ushort[] FamilyNameIds = [1, 16, 21];
-    private static readonly ushort[] SubfamilyNameIds = [2, 17, 22];
-    private static readonly ushort[] IdentityNameIds = [1, 2, 3, 4, 6, 16, 17, 21, 22];
+    private static readonly (ushort Family, ushort Subfamily)[] _familyPairs = [(16, 17), (21, 22), (1, 2)];
+    private static readonly ushort[] _familyNameIds = [1, 16, 21];
+    private static readonly ushort[] _subfamilyNameIds = [2, 17, 22];
+    private static readonly ushort[] _identityNameIds = [1, 2, 3, 4, 6, 16, 17, 21, 22];
 
     /// <summary>Normalizes and orders identity evidence without using filesystem metadata.</summary>
     /// <param name="face">The inspected Face whose decoded records are evaluated.</param>
@@ -33,7 +33,7 @@ public static class FontIdentityResolver
         var allNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (KeyValuePair<ushort, string> name in names)
         {
-            if (IdentityNameIds.Contains(name.Key))
+            if (_identityNameIds.Contains(name.Key))
             {
                 allNames.Add(name.Value);
             }
@@ -66,8 +66,8 @@ public static class FontIdentityResolver
     {
         return identity with
         {
-            FamilyNames = NameValues(records, FamilyNameIds),
-            SubfamilyNames = NameValues(records, SubfamilyNameIds)
+            FamilyNames = NameValues(records, _familyNameIds),
+            SubfamilyNames = NameValues(records, _subfamilyNameIds)
         };
     }
 
@@ -147,7 +147,7 @@ public static class FontIdentityResolver
     private static (ushort FamilyId, ushort SubfamilyId, string? Family, string? Subfamily) SelectFamilyPair(
         Dictionary<ushort, string> names)
     {
-        foreach ((ushort familyId, ushort subfamilyId) in FamilyPairs)
+        foreach ((ushort familyId, ushort subfamilyId) in _familyPairs)
         {
             if (names.TryGetValue(familyId, out string? family) && names.TryGetValue(subfamilyId, out string? subfamily))
             {

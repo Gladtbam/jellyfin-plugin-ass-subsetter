@@ -28,22 +28,22 @@ public sealed class SubtitleStreamResolverTests : IDisposable
         var mediaSourceManager = new Mock<IMediaSourceManager>();
         var resolver = new SubtitleStreamResolver(mediaSourceManager.Object);
         var video = new Video { Id = Guid.NewGuid() };
-        const string mediaSourceId = "requested-source";
-        const int requestedIndex = 3;
+        const string MediaSourceId = "requested-source";
+        const int RequestedIndex = 3;
         string otherPath = await CreateFileAsync("other.ass");
         string requestedPath = await CreateFileAsync("requested.ass");
         mediaSourceManager
-            .Setup(manager => manager.GetMediaSource(video, mediaSourceId, null, false, TestContext.Current.CancellationToken))
+            .Setup(manager => manager.GetMediaSource(video, MediaSourceId, null, false, TestContext.Current.CancellationToken))
             .ReturnsAsync(CreateMediaSource(
                 new MediaStream { Type = MediaStreamType.Subtitle, Index = 1, IsExternal = true, Path = otherPath },
-                new MediaStream { Type = MediaStreamType.Subtitle, Index = requestedIndex, IsExternal = true, Path = requestedPath }));
+                new MediaStream { Type = MediaStreamType.Subtitle, Index = RequestedIndex, IsExternal = true, Path = requestedPath }));
 
         string? result = await resolver.ResolveExternalAssPathAsync(
-            video, mediaSourceId, requestedIndex, TestContext.Current.CancellationToken);
+            video, MediaSourceId, RequestedIndex, TestContext.Current.CancellationToken);
 
         Assert.Equal(requestedPath, result);
         mediaSourceManager.Verify(
-            manager => manager.GetMediaSource(video, mediaSourceId, null, false, TestContext.Current.CancellationToken),
+            manager => manager.GetMediaSource(video, MediaSourceId, null, false, TestContext.Current.CancellationToken),
             Times.Once);
     }
 
@@ -63,7 +63,7 @@ public sealed class SubtitleStreamResolverTests : IDisposable
         var mediaSourceManager = new Mock<IMediaSourceManager>();
         var resolver = new SubtitleStreamResolver(mediaSourceManager.Object);
         var video = new Video { Id = Guid.NewGuid() };
-        const string mediaSourceId = "source";
+        const string MediaSourceId = "source";
         string path = Path.Join(_tempPath, "subtitle" + extension);
         if (createFile)
         {
@@ -71,12 +71,12 @@ public sealed class SubtitleStreamResolverTests : IDisposable
         }
 
         mediaSourceManager
-            .Setup(manager => manager.GetMediaSource(video, mediaSourceId, null, false, TestContext.Current.CancellationToken))
+            .Setup(manager => manager.GetMediaSource(video, MediaSourceId, null, false, TestContext.Current.CancellationToken))
             .ReturnsAsync(CreateMediaSource(
                 new MediaStream { Type = streamType, Index = streamIndex, IsExternal = isExternal, Path = path }));
 
         string? result = await resolver.ResolveExternalAssPathAsync(
-            video, mediaSourceId, 3, TestContext.Current.CancellationToken);
+            video, MediaSourceId, 3, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
     }
@@ -95,6 +95,6 @@ public sealed class SubtitleStreamResolverTests : IDisposable
 
     private static MediaSourceInfo CreateMediaSource(params MediaStream[] streams)
     {
-        return new MediaSourceInfo { MediaStreams = new List<MediaStream>(streams) };
+        return new MediaSourceInfo { MediaStreams = [.. streams] };
     }
 }

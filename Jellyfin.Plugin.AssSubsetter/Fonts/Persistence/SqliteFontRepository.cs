@@ -75,7 +75,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
         return _database.WriteAsync(
             async (connection, token) =>
             {
-                const string candidatesSql = """
+                const string CandidatesSql = """
                     SELECT g.id
                     FROM scan_generation g
                     WHERE ((g.status = 2 AND $publishedGenerationRetentionCount > 0
@@ -89,7 +89,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
                 SqliteCommand select = connection.CreateCommand();
                 await using (select.ConfigureAwait(false))
                 {
-                    select.CommandText = candidatesSql;
+                    select.CommandText = CandidatesSql;
                     select.Parameters.AddWithValue("$publishedGenerationRetentionCount", publishedGenerationRetentionCount);
                     select.Parameters.AddWithValue("$abandonedBeforeUtc", abandonedBeforeUtc.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
                     SqliteDataReader reader = await select.ExecuteReaderAsync(token).ConfigureAwait(false);
@@ -218,6 +218,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
     /// <param name="preparedCandidates">The complete prepared candidate result.</param>
     public Task<AnalysisBatch> PublishAnalysisAsync(AnalysisBatch batch, CancellationToken cancellationToken, FontRenameCandidatePreparation? preparedCandidates = null)
     {
+        ArgumentNullException.ThrowIfNull(batch);
         ArgumentOutOfRangeException.ThrowIfNotEqual(batch.Id, 0);
         if (batch.Status != AnalysisBatchStatus.Complete)
         {
@@ -387,6 +388,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the input already has a persisted identifier.</exception>
     public Task<OperationRequest> CreateOperationRequestAsync(OperationRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         ArgumentOutOfRangeException.ThrowIfNotEqual(request.Id, 0);
         return _database.WriteAsync(
             async (connection, token) =>
@@ -490,6 +492,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the input already has a persisted identifier.</exception>
     public Task<MaintenanceBatch> SaveMaintenanceBatchAsync(MaintenanceBatch batch, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(batch);
         ArgumentOutOfRangeException.ThrowIfNotEqual(batch.Id, 0);
         return _database.WriteAsync(
             async (connection, token) =>
@@ -519,6 +522,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
     /// <returns>A task representing the transactional update.</returns>
     public Task UpdateMaintenanceBatchAsync(MaintenanceBatch batch, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(batch);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batch.Id);
         return _database.WriteAsync(
             async (connection, token) =>
@@ -564,6 +568,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
         string requestJson,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(batch);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batch.Id);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batch.OperationRequestId);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(analysisBatchId);
@@ -613,7 +618,7 @@ public sealed partial class SqliteFontRepository : IFontRepository
                     bool matchesSelection = FontOperationRequestPayloadCodec.MatchesSelectionJson(
                         reader.GetString(3),
                         analysisBatchId,
-                        batch.Items.Select(item => item.FileId).ToArray());
+                        [.. batch.Items.Select(item => item.FileId)]);
                     bool matchesOriginal = !analysisIsNull
                         && reader.GetInt64(1) == analysisBatchId
                         && string.Equals(reader.GetString(2), idempotencyKey, StringComparison.Ordinal)

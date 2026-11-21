@@ -14,7 +14,7 @@ public sealed class FontDuplicateAnalyzer
 {
     internal const int CurrentEvidenceVersion = 3;
     private const int MaxDeepFilesPerBatch = 64;
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IFontAnalysisEvidenceSource _evidenceSource;
     private readonly FontRelationshipClassifier _classifier;
     private readonly FontRetentionSelector _retentionSelector;
@@ -97,7 +97,7 @@ public sealed class FontDuplicateAnalyzer
                 progress?.Report(5 + (completedPairs * 85.0 / candidates.Pairs.Count));
             }
 
-            policy = new DirectoryPolicySnapshot(files.Values.OrderBy(file => file.FileId).ToArray());
+            policy = new DirectoryPolicySnapshot([.. files.Values.OrderBy(file => file.FileId)]);
         }
         else
         {
@@ -135,7 +135,7 @@ public sealed class FontDuplicateAnalyzer
                 faceScores,
                 reclaimableBytes = retention.ReclaimableBytes
             },
-            JsonOptions);
+            _jsonOptions);
         var batch = new AnalysisBatch
         {
             GenerationId = generationId,
@@ -200,19 +200,17 @@ public sealed class FontDuplicateAnalyzer
             indexes.Add(index);
         }
 
-        (long[] FileIds, int[] PairIndexes)[] components = groupedIndexes.Values
-            .OrderBy(indexes => indexes[0])
-            .Select(indexes => (
-                indexes.SelectMany(index => new[]
-                    {
-                        faces[pairs[index].LeftFaceId].FileId,
-                        faces[pairs[index].RightFaceId].FileId
-                    })
-                    .Distinct()
-                    .Order()
-                    .ToArray(),
-                indexes.ToArray()))
-            .ToArray();
+        (long[] FileIds, int[] PairIndexes)[] components =
+        [
+            .. groupedIndexes.Values
+                .OrderBy(indexes => indexes[0])
+                .Select(indexes => (
+                    indexes.SelectMany(index => new[] { faces[pairs[index].LeftFaceId].FileId, faces[pairs[index].RightFaceId].FileId })
+                        .Distinct()
+                        .Order()
+                        .ToArray(),
+                    indexes.ToArray()))
+        ];
         var batches = new List<(long[] FileIds, int[] PairIndexes)>();
         var batchFiles = new List<long>();
         var batchPairs = new List<int>();
@@ -220,7 +218,7 @@ public sealed class FontDuplicateAnalyzer
         {
             if (batchFiles.Count > 0 && batchFiles.Count + fileIds.Length > MaxDeepFilesPerBatch)
             {
-                batches.Add((batchFiles.Order().ToArray(), batchPairs.ToArray()));
+                batches.Add(([.. batchFiles.Order()], [.. batchPairs]));
                 batchFiles.Clear();
                 batchPairs.Clear();
             }
@@ -231,10 +229,10 @@ public sealed class FontDuplicateAnalyzer
 
         if (batchFiles.Count > 0)
         {
-            batches.Add((batchFiles.Order().ToArray(), batchPairs.ToArray()));
+            batches.Add(([.. batchFiles.Order()], [.. batchPairs]));
         }
 
-        return batches.ToArray();
+        return [.. batches];
     }
 
     private static FontRelationRecord ToRelation(FontCandidatePair pair, FontRelationshipResult result, FontFaceEvidence left, FontFaceEvidence right)
@@ -266,7 +264,7 @@ public sealed class FontDuplicateAnalyzer
                         .ToArray()
                     : []
             },
-            JsonOptions);
+            _jsonOptions);
         return new FontRelationRecord
         {
             LeftFaceId = pair.LeftFaceId,
@@ -290,15 +288,18 @@ public sealed class FontDuplicateAnalyzer
         IReadOnlyDictionary<long, RetentionScore> scores = FontRetentionSelector.ScoreFaces(policy);
         Dictionary<string, int> best = faces.Values.GroupBy(RuntimeIdentity, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Max(face => scores[face.FaceId].Total), StringComparer.Ordinal);
-        return policy.Files.SelectMany(file => file.Faces.Select(face => new FontFaceAnalysisRecord
-        {
-            FaceId = face.FaceId,
-            FileId = file.FileId,
-            RetentionScore = scores[face.FaceId].Total,
-            IsRuntimePreferred = faces[face.FaceId].IsDeepEvidenceComplete && scores[face.FaceId].Total == best[RuntimeIdentity(faces[face.FaceId])],
-            ScoreJson = JsonSerializer.Serialize(scores[face.FaceId], JsonOptions),
-            VerificationJson = JsonSerializer.Serialize(face.Quality.Verification, JsonOptions)
-        })).OrderBy(face => face.FaceId).ToArray();
+        return
+        [
+            .. policy.Files.SelectMany(file => file.Faces.Select(face => new FontFaceAnalysisRecord
+            {
+                FaceId = face.FaceId,
+                FileId = file.FileId,
+                RetentionScore = scores[face.FaceId].Total,
+                IsRuntimePreferred = faces[face.FaceId].IsDeepEvidenceComplete && scores[face.FaceId].Total == best[RuntimeIdentity(faces[face.FaceId])],
+                ScoreJson = JsonSerializer.Serialize(scores[face.FaceId], _jsonOptions),
+                VerificationJson = JsonSerializer.Serialize(face.Quality.Verification, _jsonOptions)
+            })).OrderBy(face => face.FaceId)
+        ];
     }
 
     private static string RuntimeIdentity(FontFaceEvidence face)
@@ -310,41 +311,38 @@ public sealed class FontDuplicateAnalyzer
         Dictionary<long, RetentionFileDecision> decisions = plan.RetainedFiles
             .Concat(plan.QuarantineFiles)
             .ToDictionary(decision => decision.FileId);
-        return plan.Groups.Select(group =>
-        {
-            var members = new List<DuplicateGroupMemberRecord>();
-            foreach (long retainedFileId in group.RetainedFileIds)
+        return
+        [
+            .. plan.Groups.Select(group =>
             {
-                FontRetentionFile retained = files[retainedFileId];
-                RetentionFileDecision retainedDecision = decisions[retained.FileId];
-                members.AddRange(retained.Faces.Select(face => Member(
-                    face.FaceId,
-                    retained,
-                    retainedDecision,
-                    DuplicateGroupMemberDecision.Retained)));
-            }
+                var members = new List<DuplicateGroupMemberRecord>();
+                foreach (long retainedFileId in group.RetainedFileIds)
+                {
+                    FontRetentionFile retained = files[retainedFileId];
+                    RetentionFileDecision retainedDecision = decisions[retained.FileId];
+                    members.AddRange(
+                        retained.Faces.Select(face => Member(
+                            face.FaceId,
+                            retained,
+                            retainedDecision,
+                            DuplicateGroupMemberDecision.Retained)));
+                }
 
-            foreach (long quarantineFileId in group.QuarantineFileIds)
-            {
-                FontRetentionFile quarantine = files[quarantineFileId];
-                RetentionFileDecision quarantineDecision = decisions[quarantineFileId];
-                members.AddRange(
-                    quarantine.Faces.Select(
-                        face => Member(
+                foreach (long quarantineFileId in group.QuarantineFileIds)
+                {
+                    FontRetentionFile quarantine = files[quarantineFileId];
+                    RetentionFileDecision quarantineDecision = decisions[quarantineFileId];
+                    members.AddRange(
+                        quarantine.Faces.Select(face => Member(
                             face.FaceId,
                             quarantine,
                             quarantineDecision,
                             DuplicateGroupMemberDecision.QuarantineCandidate)));
-            }
+                }
 
-            return new DuplicateGroupRecord
-            {
-                RetainedFaceId = group.RetainedFaceId,
-                ReclaimableBytes = group.ReclaimableBytes,
-                EvidenceJson = JsonSerializer.Serialize(group, JsonOptions),
-                Members = members
-            };
-        }).ToArray();
+                return new DuplicateGroupRecord { RetainedFaceId = group.RetainedFaceId, ReclaimableBytes = group.ReclaimableBytes, EvidenceJson = JsonSerializer.Serialize(group, _jsonOptions), Members = members };
+            })
+        ];
     }
 
     private static DuplicateGroupMemberRecord Member(
@@ -359,7 +357,7 @@ public sealed class FontDuplicateAnalyzer
             FileId = file.FileId,
             Decision = memberDecision,
             RetentionScore = decision.Score.Total,
-            ScoreJson = JsonSerializer.Serialize(decision.Score, JsonOptions),
+            ScoreJson = JsonSerializer.Serialize(decision.Score, _jsonOptions),
             Reason = decision.Reason
         };
     }

@@ -108,7 +108,7 @@ public class FontFilenameNormalizerTests
     {
         FontFaceRecord face = Face("Legacy", "Regular") with { NameRecords = [Name(1, "Legacy"), Name(2, "Regular"), Name(16, "Incomplete"), Name(6, "Example-Sans")] };
         Assert.Equal("Legacy-Regular-v2.003.ttf", DefaultName(face, ".ttf"));
-        Assert.Equal("Legacy-Regular-v2.003.ttf", DefaultName(face with { NameRecords = face.NameRecords.Where(name => name.NameId != 6).ToArray() }, ".ttf"));
+        Assert.Equal("Legacy-Regular-v2.003.ttf", DefaultName(face with { NameRecords = [.. face.NameRecords.Where(name => name.NameId != 6)] }, ".ttf"));
     }
 
     [Fact]
@@ -339,7 +339,8 @@ public class FontFilenameNormalizerTests
         await Assert.ThrowsAsync<SimulatedCrashException>(() => fixture.Normalizer.ExecuteAsync(request, CancellationToken.None));
 
         var restartedCoordinator = new FontMaintenanceCoordinator();
-        using var manager = Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, restartedCoordinator);
+        using var managerFixture = new Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture(fixture.Repository, restartedCoordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
@@ -371,7 +372,8 @@ public class FontFilenameNormalizerTests
         await Assert.ThrowsAsync<SimulatedCrashException>(() => fixture.Normalizer.RollbackAsync(rollback, CancellationToken.None));
 
         var restartedCoordinator = new FontMaintenanceCoordinator();
-        using var manager = Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, restartedCoordinator);
+        using var managerFixture = new Jellyfin.Plugin.AssSubsetter.Tests.Services.FontCacheManagerFixture(fixture.Repository, restartedCoordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
@@ -418,7 +420,7 @@ public class FontFilenameNormalizerTests
             NameRecords = [Name(1, "Legacy"), Name(2, "Regular"), Name(16, "Typographic"), Name(17, "Bold"), Name(6, "PostScript-Bold")]
         };
         Assert.Equal("Typographic-Bold-v2.003.otf", DefaultName(face, ".OTF"));
-        Assert.Equal("Typographic-Bold-v2.003.ttf", DefaultName(face with { NameRecords = face.NameRecords.Where(n => n.NameId != 6).ToArray() }, ".ttf"));
+        Assert.Equal("Typographic-Bold-v2.003.ttf", DefaultName(face with { NameRecords = [.. face.NameRecords.Where(n => n.NameId != 6)] }, ".ttf"));
         Assert.Null(DefaultName(face with { NameRecords = [] }, ".ttf"));
     }
 
@@ -467,7 +469,7 @@ public class FontFilenameNormalizerTests
         FontFileRecord mixed = File(2, "old.otc", first, second with { NameRecords = [Name(1, "Other"), Name(2, "Bold")] });
         string name = DefaultName(mixed)!;
         Assert.Equal("Example+Other-MixedCollection-v2.003.otc", name);
-        Assert.Equal(name, DefaultName(mixed with { Faces = mixed.Faces.Reverse().ToArray() }));
+        Assert.Equal(name, DefaultName(mixed with { Faces = [.. mixed.Faces.Reverse()] }));
     }
 
     [Fact]
@@ -830,7 +832,7 @@ public class FontFilenameNormalizerTests
         public async Task PublishAsync(IReadOnlyList<FontFileRecord> files)
         {
             long generation = await Repository.BeginGenerationAsync(FontInventoryInputComparer.Capture([], new FontDirectoryPolicyResolver(Root + AdditionalRoots, null, null, false), Jellyfin.Plugin.AssSubsetter.Fonts.Analysis.PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey), [], CancellationToken.None);
-            await Repository.WriteInventoryAsync(generation, files.Select(file => file with { GenerationId = generation }).ToArray(), CancellationToken.None);
+            await Repository.WriteInventoryAsync(generation, [.. files.Select(file => file with { GenerationId = generation })], CancellationToken.None);
 
         }
 
@@ -878,7 +880,20 @@ public class FontFilenameNormalizerTests
         }
     }
 
-    private sealed class SimulatedCrashException : Exception;
+    private sealed class SimulatedCrashException : Exception
+    {
+        public SimulatedCrashException()
+        {
+        }
+
+        public SimulatedCrashException(string message) : base(message)
+        {
+        }
+
+        public SimulatedCrashException(string message, Exception innerException) : base(message, innerException)
+        {
+        }
+    }
 
     private sealed class ObservedFileSystem : IQuarantineFileSystem
     {

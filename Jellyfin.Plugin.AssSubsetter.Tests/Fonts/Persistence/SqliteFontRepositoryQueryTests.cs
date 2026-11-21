@@ -38,14 +38,10 @@ public sealed partial class SqliteFontRepositoryTests
     {
         await using var fixture = await SqliteRepositoryFixture.CreateAsync();
         long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-        FontFileRecord[] files = Enumerable.Range(0, fileCount).Select(index => CreateFile($"file-{index:D3}.ttf", $"Family {index}") with
-        {
-            PathAliases = [$"alias-{index}.ttf"],
-            Faces = [CreateFile("", $"Family {index}").Faces[0] with
-            {
-                UnicodeCoverage = [new UnicodeRange(0x20, 0x7e)]
-            }, CreateFile("", $"Other {index}").Faces[0] with { FaceIndex = 1 }]
-        }).ToArray();
+        FontFileRecord[] files =
+        [
+            .. Enumerable.Range(0, fileCount).Select(index => CreateFile($"file-{index:D3}.ttf", $"Family {index}") with { PathAliases = [$"alias-{index}.ttf"], Faces = [CreateFile("", $"Family {index}").Faces[0] with { UnicodeCoverage = [new UnicodeRange(0x20, 0x7e)] }, CreateFile("", $"Other {index}").Faces[0] with { FaceIndex = 1 }] })
+        ];
         await fixture.Repository.WriteInventoryAsync(generation, files, CancellationToken.None);
         await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
 
@@ -71,14 +67,10 @@ public sealed partial class SqliteFontRepositoryTests
     {
         await using var fixture = await SqliteRepositoryFixture.CreateAsync();
         long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-        FontFileRecord[] files = Enumerable.Range(0, fileCount).Select(index => CreateFile($"file-{index:D3}.ttf", $"Family {index}") with
-        {
-            Faces = [CreateFile("", $"Family {index}").Faces[0] with
-            {
-                NameRecords = [new OpenTypeNameRecord(3, 1, 0x409, 1, $"Family {index}")],
-                UnicodeCoverage = [new UnicodeRange(0x20, 0x7e)]
-            }, CreateFile("", $"Other {index}").Faces[0] with { FaceIndex = 1 }]
-        }).ToArray();
+        FontFileRecord[] files =
+        [
+            .. Enumerable.Range(0, fileCount).Select(index => CreateFile($"file-{index:D3}.ttf", $"Family {index}") with { Faces = [CreateFile("", $"Family {index}").Faces[0] with { NameRecords = [new OpenTypeNameRecord(3, 1, 0x409, 1, $"Family {index}")], UnicodeCoverage = [new UnicodeRange(0x20, 0x7e)] }, CreateFile("", $"Other {index}").Faces[0] with { FaceIndex = 1 }] })
+        ];
         await fixture.Repository.WriteInventoryAsync(generation, files, CancellationToken.None);
         await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = generation, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
         using var queries = new EfQueryListener(fixture.Database.DatabasePath);
@@ -178,11 +170,18 @@ public sealed partial class SqliteFontRepositoryTests
         }, CancellationToken.None);
         await fixture.Repository.UpdateMaintenanceBatchAsync(batch with
         {
-            Items = Enumerable.Range(1, 40).Select(index => new QuarantineItemRecord
-            {
-                FileId = index, SourcePath = $"source-{index}.ttf", StagingPath = $"staging-{index}.ttf",
-                QuarantinePath = $"quarantine-{index}.ttf", Sha256 = new byte[] { 1 }, Status = QuarantineItemStatus.Quarantined
-            }).ToArray()
+            Items =
+            [
+                .. Enumerable.Range(1, 40).Select(index => new QuarantineItemRecord
+                {
+                    FileId = index,
+                    SourcePath = $"source-{index}.ttf",
+                    StagingPath = $"staging-{index}.ttf",
+                    QuarantinePath = $"quarantine-{index}.ttf",
+                    Sha256 = new byte[] { 1 },
+                    Status = QuarantineItemStatus.Quarantined
+                })
+            ]
         }, CancellationToken.None);
         string? countSql = null;
         (string Name, object Value)[] parameters = [];
@@ -191,7 +190,7 @@ public sealed partial class SqliteFontRepositoryTests
             if (command.CommandText.Contains("COUNT(", StringComparison.OrdinalIgnoreCase))
             {
                 countSql = command.CommandText;
-                parameters = command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, parameter.Value!)).ToArray();
+                parameters = [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, parameter.Value!))];
             }
         });
         var page = await fixture.Repository.LoadQuarantineItemPageAsync(0, 10,

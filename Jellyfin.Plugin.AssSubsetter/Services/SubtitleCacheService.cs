@@ -167,7 +167,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
             if (File.Exists(supCachePath))
             {
-                _logger.LogInformation("[AssSubsetter] SUP cache hit for item {ItemId}. Serving cached SUP.", itemId);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] SUP cache hit for item {ItemId}. Serving cached SUP.", itemId);
+                }
+
                 TouchFile(supCachePath);
                 return new SubtitleResult(supCachePath, "application/octet-stream", true);
             }
@@ -183,7 +187,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
         if (File.Exists(cacheFilePath))
         {
-            _logger.LogInformation("[AssSubsetter] Cache hit: Returning existing subsetted subtitle for item {ItemId}", itemId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Cache hit: Returning existing subsetted subtitle for item {ItemId}", itemId);
+            }
+
             TouchFile(cacheFilePath);
 
             return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
@@ -193,7 +201,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
         {
             if (File.Exists(cacheFilePath))
             {
-                _logger.LogInformation("[AssSubsetter] Cache hit (after lock): Returning existing subsetted subtitle for item {ItemId}", itemId);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] Cache hit (after lock): Returning existing subsetted subtitle for item {ItemId}", itemId);
+                }
+
                 TouchFile(cacheFilePath);
 
                 return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
@@ -213,7 +225,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 _logger.LogError(ex, "[AssSubsetter] Permission Error occurred during LRU cache eviction.");
             }
 
-            _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
+            }
+
             using var validation = BeginValidation(originalAssPath);
             bool success = await WriteValidatedAsync(
                 cacheFilePath,
@@ -304,7 +320,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
         if (File.Exists(cacheFilePath))
         {
-            _logger.LogInformation("[AssSubsetter] SUP cache hit: Returning existing converted subtitle for item {ItemId}", itemId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] SUP cache hit: Returning existing converted subtitle for item {ItemId}", itemId);
+            }
+
             TouchFile(cacheFilePath);
             return cacheFilePath;
         }
@@ -319,7 +339,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
         {
             if (File.Exists(cacheFilePath))
             {
-                _logger.LogInformation("[AssSubsetter] SUP cache hit (after lock): Returning existing converted subtitle for item {ItemId}", itemId);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] SUP cache hit (after lock): Returning existing converted subtitle for item {ItemId}", itemId);
+                }
+
                 TouchFile(cacheFilePath);
                 return cacheFilePath;
             }
@@ -338,7 +362,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 _logger.LogError(ex, "[AssSubsetter] Permission Error occurred during LRU cache eviction.");
             }
 
-            _logger.LogInformation("[AssSubsetter] SUP cache miss for item {ItemId}. Triggering ASS to SUP conversion...", itemId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] SUP cache miss for item {ItemId}. Triggering ASS to SUP conversion...", itemId);
+            }
+
             using var validation = BeginValidation(originalAssPath);
             bool success = await WriteValidatedAsync(
                 cacheFilePath,
@@ -379,7 +407,11 @@ public class SubtitleCacheService : IHostedService, IDisposable
         string cacheFilePath = GetMksCachePath(itemId, originalAssPath);
         if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
         {
-            _logger.LogInformation("[AssSubsetter] MKS cache hit for item {ItemId}.", itemId);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] MKS cache hit for item {ItemId}.", itemId);
+            }
+
             TouchFile(cacheFilePath);
             return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
         }
@@ -488,7 +520,10 @@ public class SubtitleCacheService : IHostedService, IDisposable
             return;
         }
 
-        _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
+        }
 
         var oldestFiles = managedFiles.OrderBy(f => f.LastAccessTime);
 
@@ -504,7 +539,10 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 long fileSize = file.Length;
                 file.Delete();
                 currentSize -= fileSize;
-                _logger.LogDebug("[AssSubsetter] LRU evicted oldest cache file: {Name}", file.Name);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("[AssSubsetter] LRU evicted oldest cache file: {Name}", file.Name);
+                }
             }
             catch (IOException ex)
             {

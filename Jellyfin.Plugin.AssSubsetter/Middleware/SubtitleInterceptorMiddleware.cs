@@ -26,6 +26,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 /// </summary>
 public class SubtitleInterceptorMiddleware
 {
+    [SuppressMessage("Performance", "SYSLIB1045:Use GeneratedRegexAttribute", Justification = "Route matching uses the runtime culture at regex initialization. GeneratedRegex fixes the case mappings at compile time.")]
     private static readonly Regex _subtitleRouteRegex = new(
         @"^/Videos/(?<ItemId>[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/(?<MediaSourceId>[^/]+)/Subtitles/(?<SubtitleIndex>\d+)(?:/\d+)?/Stream\.ass/?$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -68,8 +69,11 @@ public class SubtitleInterceptorMiddleware
     /// <param name="context">The HTTP context.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Inputs are robustly validated using Guid.TryParse and verified against internal DB.")]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "An interception failure must fall through to Jellyfin's original subtitle handler.")]
     public async Task InvokeAsync(HttpContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         string path = context.Request.Path.Value ?? string.Empty;
         var match = _subtitleRouteRegex.Match(path);
         var route = context.Request.RouteValues;
@@ -96,7 +100,10 @@ public class SubtitleInterceptorMiddleware
             if (Guid.TryParse(itemIdString, out Guid itemId)
                 && int.TryParse(subtitleIndexString, NumberStyles.Integer, CultureInfo.InvariantCulture, out int subtitleIndex))
             {
-                _logger.LogDebug("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug("[AssSubsetter] Intercepted ASS subtitle request for item: {ItemId}", itemId);
+                }
 
                 // Keep security checks outside the conversion fallback: a denied request
                 // must never reach the native subtitle action (which permits anonymous streams).

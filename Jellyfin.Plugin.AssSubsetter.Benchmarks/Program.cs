@@ -10,13 +10,13 @@ using System.Text.Json;
 namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Entry point for deterministic, filterable font-inventory benchmarks.</summary>
-public static class Program
+internal static class Program
 {
     private static readonly JsonSerializerOptions _contractJsonOptions = new() { WriteIndented = true };
 
     /// <summary>Runs selected BenchmarkDotNet cases without an interactive menu.</summary>
     /// <param name="args">Optional BenchmarkDotNet filters.</param>
-    public static void Main(string[] args)
+    private static void Main(string[] args)
     {
         string artifactsPath = GetArtifactsPath(args);
         Directory.CreateDirectory(artifactsPath);
@@ -61,7 +61,7 @@ public static class Program
                 "long" => Job.Default.WithWarmupCount(15).WithIterationCount(100).WithLaunchCount(3),
                 _ => Job.Default
             };
-            return (job, args.Where((_, position) => position != index && position != index + 1).ToArray());
+            return (job, [.. args.Where((_, position) => position != index && position != index + 1)]);
         }
 
         return (Job.Default, args);

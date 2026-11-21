@@ -12,9 +12,11 @@ public sealed partial class FontMaintenanceTaskTests
     [Fact]
     public void OnlyTheExistingInventoryTaskIdentityRemainsDiscoverable()
     {
-        Type[] taskTypes = typeof(FontCacheUpdateTask).Assembly.GetTypes()
-            .Where(type => !type.IsAbstract && typeof(IScheduledTask).IsAssignableFrom(type))
-            .ToArray();
+        Type[] taskTypes =
+        [
+            .. typeof(FontCacheUpdateTask).Assembly.GetTypes()
+                .Where(type => !type.IsAbstract && typeof(IScheduledTask).IsAssignableFrom(type))
+        ];
 
         Assert.Equal(typeof(FontCacheUpdateTask), Assert.Single(taskTypes));
     }

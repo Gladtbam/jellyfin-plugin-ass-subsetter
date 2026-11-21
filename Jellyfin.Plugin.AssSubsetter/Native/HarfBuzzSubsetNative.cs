@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
@@ -95,8 +96,13 @@ public static partial class HarfBuzzSubsetNative
     /// <param name="logger">The logger for warnings/errors.</param>
     /// <returns>The subsetted binary font data, or null if subsetting failed.</returns>
     // codeql[cs/call-to-unmanaged-code] Justification: Official HarfBuzzSharp NuGet package does not expose subsetting APIs for libHarfBuzzSharp.
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Returns no font on native interop failure so callers can keep the original font reference.")]
     public static byte[]? SubsetFont(byte[] fontData, uint faceIndex, IEnumerable<uint> unicodeCodepoints, ILogger logger)
     {
+        ArgumentNullException.ThrowIfNull(fontData);
+        ArgumentNullException.ThrowIfNull(unicodeCodepoints);
+        ArgumentNullException.ThrowIfNull(logger);
+
         var pin = GCHandle.Alloc(fontData, GCHandleType.Pinned);
         try
         {

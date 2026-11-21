@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -10,7 +11,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Services;
 /// <summary>Owns a bounded queue and fixed workers for deduplicated background jobs.</summary>
 internal sealed class BoundedBackgroundScheduler : IAsyncDisposable
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly HashSet<string> _keys = new(StringComparer.Ordinal);
     private readonly Channel<Job> _queue;
     private readonly CancellationTokenSource _shutdown = new();
@@ -117,6 +118,7 @@ internal sealed class BoundedBackgroundScheduler : IAsyncDisposable
         }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Isolates failures in caller-supplied background jobs so the worker can continue draining the queue.")]
     private async Task WorkAsync()
     {
         try

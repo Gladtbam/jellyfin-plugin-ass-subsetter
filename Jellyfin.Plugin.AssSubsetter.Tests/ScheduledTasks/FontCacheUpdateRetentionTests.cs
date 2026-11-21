@@ -7,6 +7,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
 public sealed class FontCacheUpdateRetentionTests
 {
+    private static readonly double[] _refreshProgress = [0d, 100d];
+
     [Theory]
     [InlineData(0)]
     [InlineData(2)]
@@ -26,6 +28,6 @@ public sealed class FontCacheUpdateRetentionTests
         await task.ExecuteAsync(new InlineProgress(progress.Add), CancellationToken.None);
 
         executor.Verify(item => item.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, retentionCount, It.IsAny<IProgress<double>>(), CancellationToken.None), Times.Once);
-        Assert.Equal(new[] { 0d, 100d }, progress);
+        Assert.Equal(_refreshProgress, progress);
     }
 }

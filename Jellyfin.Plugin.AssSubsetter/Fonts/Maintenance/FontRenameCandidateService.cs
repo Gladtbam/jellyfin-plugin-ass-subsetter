@@ -64,6 +64,7 @@ public sealed class FontRenameCandidateService
     /// <returns>The complete result or an independent candidate generation failure.</returns>
     public Task<FontRenameCandidatePreparation> PrepareForPublicationAsync(AnalysisBatch analysis, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(analysis);
         ArgumentOutOfRangeException.ThrowIfNotEqual(analysis.Id, 0);
         return PrepareAsync(analysis, null, cancellationToken);
     }
@@ -120,6 +121,7 @@ public sealed class FontRenameCandidateService
     /// <returns>Whether analysis and configuration still match the authorization.</returns>
     public async Task<bool> IsCurrentAsync(FontRenameExecutionPayload payload, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(payload);
         var requirements = ReadRequirements();
         if (payload.Rules is null || payload.RuleFingerprint != payload.Rules.GetFingerprint()
             || payload.RuleFingerprint != requirements.RuleFingerprint || FontNamingTemplate.ValidateRules(payload.Rules).Count != 0)
@@ -147,7 +149,7 @@ public sealed class FontRenameCandidateService
     {
         ArgumentNullException.ThrowIfNull(selectedFileIds);
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
-        long[] ids = selectedFileIds.Distinct().Order().ToArray();
+        long[] ids = [.. selectedFileIds.Distinct().Order()];
         if (ids.Length == 0 || ids.Any(id => id <= 0))
         {
             throw new ArgumentException("Select at least one valid physical file.", nameof(selectedFileIds));
@@ -242,10 +244,9 @@ public sealed class FontRenameCandidateService
             .Where(request => request.IdempotencyKey == baseKey || request.IdempotencyKey.StartsWith(baseKey + ":attempt:", StringComparison.Ordinal))
             .Select(request => request.Id).DefaultIfEmpty(0).Max();
         string key = lastAttempt == 0 ? baseKey : baseKey + ":attempt:" + lastAttempt;
-        return await CreateRequestAsync(current.GenerationId, current.AnalysisBatchId, current.RuleFingerprint, eligible.Select(item => item.File.Id).ToArray(), key, cancellationToken).ConfigureAwait(false);
+        return await CreateRequestAsync(current.GenerationId, current.AnalysisBatchId, current.RuleFingerprint, [.. eligible.Select(item => item.File.Id)], key, cancellationToken).ConfigureAwait(false);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Independent planner failures are reported as candidate generation failures; cancellation and all repository failures remain outside this boundary.")]
     private async Task<FontRenameCandidatePreparation> PrepareAsync(AnalysisBatch analysis, long? requestId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -285,7 +286,6 @@ public sealed class FontRenameCandidateService
         return new(state, items);
     }
 
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA3003:File path injection", Justification = "Paths come exclusively from persisted server-generated candidates selected by numeric IDs; both paths are validated against the physical configured source root.")]
     private async Task<string?> GetLiveExclusionAsync(FontRenameCandidate candidate, CancellationToken cancellationToken)
     {
         try

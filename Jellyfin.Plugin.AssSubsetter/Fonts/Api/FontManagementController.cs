@@ -270,6 +270,7 @@ public sealed class FontManagementController : ControllerBase
     /// <param name="rules">The proposed filename and folder expressions.</param>
     /// <returns>Positioned errors and the canonical default expression.</returns>
     [HttpPost("rename/templates/validate")]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "ASP.NET Core discovers this route through a public instance action.")]
     public FontNamingValidationDto ValidateNamingRules([FromBody] FontNamingRules rules)
         => new(FontNamingTemplate.ValidateRules(rules), FontNamingRules.DefaultFileNameTemplate, FontNamingRules.CurrentFormatVersion, FontNamingFieldCatalog.Fields);
 
@@ -287,6 +288,7 @@ public sealed class FontManagementController : ControllerBase
     [HttpPost("operations/refresh-rename-candidates")]
     public async Task<ActionResult<OperationRequestDto>> QueueRefreshRenameCandidatesAsync([FromBody] QueueTaskRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         try
         {
             var operation = await _candidateRefreshQueue.QueueAsync(request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
@@ -306,6 +308,7 @@ public sealed class FontManagementController : ControllerBase
     [HttpPost("operations/quarantine")]
     public async Task<ActionResult<OperationRequestDto>> QueueSelectedQuarantineAsync([FromBody] QueueSelectedQuarantineRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (request.SelectedFileIds is null || request.SelectedFileIds.Count == 0)
         {
             return Conflict(new { error = "At least one selected quarantine file identifier is required." });
@@ -345,6 +348,7 @@ public sealed class FontManagementController : ControllerBase
     [HttpPost("operations/quarantine/all-verified")]
     public async Task<ActionResult<OperationRequestDto>> QueueAllVerifiedQuarantineAsync([FromBody] QueueAllVerifiedQuarantineRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (!request.ConfirmAllVerified)
         {
             return Conflict(new { error = "All verified quarantine candidates require explicit confirmation." });
@@ -411,6 +415,7 @@ public sealed class FontManagementController : ControllerBase
     [HttpPost("operations/normalize-names")]
     public async Task<ActionResult<OperationRequestDto>> QueueNormalizeAsync([FromBody] QueueRenameSelectionRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         try
         {
             OperationRequest operation = await _renameCandidates.CreateRequestAsync(request.GenerationId, request.AnalysisBatchId, request.RuleFingerprint, request.SelectedFileIds, request.IdempotencyKey, cancellationToken).ConfigureAwait(false);
@@ -466,6 +471,7 @@ public sealed class FontManagementController : ControllerBase
 
     private async Task<ActionResult<OperationRequestDto>> QueueMaintenanceAsync(FontOperationKind kind, FontOperationKind requiredSourceKind, QueueMaintenanceSelectionRequest request, Action queue, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         if (request.SelectedFileIds is null || request.SelectedFileIds.Count == 0)
         {
             return Conflict(new { error = "At least one selected persisted file identifier is required." });
@@ -495,8 +501,8 @@ public sealed class FontManagementController : ControllerBase
 
         MaintenanceBatch? batch = await _repository.GetMaintenanceBatchAsync(request.BatchId, cancellationToken).ConfigureAwait(false);
         HashSet<long> batchFileIds = batch?.Kind != requiredSourceKind ? [] : kind == FontOperationKind.RollbackNames
-            ? batch.RenameItems.Where(item => item.Status == RenameItemStatus.Renamed).Select(item => item.FileId).ToHashSet()
-            : batch.Items.Select(item => item.FileId).ToHashSet();
+            ? [.. batch.RenameItems.Where(item => item.Status == RenameItemStatus.Renamed).Select(item => item.FileId)]
+            : [.. batch.Items.Select(item => item.FileId)];
 
         if (request.SelectedFileIds.Any(fileId => fileId <= 0 || !batchFileIds.Contains(fileId)))
         {
@@ -565,10 +571,9 @@ public sealed class FontManagementController : ControllerBase
 
     private static bool IsVerifiedSelection(AnalysisBatch batch, IReadOnlyList<long> selectedFileIds)
     {
-        HashSet<long> candidates = batch.Groups.SelectMany(group => group.Members)
+        HashSet<long> candidates = [.. batch.Groups.SelectMany(group => group.Members)
             .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-            .Select(member => member.FileId)
-            .ToHashSet();
+            .Select(member => member.FileId)];
         return selectedFileIds.All(fileId => fileId > 0 && candidates.Contains(fileId));
     }
 }

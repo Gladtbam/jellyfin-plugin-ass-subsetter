@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
@@ -16,6 +17,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 [MemoryDiagnoser]
 [MedianColumn]
 [Orderer(SummaryOrderPolicy.Default, MethodOrderPolicy.Alphabetical)]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class SubsettingOverheadBenchmarks
 {
     private byte[] _fontBytes = null!;
@@ -66,6 +68,7 @@ public class SubsettingOverheadBenchmarks
 }
 
 /// <summary>Observes a resolved face while making resolver benchmark allocation explicit.</summary>
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "The public benchmark method returns this measurement type.")]
 public sealed class ResolverMeasurement
 {
     /// <summary>Initializes a resolver measurement result.</summary>
@@ -202,7 +205,7 @@ internal static class DeterministicSubsetFont
             tableOffset = Align4(tableOffset + data.Length);
         }
 
-        int headOffset = BinaryPrimitives.ReadInt32BigEndian(font.AsSpan(12 + (Array.IndexOf(tables.Keys.ToArray(), "head") * 16) + 8, 4));
+        int headOffset = BinaryPrimitives.ReadInt32BigEndian(font.AsSpan(12 + (Array.IndexOf([.. tables.Keys], "head") * 16) + 8, 4));
         BinaryPrimitives.WriteUInt32BigEndian(font.AsSpan(headOffset + 8, 4), unchecked(0xB1B0AFBAU - Checksum(font)));
 
         return font;

@@ -10,10 +10,10 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Checks whether libass can render a mapped glyph using only the supplied font attachment.</summary>
 internal static class LibassFontVerifier
 {
-    private static readonly Lazy<bool> Available = new(CheckAvailability);
-    private static readonly LibassNative.AssLogCallback SilentLog = (_, _, _, _) => { };
+    private static readonly Lazy<bool> _available = new(CheckAvailability);
+    private static readonly LibassNative.AssLogCallback _silentLog = (_, _, _, _) => { };
 
-    internal static bool IsAvailable => Available.Value;
+    internal static bool IsAvailable => _available.Value;
 
     internal static unsafe FontVerificationStatus Verify(byte[] data, InspectedFontFace inspected)
     {
@@ -47,7 +47,7 @@ internal static class LibassFontVerifier
                 return FontVerificationStatus.Failed;
             }
 
-            LibassNative.AssSetMessageCb(library, SilentLog, IntPtr.Zero);
+            LibassNative.AssSetMessageCb(library, _silentLog, IntPtr.Zero);
             fixed (byte* fontData = data)
             {
                 LibassNative.AssAddFont(library, "quality-probe.ttf", fontData, data.Length);

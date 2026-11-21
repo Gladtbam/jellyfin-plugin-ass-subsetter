@@ -81,7 +81,7 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         var transaction = await BeginReadSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         await using var transactionScope = transaction.ConfigureAwait(false);
-        int[] codes = statuses.Select(status => (int)status).ToArray();
+        int[] codes = [.. statuses.Select(status => (int)status)];
         string json = JsonSerializer.Serialize(codes);
         int kind = (int)FontOperationKind.Quarantine;
         // Rank once: a correlated newer-row lookup would repeatedly scan unindexed source paths.
@@ -104,7 +104,7 @@ public sealed partial class SqliteFontRepository
             SELECT * FROM ranked WHERE source_rank = 1 AND status IN (SELECT value FROM json_each({json}))
             ORDER BY id DESC LIMIT {pageSize} OFFSET {offset}
             """).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return new FontRepositoryPage<QuarantineItemRecord>(rows.Select(ToQuarantineItem).ToArray(), count);
+        return new FontRepositoryPage<QuarantineItemRecord>([.. rows.Select(ToQuarantineItem)], count);
     }
 
     /// <inheritdoc/>
@@ -117,7 +117,7 @@ public sealed partial class SqliteFontRepository
             join batch in context.Set<MaintenanceBatchRow>() on item.MaintenanceBatchId equals batch.Id
             orderby batch.Id, item.FileId
             select new { item.ItemJson, BatchId = batch.Id, batch.OperationRequestId }).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(row => JsonSerializer.Deserialize<RenameItemRecord>(row.ItemJson)! with { MaintenanceBatchId = row.BatchId, OperationRequestId = row.OperationRequestId }).ToArray();
+        return [.. rows.Select(row => JsonSerializer.Deserialize<RenameItemRecord>(row.ItemJson)! with { MaintenanceBatchId = row.BatchId, OperationRequestId = row.OperationRequestId })];
     }
 
     private static async Task<IReadOnlyList<MaintenanceBatch>> LoadMaintenanceRecordsAsync(FontDbContext context, List<MaintenanceBatchRow> rows, CancellationToken cancellationToken)
@@ -127,21 +127,28 @@ public sealed partial class SqliteFontRepository
             return [];
         }
 
-        long[] ids = rows.Select(row => row.Id).ToArray();
+        long[] ids = [.. rows.Select(row => row.Id)];
         List<QuarantineItemRow> items = await context.Set<QuarantineItemRow>().Where(row => ids.Contains(row.MaintenanceBatchId))
             .OrderBy(row => row.FileId).ToListAsync(cancellationToken).ConfigureAwait(false);
         var renames = await context.Set<RenameItemRow>().Where(row => ids.Contains(row.MaintenanceBatchId)).OrderBy(row => row.FileId)
             .Select(row => new { row.MaintenanceBatchId, row.ItemJson }).ToListAsync(cancellationToken).ConfigureAwait(false);
         var itemsByBatch = items.ToLookup(row => row.MaintenanceBatchId);
         var renamesByBatch = renames.ToLookup(row => row.MaintenanceBatchId);
-        return rows.Select(row => new MaintenanceBatch
-        {
-            Id = row.Id, OperationRequestId = row.OperationRequestId, Kind = (FontOperationKind)row.OperationKind,
-            Status = (MaintenanceBatchStatus)row.Status, StartedUtc = ParseDate(row.StartedUtc),
-            CompletedUtc = ParseNullableDate(row.CompletedUtc), SummaryJson = row.SummaryJson,
-            Items = itemsByBatch[row.Id].Select(ToQuarantineItem).ToArray(),
-            RenameItems = renamesByBatch[row.Id].Select(item => JsonSerializer.Deserialize<RenameItemRecord>(item.ItemJson)!).ToArray()
-        }).ToArray();
+        return
+        [
+            .. rows.Select(row => new MaintenanceBatch
+            {
+                Id = row.Id,
+                OperationRequestId = row.OperationRequestId,
+                Kind = (FontOperationKind)row.OperationKind,
+                Status = (MaintenanceBatchStatus)row.Status,
+                StartedUtc = ParseDate(row.StartedUtc),
+                CompletedUtc = ParseNullableDate(row.CompletedUtc),
+                SummaryJson = row.SummaryJson,
+                Items = [.. itemsByBatch[row.Id].Select(ToQuarantineItem)],
+                RenameItems = [.. renamesByBatch[row.Id].Select(item => JsonSerializer.Deserialize<RenameItemRecord>(item.ItemJson)!)]
+            })
+        ];
     }
 
     private static QuarantineItemRecord ToQuarantineItem(QuarantineItemRow row) => new()

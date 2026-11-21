@@ -109,9 +109,11 @@ public sealed class RuntimeFontIndexTests
     [Fact]
     public void Find_ShouldFilterLooseCandidatesBeforeBoundingThem()
     {
-        RuntimeFontFace[] decoys = Enumerable.Range(0, 256)
-            .Select(i => new RuntimeFontFace(i + 1, $"/fonts/{i:D3}.ttf", 0, $"Example {i:D3}", "Regular", [$"Example {i:D3}"], 400, 5, 0, false, false, "TrueType", 0, false))
-            .ToArray();
+        RuntimeFontFace[] decoys =
+        [
+            .. Enumerable.Range(0, 256)
+                .Select(i => new RuntimeFontFace(i + 1, $"/fonts/{i:D3}.ttf", 0, $"Example {i:D3}", "Regular", [$"Example {i:D3}"], 400, 5, 0, false, false, "TrueType", 0, false))
+        ];
         var target = new RuntimeFontFace(1000, "/fonts/target.ttf", 0, "Example Sans", "Regular", ["Example Sans"], 400, 5, 0, false, false, "TrueType", 0, false);
         var index = new RuntimeFontIndex([.. decoys, target]);
 

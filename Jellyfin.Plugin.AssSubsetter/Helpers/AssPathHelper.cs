@@ -15,7 +15,6 @@ internal static class AssPathHelper
     /// </summary>
     /// <param name="videoPath">The physical path of the video file.</param>
     /// <returns>An array of matching ASS file paths.</returns>
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are determined solely from trusted database objects.")]
     internal static string[] GetAllOriginalAssPaths(string? videoPath)
     {
         if (string.IsNullOrEmpty(videoPath))
@@ -30,9 +29,11 @@ internal static class AssPathHelper
         {
             if (Directory.Exists(videoDir))
             {
-                return Directory.GetFiles(videoDir, videoNameWithoutExt + "*.ass")
-                    .Where(f => !f.Contains("subsetted", StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
+                return
+                [
+                    .. Directory.GetFiles(videoDir, videoNameWithoutExt + "*.ass")
+                        .Where(f => !f.Contains("subsetted", StringComparison.OrdinalIgnoreCase))
+                ];
             }
         }
         catch (IOException)

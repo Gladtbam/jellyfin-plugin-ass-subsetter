@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -119,6 +120,7 @@ public class LibraryScanTracker : IHostedService, IDisposable
         _processQueue.Writer.TryWrite(video);
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A failure processing one subtitle or library item must leave the background queue available for subsequent items.")]
     private async Task ConsumeQueueAsync(CancellationToken cancellationToken)
     {
         await foreach (var video in _processQueue.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
@@ -127,7 +129,10 @@ public class LibraryScanTracker : IHostedService, IDisposable
             {
                 foreach (string originalAssPath in AssPathHelper.GetAllOriginalAssPaths(video.Path))
                 {
-                    _logger.LogDebug("[AssSubsetter] Auto-scan processing item: {ItemId}", video.Id);
+                    if (_logger.IsEnabled(LogLevel.Debug))
+                    {
+                        _logger.LogDebug("[AssSubsetter] Auto-scan processing item: {ItemId}", video.Id);
+                    }
 
                     try
                     {

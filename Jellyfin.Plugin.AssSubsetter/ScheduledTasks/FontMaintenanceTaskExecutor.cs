@@ -20,7 +20,7 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 /// <summary>Serializes inventory analysis and file maintenance while preserving durable operation-request lifecycles.</summary>
 public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskExecutor, IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IFontMaintenanceExecutionRepository _repository;
     private readonly FontAnalysisWorkflow _workflow;
     private readonly ILogger<FontMaintenanceTaskExecutor> _logger;
@@ -31,7 +31,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     private readonly Func<OperationRequest, IProgress<double>?, CancellationToken, Task<MaintenanceBatch>> _quarantine;
     private readonly Func<OperationRequest, CancellationToken, Task<MaintenanceBatch>> _restore;
     private readonly Func<IProgress<double>?, CancellationToken, Task<int>> _purge;
-    private readonly object _taskLifetime = new();
+    private readonly Lock _taskLifetime = new();
     private readonly Action? _signalPendingRequests;
     private readonly Func<long, CancellationToken, Task<FontRenameCandidateState>>? _rebuildCandidates;
     private readonly Func<FontRenameCandidateReadRequirements>? _candidateRequirements;
@@ -66,6 +66,10 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         ILogger<FontMaintenanceTaskExecutor> logger,
         FontCatalogReadiness readiness)
     {
+        ArgumentNullException.ThrowIfNull(quarantineManager);
+        ArgumentNullException.ThrowIfNull(candidateService);
+        ArgumentNullException.ThrowIfNull(candidateQueue);
+
         _repository = repository;
         _requestStore = requestStore;
         _workflow = workflow;
@@ -156,10 +160,18 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
     private async Task<(int DeletedBatches, int DeletedGenerations)> PruneHistoryCoreAsync(int retentionCount, IProgress<double> progress, CancellationToken cancellationToken)
     {
-        _logger.LogInformation("[AssSubsetter] History pruning reports. RetentionCount: {RetentionCount}.", retentionCount);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] History pruning reports. RetentionCount: {RetentionCount}.", retentionCount);
+        }
+
         int batches = await _repository.PruneAnalysisBatchesAsync(retentionCount, cancellationToken).ConfigureAwait(false);
         progress.Report(3);
-        _logger.LogInformation("[AssSubsetter] History pruning inventory. DeletedBatches: {DeletedBatches}.", batches);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] History pruning inventory. DeletedBatches: {DeletedBatches}.", batches);
+        }
+
         DateTimeOffset abandonedBeforeUtc = _timeProvider.GetUtcNow().AddDays(-1);
         int generations = await _repository.PruneObsoleteGenerationsAsync(
             retentionCount,
@@ -207,7 +219,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                 ? OperationRequestStatus.Complete
                 : OperationRequestStatus.Failed;
             await CompleteRequestAsync(
-                request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), JsonOptions) : null },
+                request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), _jsonOptions) : null },
                 status,
                 status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
             if (status == OperationRequestStatus.Complete)
@@ -276,13 +288,15 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
                 return new FontTaskExecutionResult(analysis.Id, "analysis-stale");
             }
 
-            long[] selectedFileIds = analysis.Groups
-                .SelectMany(group => group.Members)
-                .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-                .Select(member => member.FileId)
-                .Distinct()
-                .Order()
-                .ToArray();
+            long[] selectedFileIds =
+            [
+                .. analysis.Groups
+                    .SelectMany(group => group.Members)
+                    .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
+                    .Select(member => member.FileId)
+                    .Distinct()
+                    .Order()
+            ];
             if (selectedFileIds.Length == 0)
             {
                 return new FontTaskExecutionResult(analysis.Id, "no-candidates");
@@ -313,9 +327,9 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         if (!await IsCurrentRequestAnalysisAsync(request, cancellationToken).ConfigureAwait(false))
         {
-            const string error = "The request analysis is missing, stale, or no longer matches the published inventory.";
-            await CompleteRequestAsync(request, OperationRequestStatus.Failed, error).ConfigureAwait(false);
-            var exception = new InvalidOperationException(error);
+            const string Error = "The request analysis is missing, stale, or no longer matches the published inventory.";
+            await CompleteRequestAsync(request, OperationRequestStatus.Failed, Error).ConfigureAwait(false);
+            var exception = new InvalidOperationException(Error);
             AddOperationRequestIdentifiers(exception, request);
             throw exception;
         }
@@ -381,7 +395,11 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            _logger.LogInformation("[AssSubsetter] Quarantine purge verification started. RequestId: {RequestId}.", request.Id);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] Quarantine purge verification started. RequestId: {RequestId}.", request.Id);
+            }
+
             progress.Report(5);
             int purged = await _purge(new ScaledProgress(progress, 5, 95), cancellationToken).ConfigureAwait(false);
             progress.Report(95);
@@ -547,24 +565,33 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
     {
         try
         {
-            _logger.LogInformation("[AssSubsetter] File maintenance started. RequestId: {RequestId}; Kind: {Kind}.", request.Id, request.Kind);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] File maintenance started. RequestId: {RequestId}; Kind: {Kind}.", request.Id, request.Kind);
+            }
+
             var stopwatch = Stopwatch.StartNew();
             MaintenanceBatch batch = await operation(request, cancellationToken).ConfigureAwait(false);
-            string counts = batch.RenameItems.Count > 0
-                ? string.Join(", ", batch.RenameItems.GroupBy(item => item.Status).Select(group => group.Key + ":" + group.Count()))
-                : string.Join(", ", batch.Items.GroupBy(item => item.Status).Select(group => group.Key + ":" + group.Count()));
-            string errors = string.Join("; ", batch.RenameItems.Select(item => item.Error).Concat(batch.Items.Select(item => item.Error))
-                .Where(error => !string.IsNullOrEmpty(error)).GroupBy(error => error).Select(group => group.Key + " (" + group.Count() + ")"));
-            _logger.Log(
-                batch.Status == MaintenanceBatchStatus.Complete ? LogLevel.Information : LogLevel.Warning,
-                "[AssSubsetter] File maintenance finished. RequestId: {RequestId}; BatchId: {BatchId}; Kind: {Kind}; Status: {Status}; Counts: {Counts}; Reasons: {Reasons}; ElapsedMs: {ElapsedMs}.",
-                request.Id,
-                batch.Id,
-                request.Kind,
-                batch.Status,
-                counts,
-                errors,
-                stopwatch.ElapsedMilliseconds);
+            LogLevel logLevel = batch.Status == MaintenanceBatchStatus.Complete ? LogLevel.Information : LogLevel.Warning;
+            if (_logger.IsEnabled(logLevel))
+            {
+                string counts = batch.RenameItems.Count > 0
+                    ? string.Join(", ", batch.RenameItems.GroupBy(item => item.Status).Select(group => group.Key + ":" + group.Count()))
+                    : string.Join(", ", batch.Items.GroupBy(item => item.Status).Select(group => group.Key + ":" + group.Count()));
+                string errors = string.Join("; ", batch.RenameItems.Select(item => item.Error).Concat(batch.Items.Select(item => item.Error))
+                    .Where(error => !string.IsNullOrEmpty(error)).GroupBy(error => error).Select(group => group.Key + " (" + group.Count() + ")"));
+                _logger.Log(
+                    logLevel,
+                    "[AssSubsetter] File maintenance finished. RequestId: {RequestId}; BatchId: {BatchId}; Kind: {Kind}; Status: {Status}; Counts: {Counts}; Reasons: {Reasons}; ElapsedMs: {ElapsedMs}.",
+                    request.Id,
+                    batch.Id,
+                    request.Kind,
+                    batch.Status,
+                    counts,
+                    errors,
+                    stopwatch.ElapsedMilliseconds);
+            }
+
             OperationRequestStatus requestStatus = batch.Status switch
             {
                 MaintenanceBatchStatus.Cancelled => OperationRequestStatus.Cancelled,
@@ -613,7 +640,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         {
             try
             {
-                batchId = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, JsonOptions)?.BatchId;
+                batchId = JsonSerializer.Deserialize<FontOperationRequestPayload>(request.RequestJson, _jsonOptions)?.BatchId;
             }
             catch (JsonException)
             {

@@ -46,7 +46,7 @@ public sealed partial class FontMaintenanceTaskExecutor
 
                 if (context.IsCurrent)
                 {
-                    await CompleteCandidateGroupAsync(group, OperationRequestStatus.Complete, null, JsonSerializer.Serialize(context.State, JsonOptions)).ConfigureAwait(false);
+                    await CompleteCandidateGroupAsync(group, OperationRequestStatus.Complete, null, JsonSerializer.Serialize(context.State, _jsonOptions)).ConfigureAwait(false);
                     return new(null, "reused-calculation", first.Id);
                 }
 
@@ -60,7 +60,7 @@ public sealed partial class FontMaintenanceTaskExecutor
 
                 state = await (_rebuildCandidates ?? throw new InvalidOperationException("Candidate calculator is unavailable."))(rootId, cancellationToken).ConfigureAwait(false);
                 var status = state.Status == FontRenameCandidateGenerationStatus.Ready ? OperationRequestStatus.Complete : OperationRequestStatus.Failed;
-                await CompleteCandidateGroupAsync(group, status, state.Error, JsonSerializer.Serialize(state, JsonOptions)).ConfigureAwait(false);
+                await CompleteCandidateGroupAsync(group, status, state.Error, JsonSerializer.Serialize(state, _jsonOptions)).ConfigureAwait(false);
                 return new(null, state.Status.ToString().ToLowerInvariant(), first.Id);
             }
             catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)

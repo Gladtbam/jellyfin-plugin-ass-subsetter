@@ -166,12 +166,10 @@ public sealed class FontDuplicateAnalyzerTests
             ]));
         FontAnalysisSnapshot lightweight = deepSnapshot with
         {
-            Faces = deepSnapshot.Faces.Select(face => face with
-            {
-                IsDeepEvidenceComplete = false,
-                UnicodeCoverage = [],
-                CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>()
-            }).ToArray()
+            Faces =
+            [
+                .. deepSnapshot.Faces.Select(face => face with { IsDeepEvidenceComplete = false, UnicodeCoverage = [], CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>() })
+            ]
         };
         var source = new LazyEvidenceSource(lightweight, deepSnapshot);
         var analyzer = new FontDuplicateAnalyzer(
@@ -205,12 +203,10 @@ public sealed class FontDuplicateAnalyzerTests
             ]));
         FontAnalysisSnapshot lightweight = deep with
         {
-            Faces = deep.Faces.Select(face => face with
-            {
-                IsDeepEvidenceComplete = false,
-                UnicodeCoverage = [],
-                CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>()
-            }).ToArray()
+            Faces =
+            [
+                .. deep.Faces.Select(face => face with { IsDeepEvidenceComplete = false, UnicodeCoverage = [], CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>() })
+            ]
         };
         var source = new LazyEvidenceSource(lightweight, deep);
         var analyzer = new FontDuplicateAnalyzer(
@@ -247,12 +243,10 @@ public sealed class FontDuplicateAnalyzerTests
         FontAnalysisSnapshot deep = new(deepFaces, new DirectoryPolicySnapshot(retentionFiles));
         FontAnalysisSnapshot lightweight = deep with
         {
-            Faces = deep.Faces.Select(face => face with
-            {
-                IsDeepEvidenceComplete = false,
-                UnicodeCoverage = [],
-                CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>()
-            }).ToArray()
+            Faces =
+            [
+                .. deep.Faces.Select(face => face with { IsDeepEvidenceComplete = false, UnicodeCoverage = [], CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>() })
+            ]
         };
         var source = new LazyEvidenceSource(lightweight, deep);
         var analyzer = new FontDuplicateAnalyzer(
@@ -405,12 +399,12 @@ public sealed class FontDuplicateAnalyzerTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            LoadedFileIds = fileIds.ToArray();
+            LoadedFileIds = [.. fileIds];
             LoadCalls.Add(LoadedFileIds);
-            HashSet<long> requested = fileIds.ToHashSet();
+            HashSet<long> requested = [.. fileIds];
             return Task.FromResult(new FontDeepAnalysisEvidence(
-                deep.Faces.Where(face => requested.Contains(face.FileId)).ToArray(),
-                deep.Policy.Files.Where(file => requested.Contains(file.FileId)).ToArray()));
+                [.. deep.Faces.Where(face => requested.Contains(face.FileId))],
+                [.. deep.Policy.Files.Where(file => requested.Contains(file.FileId))]));
         }
     }
 

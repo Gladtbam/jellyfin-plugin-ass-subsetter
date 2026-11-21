@@ -22,7 +22,7 @@ public sealed class RuntimeFontIndex
     /// <param name="faces">The published runtime Faces to index.</param>
     public RuntimeFontIndex(IEnumerable<RuntimeFontFace> faces)
     {
-        RuntimeFontFace[] snapshot = faces.ToArray();
+        RuntimeFontFace[] snapshot = [.. faces];
         _familyExact = BuildLookup(snapshot, face => EnumerateFamilyAliases(face).Select(Normalize));
         _exact = BuildLookup(snapshot, face => EnumerateAliases(face).Select(Normalize));
         _tokens = BuildLookup(snapshot, face => EnumerateAliases(face).SelectMany(Tokenize).Distinct(StringComparer.Ordinal));
@@ -41,6 +41,7 @@ public sealed class RuntimeFontIndex
         Func<RuntimeFontFace, bool>? canSelect = null,
         IReadOnlyCollection<uint>? requiredCharacters = null)
     {
+        ArgumentNullException.ThrowIfNull(descriptor);
         string normalized = Normalize(descriptor.FontName);
         if (_familyExact.TryGetValue(normalized, out ImmutableArray<RuntimeFontFace> family))
         {
@@ -60,7 +61,7 @@ public sealed class RuntimeFontIndex
             }
         }
 
-        string[] tokens = Tokenize(normalized).ToArray();
+        string[] tokens = [.. Tokenize(normalized)];
         if (tokens.Length == 0)
         {
             return null;
@@ -92,12 +93,14 @@ public sealed class RuntimeFontIndex
             return canSelect is null || canSelect(exactFace[0]) ? exactFace[0] : null;
         }
 
-        RuntimeFontFace[] eligible = faces.Where(face => canSelect is null || canSelect(face)).ToArray();
+        RuntimeFontFace[] eligible = [.. faces.Where(face => canSelect is null || canSelect(face))];
         if (requiredCharacters is { Count: > 0 })
         {
-            RuntimeFontFace[] complete = eligible
-                .Where(face => face.UnicodeCoverage.Count > 0 && requiredCharacters.All(character => Covers(face.UnicodeCoverage, character)))
-                .ToArray();
+            RuntimeFontFace[] complete =
+            [
+                .. eligible
+                    .Where(face => face.UnicodeCoverage.Count > 0 && requiredCharacters.All(character => Covers(face.UnicodeCoverage, character)))
+            ];
             if (complete.Length > 0)
             {
                 eligible = complete;

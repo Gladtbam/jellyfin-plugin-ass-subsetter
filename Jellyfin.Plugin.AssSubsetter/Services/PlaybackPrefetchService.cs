@@ -36,7 +36,7 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     /// </summary>
     private readonly ConcurrentDictionary<string, byte> _triggeredPrefetches = new();
     private readonly ConcurrentDictionary<string, Lazy<Task>> _prefetchTasks = new(StringComparer.Ordinal);
-    private readonly object _taskGate = new();
+    private readonly Lock _taskGate = new();
     private readonly CancellationTokenSource _stoppingCts = new();
 
     private bool _disposed;
@@ -111,10 +111,12 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         lock (_taskGate)
         {
             _stopping = true;
-            tasks = _prefetchTasks.Values
-                .Where(static lazy => lazy.IsValueCreated)
-                .Select(static lazy => lazy.Value)
-                .ToArray();
+            tasks =
+            [
+                .. _prefetchTasks.Values
+                    .Where(static lazy => lazy.IsValueCreated)
+                    .Select(static lazy => lazy.Value)
+            ];
         }
 
         await _stoppingCts.CancelAsync().ConfigureAwait(false);
@@ -173,14 +175,18 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             _ = candidate.Value;
         }
 
-        _logger.LogInformation(
-            "[AssSubsetter] Playback progress for episode {EpisodeName} (S{Season}E{Episode}) reached {Percent:F1}%, triggering prefetch for next episode.",
-            episode.Name,
-            episode.ParentIndexNumber,
-            episode.IndexNumber,
-            progressPercent);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation(
+                "[AssSubsetter] Playback progress for episode {EpisodeName} (S{Season}E{Episode}) reached {Percent:F1}%, triggering prefetch for next episode.",
+                episode.Name,
+                episode.ParentIndexNumber,
+                episode.IndexNumber,
+                progressPercent);
+        }
     }
 
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "Observes failures from the detached prefetch task and releases its tracking entry.")]
     private async Task RunTrackedPrefetchAsync(string prefetchKey, Lazy<Task> trackedTask, Episode episode)
     {
         try
@@ -217,7 +223,6 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         _triggeredPrefetches.TryRemove(prefetchKey, out _);
     }
 
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are determined solely from trusted database objects.")]
     private async Task PrefetchNextEpisodeAsync(Episode currentEpisode, CancellationToken cancellationToken)
     {
         if (currentEpisode.IndexNumber is null)
@@ -230,28 +235,45 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
 
         if (nextEpisode is null)
         {
-            _logger.LogInformation("[AssSubsetter] No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation("[AssSubsetter] No next episode found for {EpisodeName}, skipping prefetch.", currentEpisode.Name);
+            }
+
             return;
         }
 
-        _logger.LogInformation("[AssSubsetter] Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...", nextEpisode.Name, nextEpisode.ParentIndexNumber, nextEpisode.IndexNumber);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Found next episode: {NextEpisodeName} (S{Season}E{Episode}). Prefetching all ASS subtitles...", nextEpisode.Name, nextEpisode.ParentIndexNumber, nextEpisode.IndexNumber);
+        }
 
         string[] assPaths = AssPathHelper.GetAllOriginalAssPaths(nextEpisode.Path);
 
         if (assPaths.Length == 0)
         {
-            _logger.LogDebug("[AssSubsetter] No external ASS subtitle files found for next episode {ItemId}.", nextEpisode.Id);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug("[AssSubsetter] No external ASS subtitle files found for next episode {ItemId}.", nextEpisode.Id);
+            }
+
             return;
         }
 
-        _logger.LogInformation("[AssSubsetter] Found {Count} ASS subtitle file(s) for next episode. Starting prefetch...", assPaths.Length);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Found {Count} ASS subtitle file(s) for next episode. Starting prefetch...", assPaths.Length);
+        }
 
         foreach (string assPath in assPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                _logger.LogInformation("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("[AssSubsetter] Prefetch processing: {AssPath}", assPath);
+                }
 
                 await _cacheService.GetOrGenerateSubtitleAsync(nextEpisode.Id, assPath, nextEpisode.Width, nextEpisode.Height, cancellationToken).ConfigureAwait(false);
             }
@@ -265,7 +287,10 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
             }
         }
 
-        _logger.LogInformation("[AssSubsetter] Prefetch completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Prefetch completed for next episode: {NextEpisodeName}.", nextEpisode.Name);
+        }
     }
 
     private Episode? FindNextEpisode(Episode currentEpisode)

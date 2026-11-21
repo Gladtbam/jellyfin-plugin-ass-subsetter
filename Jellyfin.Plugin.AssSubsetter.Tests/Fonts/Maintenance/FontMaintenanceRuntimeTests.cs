@@ -44,12 +44,10 @@ public sealed class FontMaintenanceRuntimeTests
             var analyzer = new FontDuplicateAnalyzer(evidence, new FontRelationshipClassifier(), new FontRetentionSelector(), TimeProvider.System);
             AnalysisBatch analysis = await analyzer.AnalyzeAsync(generation, null, TestContext.Current.CancellationToken);
             // Force the soon-to-be-removed path to lead runtime lookup so the test exercises lease re-selection.
-            FontFaceAnalysisRecord[] runtimeScores = analysis.FaceScores.Select(face => face with
-            {
-                RetentionScore = face.FileId == source.Id ? 500 : 0,
-                IsRuntimePreferred = face.FileId == source.Id,
-                ScoreJson = face.FileId == source.Id ? "{\"total\":500}" : "{\"total\":0}"
-            }).ToArray();
+            FontFaceAnalysisRecord[] runtimeScores =
+            [
+                .. analysis.FaceScores.Select(face => face with { RetentionScore = face.FileId == source.Id ? 500 : 0, IsRuntimePreferred = face.FileId == source.Id, ScoreJson = face.FileId == source.Id ? "{\"total\":500}" : "{\"total\":0}" })
+            ];
             analysis = analysis with
             {
                 FaceScores = runtimeScores,
@@ -69,14 +67,14 @@ public sealed class FontMaintenanceRuntimeTests
             if (selectedBeforeMutation)
             {
                 await files.SourceReadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
-                queuedLookup = manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+                queuedLookup = manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
                 Assert.False(queuedLookup.IsCompleted);
                 files.ReleaseSourceRead.TrySetResult();
             }
 
             MaintenanceBatch result = await operation;
             Assert.Equal(QuarantineItemStatus.Quarantined, Assert.Single(result.Items).Status);
-            await using (FontFileLease? lease = await (queuedLookup ?? manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken)))
+            await using (FontFileLease? lease = await (queuedLookup ?? manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken)))
             {
                 Assert.NotNull(lease);
                 Assert.True(File.Exists(lease.Path));
@@ -88,7 +86,7 @@ public sealed class FontMaintenanceRuntimeTests
             Assert.Equal(loaded, repository.RuntimeSnapshotLoadCallCount);
             OperationRequest restore = await new FontOperationRequestStore(repository, TimeProvider.System).CreateAsync(FontOperationKind.Restore, result.Id, [1], "real-runtime-restore", TestContext.Current.CancellationToken);
             await quarantine.RestoreAsync(restore, TestContext.Current.CancellationToken);
-            await using FontFileLease? restored = await manager.AcquireFontAsync(descriptor, Array.Empty<uint>(), TestContext.Current.CancellationToken);
+            await using FontFileLease? restored = await manager.AcquireFontAsync(descriptor, [], TestContext.Current.CancellationToken);
             Assert.NotNull(restored);
             Assert.True(File.Exists(restored.Path));
             Assert.Equal(sourcePath, restored.Path);
@@ -99,7 +97,7 @@ public sealed class FontMaintenanceRuntimeTests
         }
     }
 
-    private static FontFileRecord Record(string path, long id, long generation, byte[] data, IPhysicalFileIdentityProvider identity, bool preferred)
+    private static FontFileRecord Record(string path, long id, long generation, byte[] data, PlatformPhysicalFileIdentityProvider identity, bool preferred)
     {
         OpenTypeFace face = OpenTypeFontReader.Read(data).Faces[0];
         InspectedFontFace inspected = FontFaceInspector.Inspect(face);

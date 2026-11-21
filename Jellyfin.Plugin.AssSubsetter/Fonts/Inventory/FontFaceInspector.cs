@@ -14,12 +14,12 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 /// </summary>
 public static class FontFaceInspector
 {
-    private static readonly uint NameTag = OpenTypeTag.FromString("name");
-    private static readonly uint CmapTag = OpenTypeTag.FromString("cmap");
-    private static readonly uint HeadTag = OpenTypeTag.FromString("head");
-    private static readonly uint Os2Tag = OpenTypeTag.FromString("OS/2");
-    private static readonly uint PostTag = OpenTypeTag.FromString("post");
-    private static readonly uint FvarTag = OpenTypeTag.FromString("fvar");
+    private static readonly uint _nameTag = OpenTypeTag.FromString("name");
+    private static readonly uint _cmapTag = OpenTypeTag.FromString("cmap");
+    private static readonly uint _headTag = OpenTypeTag.FromString("head");
+    private static readonly uint _os2Tag = OpenTypeTag.FromString("OS/2");
+    private static readonly uint _postTag = OpenTypeTag.FromString("post");
+    private static readonly uint _fvarTag = OpenTypeTag.FromString("fvar");
 
     /// <summary>Extracts deterministic evidence from a validated Face without opening the source file again.</summary>
     /// <param name="face">The bounds-checked Face table directory.</param>
@@ -29,7 +29,7 @@ public static class FontFaceInspector
         ArgumentNullException.ThrowIfNull(face);
         try
         {
-            List<OpenTypeNameRecord> nameRecords = ReadNames(GetRequiredTable(face, NameTag));
+            List<OpenTypeNameRecord> nameRecords = ReadNames(GetRequiredTable(face, _nameTag));
             string familyName = SelectName(nameRecords, 16) ?? SelectName(nameRecords, 1) ?? SelectName(nameRecords, 4) ?? string.Empty;
             if (string.IsNullOrWhiteSpace(familyName))
             {
@@ -37,7 +37,7 @@ public static class FontFaceInspector
             }
 
             string styleName = SelectName(nameRecords, 17) ?? SelectName(nameRecords, 2) ?? "Regular";
-            (List<UnicodeRange> coverage, uint[] selectors, List<UnicodeVariationMapping> mappings, Dictionary<uint, ushort> ordinary, bool complete, int validCmaps, string? coverageError) = ReadCoverage(GetRequiredTable(face, CmapTag));
+            (List<UnicodeRange> coverage, uint[] selectors, List<UnicodeVariationMapping> mappings, Dictionary<uint, ushort> ordinary, bool complete, int validCmaps, string? coverageError) = ReadCoverage(GetRequiredTable(face, _cmapTag));
             if (coverage.Count == 0)
             {
                 return InspectedFontFace.Unclassifiable(face.FaceIndex, coverageError ?? "No valid encoded Unicode coverage could be proven from cmap.");
@@ -48,12 +48,14 @@ public static class FontFaceInspector
             List<FontVariationAxis> axes = ReadVariationAxes(face);
             string? headRevision = ReadHeadVersion(face);
             string? version = SelectName(nameRecords, 5) ?? headRevision;
-            string[] aliases = nameRecords
-                .Where(record => record.NameId is 1 or 4 or 6 or 16)
-                .Select(record => record.Value)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+            string[] aliases =
+            [
+                .. nameRecords
+                    .Where(record => record.NameId is 1 or 4 or 6 or 16)
+                    .Select(record => record.Value)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            ];
 
             return new InspectedFontFace
             {
@@ -123,7 +125,7 @@ public static class FontFaceInspector
     {
         ReadOnlySpan<byte> data = table.Data.Span;
         EnsureRange(data.Length, 0, 6, "name header");
-        ushort format = BinaryPrimitives.ReadUInt16BigEndian(data.Slice(0, 2));
+        ushort format = BinaryPrimitives.ReadUInt16BigEndian(data[..2]);
         if (format is not 0 and not 1)
         {
             throw new InvalidDataException("The name-table format is unsupported.");
@@ -227,11 +229,11 @@ public static class FontFaceInspector
                 switch (format)
                 {
                     case 4:
-                        ReadFormat4(data.Slice(subtableOffset), subtableRanges, subtableMappings);
+                        ReadFormat4(data[subtableOffset..], subtableRanges, subtableMappings);
                         validCount++;
                         break;
                     case 12:
-                        ReadFormat12(data.Slice(subtableOffset), subtableRanges, subtableMappings);
+                        ReadFormat12(data[subtableOffset..], subtableRanges, subtableMappings);
                         validCount++;
                         break;
                     case 14:
@@ -240,7 +242,7 @@ public static class FontFaceInspector
                             throw new InvalidDataException("The variation subtable has an invalid encoding record.");
                         }
 
-                        ReadFormat14(data.Slice(subtableOffset), selectors, mappings);
+                        ReadFormat14(data[subtableOffset..], selectors, mappings);
                         validCount++;
                         break;
                     default:
@@ -272,7 +274,7 @@ public static class FontFaceInspector
                 : "Only legacy cmap encoding records are present; no Unicode mapping can be proven.";
         }
 
-        return (coverage, selectors.ToArray(), mappings, ordinary, complete, validCount, failure);
+        return (coverage, [.. selectors], mappings, ordinary, complete, validCount, failure);
     }
 
     private static void ReadFormat12(ReadOnlySpan<byte> data, List<UnicodeRange> ranges, Dictionary<uint, ushort> mappings)
@@ -416,8 +418,8 @@ public static class FontFaceInspector
             int defaultOffset = CheckedUInt32ToInt(BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset + 3, 4)), "default UVS offset");
             int explicitOffset = CheckedUInt32ToInt(BinaryPrimitives.ReadUInt32BigEndian(data.Slice(offset + 7, 4)), "non-default UVS offset");
             var baseScalars = new HashSet<uint>();
-            ReadVariationMappings(data.Slice(0, length), defaultOffset, selector, true, baseScalars, mappings);
-            ReadVariationMappings(data.Slice(0, length), explicitOffset, selector, false, baseScalars, mappings);
+            ReadVariationMappings(data[..length], defaultOffset, selector, true, baseScalars, mappings);
+            ReadVariationMappings(data[..length], explicitOffset, selector, false, baseScalars, mappings);
         }
     }
 
@@ -499,7 +501,7 @@ public static class FontFaceInspector
 
     private static (int Weight, int Width, bool Italic) ReadStyle(OpenTypeFace face)
     {
-        if (!face.Tables.TryGetValue(Os2Tag, out OpenTypeTable? table))
+        if (!face.Tables.TryGetValue(_os2Tag, out OpenTypeTable? table))
         {
             return (400, 5, false);
         }
@@ -514,14 +516,14 @@ public static class FontFaceInspector
 
     private static bool ReadFixedPitch(OpenTypeFace face)
     {
-        return face.Tables.TryGetValue(PostTag, out OpenTypeTable? table)
+        return face.Tables.TryGetValue(_postTag, out OpenTypeTable? table)
             && table.Data.Length >= 16
             && BinaryPrimitives.ReadUInt32BigEndian(table.Data.Span.Slice(12, 4)) != 0;
     }
 
     private static int ReadUnitsPerEm(OpenTypeFace face)
     {
-        if (!face.Tables.TryGetValue(HeadTag, out OpenTypeTable? table) || table.Data.Length < 20)
+        if (!face.Tables.TryGetValue(_headTag, out OpenTypeTable? table) || table.Data.Length < 20)
         {
             return 0;
         }
@@ -531,7 +533,7 @@ public static class FontFaceInspector
 
     private static string? ReadHeadVersion(OpenTypeFace face)
     {
-        if (!face.Tables.TryGetValue(HeadTag, out OpenTypeTable? table) || table.Data.Length < 8)
+        if (!face.Tables.TryGetValue(_headTag, out OpenTypeTable? table) || table.Data.Length < 8)
         {
             return null;
         }
@@ -542,7 +544,7 @@ public static class FontFaceInspector
 
     private static string? ReadVendorId(OpenTypeFace face)
     {
-        if (!face.Tables.TryGetValue(Os2Tag, out OpenTypeTable? table) || table.Data.Length < 62)
+        if (!face.Tables.TryGetValue(_os2Tag, out OpenTypeTable? table) || table.Data.Length < 62)
         {
             return null;
         }
@@ -555,7 +557,7 @@ public static class FontFaceInspector
 
     private static List<FontVariationAxis> ReadVariationAxes(OpenTypeFace face)
     {
-        if (!face.Tables.TryGetValue(FvarTag, out OpenTypeTable? table))
+        if (!face.Tables.TryGetValue(_fvarTag, out OpenTypeTable? table))
         {
             return [];
         }

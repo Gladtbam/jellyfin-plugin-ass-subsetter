@@ -106,7 +106,7 @@ public sealed class MksMuxerTests : IDisposable
         string[] arguments = [];
         var muxer = CreateMuxer(async (startInfo, token) =>
         {
-            arguments = startInfo.ArgumentList.ToArray();
+            arguments = [.. startInfo.ArgumentList];
             assContent = await File.ReadAllTextAsync(arguments[Array.IndexOf(arguments, "-i") + 1], token);
             for (int index = 0; index < arguments.Length; index++)
             {

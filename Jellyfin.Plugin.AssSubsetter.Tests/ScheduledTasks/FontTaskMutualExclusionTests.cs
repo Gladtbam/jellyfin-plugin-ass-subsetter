@@ -23,7 +23,7 @@ public sealed class FontTaskMutualExclusionTests
         try
         {
             await fixture.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-            OperationRequest[] before = fixture.Repository.OperationRequests.ToArray();
+            OperationRequest[] before = [.. fixture.Repository.OperationRequests];
             var task = new FontCacheUpdateTask(fixture.Executor, () => new PluginConfiguration
             {
                 EnableScheduledFontAnalysis = true,

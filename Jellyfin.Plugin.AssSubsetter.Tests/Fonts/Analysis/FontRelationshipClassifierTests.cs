@@ -488,7 +488,7 @@ public sealed class FontRelationshipClassifierTests
             Weight = weight,
             Width = 5,
             Slant = slant,
-            NameRecords = names.Select(name => new OpenTypeNameRecord(3, 1, 0x0409, name.Id, name.Value)).ToArray()
+            NameRecords = [.. names.Select(name => new OpenTypeNameRecord(3, 1, 0x0409, name.Id, name.Value))]
         });
     }
 
@@ -556,23 +556,23 @@ public sealed class FontRelationshipClassifierTests
     private static FontFaceEvidence ConflictingIdentity(FontFaceEvidence face, bool samePostScript, bool crossName = false)
     {
         string postScript = samePostScript ? "EXAMPLE-REGULAR" : "OTHER-REGULAR";
-        IReadOnlySet<string> names = crossName
-            ? new HashSet<string> { postScript, "EXAMPLE" }
-            : new HashSet<string> { postScript, "OTHER" };
+        HashSet<string> names = crossName
+            ? [postScript, "EXAMPLE"]
+            : [postScript, "OTHER"];
         return SemanticVariant(face with
         {
             Identity = Identity(postScript, "OTHER", "BOLD", names)
         }, FontSemanticGroup.OutlinesAndMetrics, "other-outline", "conflict");
     }
 
-    private static IReadOnlyDictionary<FontSemanticGroup, ReadOnlyMemory<byte>> Semantics()
+    private static Dictionary<FontSemanticGroup, ReadOnlyMemory<byte>> Semantics()
     {
         return Enum.GetValues<FontSemanticGroup>()
             .Where(group => group != FontSemanticGroup.OtherFunctional)
             .ToDictionary(group => group, group => Bytes(group.ToString()));
     }
 
-    private static IReadOnlyDictionary<uint, ReadOnlyMemory<byte>> Glyphs(IEnumerable<UnicodeRange> coverage)
+    private static Dictionary<uint, ReadOnlyMemory<byte>> Glyphs(IEnumerable<UnicodeRange> coverage)
     {
         var result = new Dictionary<uint, ReadOnlyMemory<byte>>();
         foreach (UnicodeRange range in coverage)

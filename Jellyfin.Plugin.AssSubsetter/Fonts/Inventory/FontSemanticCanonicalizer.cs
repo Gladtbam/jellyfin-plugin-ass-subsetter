@@ -24,7 +24,7 @@ internal static class FontSemanticCanonicalizer
             {
                 case "head" when data.Length >= 54:
                     byte[] head = data.ToArray();
-                    Add(result, FontSemanticGroup.Metadata, table, head.AsSpan(4, 4).ToArray().Concat(head.AsSpan(20, 16).ToArray()).ToArray());
+                    Add(result, FontSemanticGroup.Metadata, table, head.AsSpan(4, 4).ToArray().Concat([.. head.AsSpan(20, 16)]).ToArray());
                     head.AsSpan(4, 8).Clear();
                     head.AsSpan(20, 16).Clear();
                     if (canonicalGlyphs)

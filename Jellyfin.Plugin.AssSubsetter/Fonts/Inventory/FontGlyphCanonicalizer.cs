@@ -52,7 +52,7 @@ internal static class FontGlyphCanonicalizer
 
                 try
                 {
-                    CanonicalGlyph(glyf.Data.Span.Slice(start, end - start), count, out byte[] outline, out byte[] hint);
+                    CanonicalGlyph(glyf.Data.Span[start..end], count, out byte[] outline, out byte[] hint);
                     outlineWriter.Write(outline.Length);
                     outlineWriter.Write(outline);
                     hintWriter.Write(hint.Length);
@@ -110,7 +110,7 @@ internal static class FontGlyphCanonicalizer
             int hintFieldLength = data.Length == cursor && contours == 0 ? 0 : 2;
             cursor += hintFieldLength;
             Require(data, cursor, hintLength);
-            hint = data.Slice(cursor, hintLength).ToArray();
+            hint = [.. data.Slice(cursor, hintLength)];
             cursor += hintLength;
             int coordinateBytes = 0;
             for (int point = 0; point < points;)
@@ -136,7 +136,7 @@ internal static class FontGlyphCanonicalizer
             Require(data, cursor, coordinateBytes);
             cursor += coordinateBytes;
             outline = new byte[cursor - hintFieldLength - hintLength];
-            data.Slice(0, hintOffset).CopyTo(outline);
+            data[..hintOffset].CopyTo(outline);
             data.Slice(hintOffset + hintFieldLength + hintLength, cursor - hintOffset - hintFieldLength - hintLength).CopyTo(outline.AsSpan(hintOffset));
         }
         else
@@ -166,7 +166,7 @@ internal static class FontGlyphCanonicalizer
             }
             while ((flags & 0x20) != 0);
 
-            outline = data.Slice(0, cursor).ToArray();
+            outline = [.. data[..cursor]];
             int component = 10;
             do
             {
@@ -182,12 +182,12 @@ internal static class FontGlyphCanonicalizer
                 hintLength = Read16(data, cursor);
                 cursor += 2;
                 Require(data, cursor, hintLength);
-                hint = data.Slice(cursor, hintLength).ToArray();
+                hint = [.. data.Slice(cursor, hintLength)];
                 cursor += hintLength;
             }
         }
 
-        if (data.Slice(cursor).IndexOfAnyExcept((byte)0) >= 0)
+        if (data[cursor..].IndexOfAnyExcept((byte)0) >= 0)
         {
             throw new InvalidDataException("Nonzero unparsed glyph bytes.");
         }

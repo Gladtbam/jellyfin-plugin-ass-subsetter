@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// </summary>
 public sealed class FontMaintenanceCoordinator
 {
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
     private readonly Dictionary<string, PathState> _states = new(FontPathComparison.Comparer);
     private readonly HashSet<string> _unavailablePaths = new(FontPathComparison.Comparer);
     private readonly HashSet<string> _renamedPaths = new(FontPathComparison.Comparer);
@@ -105,6 +105,7 @@ public sealed class FontMaintenanceCoordinator
     /// <returns>A read lease that must be disposed after font bytes are copied.</returns>
     public async Task<FontFileLease> AcquireReadAsync(RuntimeFontFace face, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(face);
         PathState state = GetState(face.Path);
         await state.WriterGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         lock (_sync)
@@ -122,12 +123,14 @@ public sealed class FontMaintenanceCoordinator
     /// <returns>An exclusive lease that reopens the paths to readers when disposed.</returns>
     public async Task<IAsyncDisposable> AcquireExclusiveAsync(IEnumerable<string> paths, CancellationToken cancellationToken)
     {
-        PathState[] states = paths
-            .Select(path => (Path: Path.GetFullPath(path), State: GetState(path)))
-            .DistinctBy(item => item.Path, FontPathComparison.Comparer)
-            .OrderBy(item => item.Path, FontPathComparison.Comparer)
-            .Select(item => item.State)
-            .ToArray();
+        PathState[] states =
+        [
+            .. paths
+                .Select(path => (Path: Path.GetFullPath(path), State: GetState(path)))
+                .DistinctBy(item => item.Path, FontPathComparison.Comparer)
+                .OrderBy(item => item.Path, FontPathComparison.Comparer)
+                .Select(item => item.State)
+        ];
         var acquired = new List<PathState>(states.Length);
         try
         {

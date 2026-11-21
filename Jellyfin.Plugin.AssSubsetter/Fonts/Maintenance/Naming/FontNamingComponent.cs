@@ -1,6 +1,5 @@
 using System;
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.Naming;
 
@@ -24,6 +23,6 @@ internal static class FontNamingComponent
 
     internal static bool IsSafe(string value)
         => !string.IsNullOrWhiteSpace(value) && value is not "." and not ".." && !value.EndsWith(' ') && !value.EndsWith('.')
-            && !Regex.IsMatch(value, "[<>:\"/\\\\|?*\\p{Cc}]", RegexOptions.CultureInvariant)
-            && !Regex.IsMatch(value.Split('.')[0], "^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            && !FilenameSanitizer.InvalidFilenameCharactersRegex().IsMatch(value)
+            && !FilenameSanitizer.ReservedDeviceNameRegex().IsMatch(value.Split('.')[0]);
 }

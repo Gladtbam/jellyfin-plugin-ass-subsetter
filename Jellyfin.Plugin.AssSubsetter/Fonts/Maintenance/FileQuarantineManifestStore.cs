@@ -13,7 +13,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Stores recovery manifests atomically under a fixed plugin-internal quarantine root.</summary>
 public sealed class FileQuarantineManifestStore : IQuarantineManifestStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     private readonly string _manifestRoot;
     private readonly string _quarantineRoot;
 
@@ -47,7 +47,7 @@ public sealed class FileQuarantineManifestStore : IQuarantineManifestStore
         Directory.CreateDirectory(manifestDirectory);
         string finalPath = Path.Combine(manifestDirectory, "manifest.json");
         string temporaryPath = Path.Combine(manifestDirectory, "manifest.tmp");
-        byte[] json = JsonSerializer.SerializeToUtf8Bytes(manifest, JsonOptions);
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(manifest, _jsonOptions);
         try
         {
             var stream = new FileStream(
@@ -100,7 +100,7 @@ public sealed class FileQuarantineManifestStore : IQuarantineManifestStore
             await using var streamScope = stream.ConfigureAwait(false);
             QuarantineManifest? manifest = await JsonSerializer.DeserializeAsync<QuarantineManifest>(
                 stream,
-                JsonOptions,
+                _jsonOptions,
                 cancellationToken).ConfigureAwait(false);
             if (manifest is null)
             {
@@ -117,10 +117,10 @@ public sealed class FileQuarantineManifestStore : IQuarantineManifestStore
             manifests.Add(manifest);
         }
 
-        return manifests.OrderBy(manifest => manifest.BatchId).ToArray();
+        return [.. manifests.OrderBy(manifest => manifest.BatchId)];
     }
 
-    private void ValidateGeneratedItemPaths(QuarantineManifest manifest, string batchDirectory)
+    private static void ValidateGeneratedItemPaths(QuarantineManifest manifest, string batchDirectory)
     {
         manifest.ValidateCurrentFormat();
 

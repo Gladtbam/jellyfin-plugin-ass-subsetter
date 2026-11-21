@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 /// <summary>Owns the persisted selection format shared by request creation and manifest recovery.</summary>
 internal static class FontOperationRequestPayloadCodec
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
 
     public static string CreateSelectionJson(long batchId, IReadOnlyList<long> selectedFileIds)
     {
@@ -21,20 +21,20 @@ internal static class FontOperationRequestPayloadCodec
             throw new ArgumentException("At least one physical file must be selected.", nameof(selectedFileIds));
         }
 
-        long[] normalizedIds = selectedFileIds.Distinct().Order().ToArray();
+        long[] normalizedIds = [.. selectedFileIds.Distinct().Order()];
         if (normalizedIds.Any(fileId => fileId <= 0))
         {
             throw new ArgumentOutOfRangeException(nameof(selectedFileIds), "Physical-file identifiers must be positive.");
         }
 
-        return JsonSerializer.Serialize(new SelectionPayload(batchId, normalizedIds), JsonOptions);
+        return JsonSerializer.Serialize(new SelectionPayload(batchId, normalizedIds), _jsonOptions);
     }
 
     public static bool MatchesSelectionJson(string requestJson, long batchId, IReadOnlyList<long> selectedFileIds)
     {
         try
         {
-            SelectionPayload? payload = JsonSerializer.Deserialize<SelectionPayload>(requestJson, JsonOptions);
+            SelectionPayload? payload = JsonSerializer.Deserialize<SelectionPayload>(requestJson, _jsonOptions);
             return payload is not null
                 && payload.BatchId == batchId
                 && payload.SelectedFileIds is not null
@@ -70,12 +70,12 @@ internal static class FontOperationRequestPayloadCodec
             }
         }
 
-        return JsonSerializer.Serialize(payload, JsonOptions);
+        return JsonSerializer.Serialize(payload, _jsonOptions);
     }
 
     public static FontRenameExecutionPayload ParseRenameExecution(string requestJson)
     {
-        FontRenameExecutionPayload payload = JsonSerializer.Deserialize<FontRenameExecutionPayload>(requestJson, JsonOptions)
+        FontRenameExecutionPayload payload = JsonSerializer.Deserialize<FontRenameExecutionPayload>(requestJson, _jsonOptions)
             ?? throw new ArgumentException("Invalid filename execution payload.", nameof(requestJson));
         _ = CreateRenameExecutionJson(payload);
         return payload;

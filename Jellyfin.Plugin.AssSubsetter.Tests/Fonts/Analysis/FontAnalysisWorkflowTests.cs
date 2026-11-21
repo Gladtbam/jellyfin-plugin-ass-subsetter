@@ -7,6 +7,9 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Analysis;
 
 public sealed class FontAnalysisWorkflowTests
 {
+    private static readonly string[] _stepsThroughValidation = ["scan", "analyze", "prepare", "validate"];
+    private static readonly string[] _stepsThroughPublication = ["scan", "analyze", "prepare", "validate", "publish"];
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -23,13 +26,13 @@ public sealed class FontAnalysisWorkflowTests
         if (failValidation)
         {
             await Assert.ThrowsAsync<InvalidOperationException>(() => workflow.RunAsync(7, false, new Progress<double>(), CancellationToken.None));
-            Assert.Equal(new[] { "scan", "analyze", "prepare", "validate" }, calls);
+            Assert.Equal(_stepsThroughValidation, calls);
         }
         else
         {
             var result = await workflow.RunAsync(7, false, new Progress<double>(), CancellationToken.None);
             Assert.Equal(3, result.Batch.Id);
-            Assert.Equal(new[] { "scan", "analyze", "prepare", "validate", "publish" }, calls);
+            Assert.Equal(_stepsThroughPublication, calls);
         }
     }
 }

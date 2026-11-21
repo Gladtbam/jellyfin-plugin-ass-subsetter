@@ -18,6 +18,7 @@ public sealed class SubtitleCacheServiceTests : IDisposable
     private readonly string _tempDataPath;
     private readonly string _customCachePath;
     private readonly PluginConfiguration _config;
+    private readonly FontCacheManagerFixture _fontCache;
     private readonly AssProcessor _assProcessor;
     private readonly SubtitleCacheService _cacheService;
 
@@ -40,9 +41,9 @@ public sealed class SubtitleCacheServiceTests : IDisposable
             MaxCacheSizeMB = 1
         };
 
-        var fontCacheManager = FontCacheManagerFixture.CreateManager();
+        _fontCache = new FontCacheManagerFixture();
         var assParser = new AssDocumentParser();
-        _assProcessor = new AssProcessor(() => _config, fontCacheManager, assParser, new NullLogger<AssProcessor>());
+        _assProcessor = new AssProcessor(() => _config, _fontCache.Manager, assParser, new NullLogger<AssProcessor>());
 
         _cacheService = new SubtitleCacheService(() => _config, _assProcessor, null, _customCachePath, new NullLogger<SubtitleCacheService>());
     }
@@ -138,7 +139,7 @@ public sealed class SubtitleCacheServiceTests : IDisposable
                 await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "mks-data", token);
                 return 0;
             });
-        var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        using var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
         Guid itemId = Guid.NewGuid();
 
         var first = await service.GetOrGenerateSubtitleAsync(itemId, originalAssPath, cancellationToken: TestContext.Current.CancellationToken);
@@ -161,7 +162,7 @@ public sealed class SubtitleCacheServiceTests : IDisposable
         string originalAssPath = Path.Join(_tempDataPath, "failed-mks.ass");
         await File.WriteAllTextAsync(originalAssPath, "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,Text", TestContext.Current.CancellationToken);
         var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", (_, _) => Task.FromResult(1));
-        var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        using var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
 
         var result = await service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), originalAssPath, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -179,7 +180,7 @@ public sealed class SubtitleCacheServiceTests : IDisposable
         _config.FallbackToOriginalOnError = fallbackEnabled;
         string originalAssPath = Path.Join(_tempDataPath, "cancelled-mks.ass");
         await File.WriteAllTextAsync(originalAssPath, "plain", TestContext.Current.CancellationToken);
-        var service = new SubtitleCacheService(() => _config, _assProcessor, null, null, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        using var service = new SubtitleCacheService(() => _config, _assProcessor, null, null, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -235,6 +236,8 @@ public sealed class SubtitleCacheServiceTests : IDisposable
 
     public void Dispose()
     {
+        _cacheService.Dispose();
+        _fontCache.Dispose();
         if (Directory.Exists(_tempDataPath))
         {
             try

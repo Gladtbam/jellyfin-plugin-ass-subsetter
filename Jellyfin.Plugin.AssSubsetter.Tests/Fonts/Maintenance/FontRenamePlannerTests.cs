@@ -265,7 +265,8 @@ public sealed class FontRenamePlannerTests : IDisposable
             files.Add(Source(Path.Combine(_root, "Family-01010101-02020202.ttf")) with { Id = 3, Faces = [FontNamingTestData.Face(0, 2, (1, "Family-01010101"))] });
         }
 
-        foreach (var order in new[] { files.ToArray(), files.AsEnumerable().Reverse().ToArray() })
+        FontFileRecord[][] orders = [[.. files], [.. files.AsEnumerable().Reverse()]];
+        foreach (FontFileRecord[] order in orders)
         {
             var plan = Build(order, new("{family}", "", false));
             Assert.All(plan.Items.Where(item => item.File.Id != 4), item =>
@@ -337,7 +338,7 @@ public sealed class FontRenamePlannerTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, true);
     }
 
-    private FontFileRecord Source(string path)
+    private static FontFileRecord Source(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "font-fixture");

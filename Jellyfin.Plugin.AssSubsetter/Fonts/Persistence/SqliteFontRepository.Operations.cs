@@ -51,6 +51,7 @@ public sealed partial class SqliteFontRepository
     /// <inheritdoc/>
     public async Task<string?> LoadReusableDeepEvidenceAsync(FontFileRecord file, string evidenceKey, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(file);
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
         await using var scope = context.ConfigureAwait(false);
         string modified = file.ModifiedUtc.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
@@ -73,7 +74,7 @@ public sealed partial class SqliteFontRepository
         List<OperationRequestRow> rows = await context.Set<OperationRequestRow>()
             .Where(row => row.OperationKind == (int)FontOperationKind.NormalizeNames && (row.Status == (int)OperationRequestStatus.Pending || row.Status == (int)OperationRequestStatus.Running))
             .OrderBy(row => row.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(ToOperationRequest).ToArray();
+        return [.. rows.Select(ToOperationRequest)];
     }
 
     /// <inheritdoc/>
@@ -83,7 +84,7 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         List<OperationRequestRow> rows = await context.Set<OperationRequestRow>().Where(row => row.OperationKind == (int)FontOperationKind.NormalizeNames)
             .OrderBy(row => row.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(ToOperationRequest).ToArray();
+        return [.. rows.Select(ToOperationRequest)];
     }
 
     /// <inheritdoc/>
@@ -93,7 +94,7 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         List<int> kinds = await context.Set<OperationRequestRow>().Where(row => row.Status == (int)OperationRequestStatus.Pending)
             .Select(row => row.OperationKind).Distinct().OrderBy(kind => kind).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return kinds.Select(kind => (FontOperationKind)kind).ToArray();
+        return [.. kinds.Select(kind => (FontOperationKind)kind)];
     }
 
     /// <inheritdoc/>
@@ -132,6 +133,7 @@ public sealed partial class SqliteFontRepository
     /// <inheritdoc/>
     public Task UpdateOperationAsync(OperationRequest request, CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(request.Id);
         return _database.WriteAsync(
             async (connection, token) =>
@@ -195,11 +197,18 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         List<PerformanceSampleRow> rows = await context.Set<PerformanceSampleRow>().OrderByDescending(row => row.RecordedUtc).ThenByDescending(row => row.Id)
             .Take(maximumCount).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return rows.Select(row => new PerformanceSample
-        {
-            GenerationId = row.GenerationId, Phase = row.Phase, Duration = TimeSpan.FromTicks(row.DurationTicks),
-            ItemCount = row.ItemCount, ReusedCount = row.ReusedCount, RecordedUtc = ParseDate(row.RecordedUtc)
-        }).ToArray();
+        return
+        [
+            .. rows.Select(row => new PerformanceSample
+            {
+                GenerationId = row.GenerationId,
+                Phase = row.Phase,
+                Duration = TimeSpan.FromTicks(row.DurationTicks),
+                ItemCount = row.ItemCount,
+                ReusedCount = row.ReusedCount,
+                RecordedUtc = ParseDate(row.RecordedUtc)
+            })
+        ];
     }
 
     private static OperationRequest ToOperationRequest(OperationRequestRow row) => new()

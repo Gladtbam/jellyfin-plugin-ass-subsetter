@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Api;
 
 public sealed class FontRenameStateQueryTests : IDisposable
 {
-    private static readonly System.Text.Json.JsonSerializerOptions WebJsonOptions = new(System.Text.Json.JsonSerializerDefaults.Web);
+    private static readonly System.Text.Json.JsonSerializerOptions _webJsonOptions = new(System.Text.Json.JsonSerializerDefaults.Web);
     private readonly string _root = Path.Combine(Path.GetTempPath(), "rename-state-" + Guid.NewGuid().ToString("N"));
     private readonly InMemoryFontRepository _repository = new();
     private readonly FontNamingRules _rules = new("{family}", "", false);
@@ -24,14 +24,14 @@ public sealed class FontRenameStateQueryTests : IDisposable
     {
         await PrepareAsync();
         var saved = await _repository.LoadRenameCandidatesAsync(null, _candidates.ReadRequirements(), CancellationToken.None);
-        const string error = "Only legacy cmap encoding records are present; no Unicode mapping can be proven.";
-        var file = saved.Items[0].File with { Health = FontFileHealth.Unclassifiable, Error = error };
+        const string Error = "Only legacy cmap encoding records are present; no Unicode mapping can be proven.";
+        var file = saved.Items[0].File with { Health = FontFileHealth.Unclassifiable, Error = Error };
         await _repository.SaveRenameCandidatesAsync(new(saved.Context.State!, [saved.Items[0] with { File = file, SkipReason = "unclassifiable-or-link" }]), _candidates.ReadRequirements(), null, CancellationToken.None);
         _repository.ThrowOnFullRenameReads = true;
         int reads = _repository.InventoryLoadCallCount;
         var row = Assert.Single((await _query.GetPageAsync("skipped", 1, 50, CancellationToken.None)).Items);
-        var json = System.Text.Json.JsonSerializer.SerializeToElement(row.Item, WebJsonOptions);
-        Assert.Equal(error, json.GetProperty("inspectionError").GetString());
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(row.Item, _webJsonOptions);
+        Assert.Equal(Error, json.GetProperty("inspectionError").GetString());
         Assert.Equal("unclassifiable-or-link", row.Item.Error);
         Assert.False(row.CanExecute);
         Assert.Equal(reads, _repository.InventoryLoadCallCount);

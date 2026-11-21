@@ -95,13 +95,13 @@ public sealed class FontQualityVerifierTests
     [Fact]
     public void LibassProbe_ShouldRenderARealFontOnLinux()
     {
-        const string fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
-        if (!OperatingSystem.IsLinux() || !File.Exists(fontPath))
+        const string FontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+        if (!OperatingSystem.IsLinux() || !File.Exists(FontPath))
         {
             return;
         }
 
-        byte[] data = File.ReadAllBytes(fontPath);
+        byte[] data = File.ReadAllBytes(FontPath);
         Assert.Equal(FontVerificationStatus.Passed, Verify(data)["libass"]);
     }
 

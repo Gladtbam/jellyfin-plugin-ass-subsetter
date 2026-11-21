@@ -48,7 +48,7 @@ internal static class GeneratedAnalysisFont
             tableOffset = Align4(tableOffset + data.Length);
         }
 
-        int headOffset = BinaryPrimitives.ReadInt32BigEndian(font.AsSpan(12 + (Array.IndexOf(tables.Keys.ToArray(), "head") * 16) + 8, 4));
+        int headOffset = BinaryPrimitives.ReadInt32BigEndian(font.AsSpan(12 + (Array.IndexOf([.. tables.Keys], "head") * 16) + 8, 4));
         BinaryPrimitives.WriteUInt32BigEndian(font.AsSpan(headOffset + 8, 4), unchecked(0xB1B0AFBAU - Checksum(font)));
 
         return font;

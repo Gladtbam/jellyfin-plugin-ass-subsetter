@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Jellyfin.Plugin.AssSubsetter.Core;
 using Jellyfin.Plugin.AssSubsetter.Models;
 
@@ -12,7 +13,7 @@ internal sealed class SubtitleFontRequestCache
 {
     private const int MaximumEntries = 128;
     private const int MaximumCharacters = 262144;
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private int _characters;
 
@@ -30,8 +31,11 @@ internal sealed class SubtitleFontRequestCache
             }
         }
 
-        KeyValuePair<FontDescriptor, uint[]>[] requests = length < 0 ? [] : new AssDocumentParser().ExtractUsedCharacters(path)
-            .Select(pair => new KeyValuePair<FontDescriptor, uint[]>(pair.Key, pair.Value.Order().ToArray())).ToArray();
+        KeyValuePair<FontDescriptor, uint[]>[] requests = length < 0 ? [] :
+        [
+            .. new AssDocumentParser().ExtractUsedCharacters(path)
+                .Select(pair => new KeyValuePair<FontDescriptor, uint[]>(pair.Key, [.. pair.Value.Order()]))
+        ];
         source.Refresh();
         if ((source.Exists ? source.Length : -1) != length || (source.Exists ? source.LastWriteTimeUtc.Ticks : 0) != modified)
         {

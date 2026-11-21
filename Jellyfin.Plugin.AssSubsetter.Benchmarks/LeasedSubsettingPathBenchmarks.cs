@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
@@ -16,6 +17,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Compares direct file/native subsetting with the production memory-index and file-lease path.</summary>
 [MemoryDiagnoser]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class LeasedSubsettingPathBenchmarks : IAsyncDisposable
 {
     private string _root = null!;
@@ -175,7 +177,11 @@ public class LeasedSubsettingPathBenchmarks : IAsyncDisposable
 
     /// <summary>Releases the resources owned by the benchmark fixture.</summary>
     /// <returns>A value task representing cleanup.</returns>
-    public ValueTask DisposeAsync() => new(CleanupAsync());
+    public async ValueTask DisposeAsync()
+    {
+        await CleanupAsync().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
+    }
 
     private async Task<byte[]> SubsetAsync(string path, int faceIndex)
     {

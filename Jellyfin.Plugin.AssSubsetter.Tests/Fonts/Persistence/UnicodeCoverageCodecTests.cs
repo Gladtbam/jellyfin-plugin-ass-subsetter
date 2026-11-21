@@ -8,9 +8,9 @@ public sealed class UnicodeCoverageCodecTests
     [Fact]
     public void Decode_ShouldKeepLargeCoverageSnapshotWithinMemoryBudget()
     {
-        const int rangeCount = 100_000;
-        byte[] encoded = new byte[rangeCount * 8];
-        for (int index = 0; index < rangeCount; index++)
+        const int RangeCount = 100_000;
+        byte[] encoded = new byte[RangeCount * 8];
+        for (int index = 0; index < RangeCount; index++)
         {
             uint scalar = (uint)(index * 2);
             BinaryPrimitives.WriteUInt32BigEndian(encoded.AsSpan(index * 8, 4), scalar);
@@ -22,7 +22,7 @@ public sealed class UnicodeCoverageCodecTests
         var ranges = UnicodeCoverageCodec.Decode(encoded);
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        Assert.Equal(rangeCount, ranges.Count);
-        Assert.True(allocated < 2_000_000, $"Coverage decoding allocated {allocated:N0} bytes for {rangeCount:N0} ranges.");
+        Assert.Equal(RangeCount, ranges.Count);
+        Assert.True(allocated < 2_000_000, $"Coverage decoding allocated {allocated:N0} bytes for {RangeCount:N0} ranges.");
     }
 }

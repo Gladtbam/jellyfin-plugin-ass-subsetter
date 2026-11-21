@@ -213,7 +213,7 @@ Dialogue: 0,0:00:00.00,0:00:05.00,Default,,0,0,0,,{\p1}m 0 0 l 100 100{\p0}Hello
         var result = _parser.ExtractUsedCharacters(_tempFile);
 
         Assert.Equal(4, result.Count);
-        Assert.True(result[new FontDescriptor("Arial", null, false, false)].SetEquals(new uint[] { 'A', 'E' }));
+        Assert.True(result[new FontDescriptor("Arial", null, false, false)].SetEquals(['A', 'E']));
         Assert.Equal(new uint[] { 'B' }, result[new FontDescriptor("Arial", null, true, false)]);
         Assert.Equal(new uint[] { 'C' }, result[new FontDescriptor("Arial", null, false, true)]);
         Assert.Equal(new uint[] { 'D' }, result[new FontDescriptor("Times New Roman", null, true, true)]);

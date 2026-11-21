@@ -15,8 +15,8 @@ public sealed class FontRetentionSelectorTests
     {
         DirectoryPolicySnapshot snapshot = Snapshot(
             File(1, "AB.ttc", 300, Face(1), Face(2)),
-            File(2, "A.ttf", 100, Face(3, CompleteSignals: !betterCollection)),
-            File(3, "B.ttf", 100, Face(4, CompleteSignals: !betterCollection)));
+            File(2, "A.ttf", 100, Face(3, completeSignals: !betterCollection)),
+            File(3, "B.ttf", 100, Face(4, completeSignals: !betterCollection)));
         FontRelationRecord[] relations = missingProof ? [BothDirections(1, 3)] : [BothDirections(1, 3), BothDirections(2, 4)];
 
         RetentionPlan plan = _selector.Select(relations, snapshot);
@@ -24,7 +24,7 @@ public sealed class FontRetentionSelectorTests
         Assert.Equal(reclaimed, plan.ReclaimableBytes);
         if (!betterCollection && !missingProof)
         {
-            Assert.Equal([2L, 3L], plan.RetainedFiles.Select(file => file.FileId).Order().ToArray());
+            Assert.Equal([2L, 3L], [.. plan.RetainedFiles.Select(file => file.FileId).Order()]);
             Assert.Equal(1L, Assert.Single(plan.QuarantineFiles).FileId);
         }
         else
@@ -69,8 +69,8 @@ public sealed class FontRetentionSelectorTests
     public void Select_ShouldNeverQuarantineProtectedFileOrDiscardHigherQualityCustomCopy()
     {
         DirectoryPolicySnapshot snapshot = Snapshot(
-            File(1, "system.ttf", 100, Face(1, CompleteSignals: false), FontDirectoryPolicy.Protected),
-            File(2, "custom.ttf", 100, Face(2, CompleteSignals: true), FontDirectoryPolicy.Custom));
+            File(1, "system.ttf", 100, Face(1, completeSignals: false), FontDirectoryPolicy.Protected),
+            File(2, "custom.ttf", 100, Face(2, completeSignals: true), FontDirectoryPolicy.Custom));
 
         RetentionPlan plan = _selector.Select([BothDirections(1, 2)], snapshot);
 
@@ -84,8 +84,8 @@ public sealed class FontRetentionSelectorTests
     public void Select_ShouldAllowProtectedHigherQualityFileToRetainCustomReplacement()
     {
         DirectoryPolicySnapshot snapshot = Snapshot(
-            File(1, "system.ttf", 100, Face(1, CompleteSignals: true), FontDirectoryPolicy.Protected),
-            File(2, "custom.ttf", 100, Face(2, CompleteSignals: false), FontDirectoryPolicy.Custom));
+            File(1, "system.ttf", 100, Face(1, completeSignals: true), FontDirectoryPolicy.Protected),
+            File(2, "custom.ttf", 100, Face(2, completeSignals: false), FontDirectoryPolicy.Custom));
 
         RetentionPlan plan = _selector.Select([BothDirections(1, 2)], snapshot);
 
@@ -97,8 +97,8 @@ public sealed class FontRetentionSelectorTests
     public void Select_ShouldRequireCompatibleTechnologyAndAutomaticActionBoundary()
     {
         DirectoryPolicySnapshot technologySnapshot = Snapshot(
-            File(1, "truetype.ttf", 100, Face(1, Technology: "TrueType")),
-            File(2, "cff.otf", 100, Face(2, Technology: "OpenType CFF")));
+            File(1, "truetype.ttf", 100, Face(1, technology: "TrueType")),
+            File(2, "cff.otf", 100, Face(2, technology: "OpenType CFF")));
         DirectoryPolicySnapshot reportOnlySnapshot = Snapshot(
             File(1, "variant-a.ttf", 100, Face(1)),
             File(2, "variant-b.ttf", 100, Face(2)));
@@ -169,7 +169,7 @@ public sealed class FontRetentionSelectorTests
     [Fact]
     public void Select_ShouldUseFixedScoreMaximaAndPersistSubreasons()
     {
-        RetentionPlan plan = _selector.Select([], Snapshot(File(1, "complete.ttf", 100, Face(1, CompleteSignals: true))));
+        RetentionPlan plan = _selector.Select([], Snapshot(File(1, "complete.ttf", 100, Face(1, completeSignals: true))));
 
         RetentionScore score = Assert.Single(plan.RetainedFiles).Score;
         Assert.Equal(40, score.Content);
@@ -198,8 +198,8 @@ public sealed class FontRetentionSelectorTests
     public void Select_ShouldChooseQualityBeforeReclaimableBytes()
     {
         DirectoryPolicySnapshot snapshot = Snapshot(
-            File(1, "quality.ttf", 1_000, Face(1, CompleteSignals: true)),
-            File(2, "large-low-quality.ttf", 10_000, Face(2, CompleteSignals: false)));
+            File(1, "quality.ttf", 1_000, Face(1, completeSignals: true)),
+            File(2, "large-low-quality.ttf", 10_000, Face(2, completeSignals: false)));
 
         RetentionPlan plan = _selector.Select([BothDirections(1, 2)], snapshot);
 
@@ -255,8 +255,8 @@ public sealed class FontRetentionSelectorTests
 
         RetentionPlan plan = _selector.Select(relations, snapshot);
 
-        HashSet<long> retained = plan.RetainedFiles.Select(file => file.FileId).ToHashSet();
-        HashSet<long> quarantined = plan.QuarantineFiles.Select(file => file.FileId).ToHashSet();
+        HashSet<long> retained = [.. plan.RetainedFiles.Select(file => file.FileId)];
+        HashSet<long> quarantined = [.. plan.QuarantineFiles.Select(file => file.FileId)];
         Assert.Empty(retained.Intersect(quarantined));
         Assert.All(plan.Groups, group => Assert.All(group.RetainedFileIds, fileId => Assert.Contains(fileId, retained)));
         Assert.Contains(2L, retained);
@@ -280,14 +280,14 @@ public sealed class FontRetentionSelectorTests
         RetentionPlan plan = _selector.Select(relations, snapshot);
 
         DuplicateGroupPlan group = Assert.Single(plan.Groups, item => item.QuarantineFileIds.Contains(1));
-        Assert.Equal([3L, 4L], group.RetainedFileIds.Order().ToArray());
+        Assert.Equal([3L, 4L], [.. group.RetainedFileIds.Order()]);
     }
 
     [Fact]
     public void Select_ShouldTreatMandatoryRetainedFilesAsZeroIncrementalCost()
     {
         DirectoryPolicySnapshot snapshot = Snapshot(
-            File(1, "target.ttc", 150, [Face(1, CompleteSignals: false), Face(2, CompleteSignals: false)], FontDirectoryPolicy.None),
+            File(1, "target.ttc", 150, [Face(1, completeSignals: false), Face(2, completeSignals: false)], FontDirectoryPolicy.None),
             File(2, "system-a.ttf", 100, Face(3), FontDirectoryPolicy.Protected),
             File(3, "system-b.ttf", 100, Face(4), FontDirectoryPolicy.Protected));
 
@@ -316,16 +316,18 @@ public sealed class FontRetentionSelectorTests
 
         RetentionPlan plan = _selector.Select(relations, snapshot);
 
-        Assert.Equal([5L], plan.RetainedFiles.Select(file => file.FileId).Order().ToArray());
-        Assert.Equal([1L, 2L, 3L, 4L], plan.QuarantineFiles.Select(file => file.FileId).Order().ToArray());
+        Assert.Equal([5L], [.. plan.RetainedFiles.Select(file => file.FileId).Order()]);
+        Assert.Equal([1L, 2L, 3L, 4L], [.. plan.QuarantineFiles.Select(file => file.FileId).Order()]);
     }
 
     [Fact]
     public void Select_ShouldHandleTwentyThousandIndependentFilesWithoutCreatingReplacementGroups()
     {
-        FontRetentionFile[] files = Enumerable.Range(1, 20_000)
-            .Select(index => File(index, "font-" + index.ToString("D5", System.Globalization.CultureInfo.InvariantCulture) + ".ttf", 100, Face(index)))
-            .ToArray();
+        FontRetentionFile[] files =
+        [
+            .. Enumerable.Range(1, 20_000)
+                .Select(index => File(index, "font-" + index.ToString("D5", System.Globalization.CultureInfo.InvariantCulture) + ".ttf", 100, Face(index)))
+        ];
 
         RetentionPlan plan = _selector.Select([], Snapshot(files));
 
@@ -338,12 +340,16 @@ public sealed class FontRetentionSelectorTests
     public void Select_ShouldKeepOversizedCollectionComponentReportOnly()
     {
         FontRetentionFile target = File(1, "target.ttc", 300, [Face(1), Face(2)], FontDirectoryPolicy.None);
-        FontRetentionFile[] copies = Enumerable.Range(2, 18)
-            .Select(index => File(index, "copy-" + index.ToString("D2", System.Globalization.CultureInfo.InvariantCulture) + ".ttf", 100, Face(index + 1)))
-            .ToArray();
-        FontRelationRecord[] relations = copies.Select(file => Replaces(file.Faces[0].FaceId, 1))
-            .Append(Replaces(copies[0].Faces[0].FaceId, 2))
-            .ToArray();
+        FontRetentionFile[] copies =
+        [
+            .. Enumerable.Range(2, 18)
+                .Select(index => File(index, "copy-" + index.ToString("D2", System.Globalization.CultureInfo.InvariantCulture) + ".ttf", 100, Face(index + 1)))
+        ];
+        FontRelationRecord[] relations =
+        [
+            .. copies.Select(file => Replaces(file.Faces[0].FaceId, 1)),
+            Replaces(copies[0].Faces[0].FaceId, 2)
+        ];
 
         RetentionPlan plan = _selector.Select(relations, Snapshot([target, .. copies]));
 
@@ -354,9 +360,11 @@ public sealed class FontRetentionSelectorTests
     [Fact]
     public void Select_ShouldRetainEarliestEquivalentCollectionAtExactSearchLimit()
     {
-        FontRetentionFile[] files = Enumerable.Range(1, 18)
-            .Select(index => File(index, $"copy-{index:D2}.ttc", 100, Face((index * 2) - 1), Face(index * 2)))
-            .ToArray();
+        FontRetentionFile[] files =
+        [
+            .. Enumerable.Range(1, 18)
+                .Select(index => File(index, $"copy-{index:D2}.ttc", 100, Face((index * 2) - 1), Face(index * 2)))
+        ];
         var relations = new List<FontRelationRecord>();
         for (int left = 0; left < files.Length; left++)
         {
@@ -416,17 +424,17 @@ public sealed class FontRetentionSelectorTests
 
     private static FontRetentionFace Face(
         long faceId,
-        bool CompleteSignals = true,
-        string Technology = "TrueType")
+        bool completeSignals = true,
+        string technology = "TrueType")
     {
-        IReadOnlySet<FontQualitySignal> signals = CompleteSignals
-            ? Enum.GetValues<FontQualitySignal>().ToHashSet()
-            : new HashSet<FontQualitySignal>();
+        HashSet<FontQualitySignal> signals = completeSignals
+            ? [.. Enum.GetValues<FontQualitySignal>()]
+            : [];
         return new FontRetentionFace(
             faceId,
-            Technology,
+            technology,
             true,
-            new FontRetentionQualityEvidence(signals, CompleteSignals ? 2m : null));
+            new FontRetentionQualityEvidence(signals, completeSignals ? 2m : null));
     }
 
     private static FontRelationRecord Replaces(long retainedFaceId, long replacedFaceId)

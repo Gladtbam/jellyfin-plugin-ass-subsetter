@@ -8,7 +8,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Opens the exact font Face and checks one Unicode mapping through FreeType when it is installed.</summary>
 internal static class FreeTypeFontVerifier
 {
-    private static readonly Lazy<Bindings?> Native = new(LoadBindings);
+    private static readonly Lazy<Bindings?> _native = new(LoadBindings);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int InitDelegate(out IntPtr library);
@@ -25,11 +25,11 @@ internal static class FreeTypeFontVerifier
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate int DoneLibraryDelegate(IntPtr library);
 
-    internal static bool IsAvailable => Native.Value is not null;
+    internal static bool IsAvailable => _native.Value is not null;
 
     internal static unsafe FontVerificationStatus Verify(byte[] data, int faceIndex, InspectedFontFace inspected)
     {
-        Bindings? native = Native.Value;
+        Bindings? native = _native.Value;
         if (native is null)
         {
             return FontVerificationStatus.Unknown;

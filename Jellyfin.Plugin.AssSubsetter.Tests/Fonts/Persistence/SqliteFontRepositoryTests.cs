@@ -191,7 +191,7 @@ public sealed partial class SqliteFontRepositoryTests
         for (long id = 1; id <= 2; id++)
         {
             var request = new OperationRequest { Id = id, Kind = FontOperationKind.NormalizeNames, IdempotencyKey = "historical-rename-" + id, RequestJson = RenameJson(fixture.RootPath, fileId: id) };
-            var batch = new MaintenanceBatch { Id = id, OperationRequestId = id, Kind = request.Kind, Status = MaintenanceBatchStatus.Complete, SummaryJson = "{}", RenameItems = FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items.Select(item => item with { Status = RenameItemStatus.Renamed, TemporaryPath = Path.Combine(fixture.RootPath, ".ass-subsetter-rename-" + id + "-" + item.FileId + ".tmp") }).ToArray() };
+            var batch = new MaintenanceBatch { Id = id, OperationRequestId = id, Kind = request.Kind, Status = MaintenanceBatchStatus.Complete, SummaryJson = "{}", RenameItems = [.. FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).Items.Select(item => item with { Status = RenameItemStatus.Renamed, TemporaryPath = Path.Combine(fixture.RootPath, ".ass-subsetter-rename-" + id + "-" + item.FileId + ".tmp") })] };
             await manifests.SaveAsync(new RenameManifest(request, batch, id == 1) { RuleFingerprint = new FontNamingRules(FontNamingRules.DefaultFileNameTemplate, "", false).GetFingerprint() }, CancellationToken.None);
         }
 
@@ -986,7 +986,7 @@ public sealed partial class SqliteFontRepositoryTests
         IReadOnlyList<MaintenanceBatch> loaded = (await fixture.Repository.LoadMaintenanceBatchPageAsync(0, 10, null, CancellationToken.None)).Items;
         FontDatabaseHealth health = await fixture.Repository.GetDatabaseHealthAsync(CancellationToken.None);
 
-        Assert.Equal(persisted, actual);
+        Assert.Equivalent(persisted, actual, strict: true);
         Assert.Equal(persisted.Id, Assert.Single(loaded).Id);
         Assert.Equal(SqliteSchema.CurrentVersion, health.SchemaVersion);
         Assert.Equal("wal", health.JournalMode);
@@ -1082,7 +1082,7 @@ public sealed partial class SqliteFontRepositoryTests
             CancellationToken.None));
 
         MaintenanceBatch? actual = await fixture.Repository.GetMaintenanceBatchAsync(existing.Id, CancellationToken.None);
-        Assert.Equal(existing, actual);
+        Assert.Equivalent(existing, actual, strict: true);
     }
 
     [Fact]
@@ -1202,10 +1202,20 @@ public sealed partial class SqliteFontRepositoryTests
         {
             string root = Path.Join(Path.GetTempPath(), "ass-subsetter-tests", pathSegment ?? Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"));
             var paths = new FontStoragePaths(root, Path.Join(root, "catalog.db"), Path.Join(root, "quarantine"), Path.Join(root, "manifests"));
+#pragma warning disable CA2000 // The returned fixture owns the database; the catch block disposes it if setup fails.
             var database = new FontDatabase(paths);
-            var repository = new SqliteFontRepository(database);
-            await repository.InitializeAsync(CancellationToken.None);
-            return new SqliteRepositoryFixture(root, database, repository);
+#pragma warning restore CA2000
+            try
+            {
+                var repository = new SqliteFontRepository(database);
+                await repository.InitializeAsync(CancellationToken.None);
+                return new SqliteRepositoryFixture(root, database, repository);
+            }
+            catch
+            {
+                await database.DisposeAsync();
+                throw;
+            }
         }
 
         public async ValueTask DisposeAsync()

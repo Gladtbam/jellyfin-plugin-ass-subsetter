@@ -237,7 +237,8 @@ public sealed class PlaybackPrefetchServiceTests : IDisposable
 
         SetupNextEpisodeQuery(currentEpisode, nextEpisode);
 
-        var session = new SessionInfo(null!, null!) { Id = "session-1" };
+        await using var session = new SessionInfo(null!, null!);
+        session.Id = "session-1";
         var args1 = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 920, session: session);
         var args2 = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950, session: session);
 
@@ -265,7 +266,8 @@ public sealed class PlaybackPrefetchServiceTests : IDisposable
 
         SetupNextEpisodeQuery(currentEpisode, nextEpisode);
 
-        var session = new SessionInfo(null!, null!) { Id = "session-1" };
+        await using var session = new SessionInfo(null!, null!);
+        session.Id = "session-1";
 
         // Act: first trigger
         var progressArgs = CreateProgressEventArgs(currentEpisode, playbackPositionTicks: 950, session: session);

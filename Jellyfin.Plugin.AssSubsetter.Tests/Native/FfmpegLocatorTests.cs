@@ -28,11 +28,11 @@ public class FfmpegLocatorTests
     [Fact]
     public void FindPath_ShouldPreserveSpacesInSingleCommandLineArgument()
     {
-        const string expected = "C:\\Program Files\\Jellyfin\\ffmpeg.exe";
+        const string Expected = "C:\\Program Files\\Jellyfin\\ffmpeg.exe";
 
-        string? result = FfmpegLocator.FindPath(null, ["server", $"--ffmpeg={expected}"], path => path == expected);
+        string? result = FfmpegLocator.FindPath(null, ["server", $"--ffmpeg={Expected}"], path => path == Expected);
 
-        Assert.Equal(expected, result);
+        Assert.Equal(Expected, result);
     }
 
     [Fact]

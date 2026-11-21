@@ -75,13 +75,13 @@ internal static class FfmpegLocator
 
         if (remainder[0] == '"')
         {
-            remainder = remainder.Slice(1);
+            remainder = remainder[1..];
             int closingQuote = remainder.IndexOf('"');
-            return closingQuote >= 0 ? remainder.Slice(0, closingQuote).ToString() : null;
+            return closingQuote >= 0 ? remainder[..closingQuote].ToString() : null;
         }
 
         int separator = remainder.IndexOfAny(' ', '\t');
-        return (separator >= 0 ? remainder.Slice(0, separator) : remainder).ToString();
+        return (separator >= 0 ? remainder[..separator] : remainder).ToString();
     }
 
     private static string? ExtractCommandLineOption(string argument)
@@ -91,10 +91,10 @@ internal static class FfmpegLocator
             return null;
         }
 
-        string path = argument.Substring(FfmpegOption.Length).Trim();
+        string path = argument[FfmpegOption.Length..].Trim();
         if (path.Length >= 2 && path[0] == '"' && path[^1] == '"')
         {
-            path = path.Substring(1, path.Length - 2);
+            path = path[1..^1];
         }
 
         return path.Length == 0 ? null : path;

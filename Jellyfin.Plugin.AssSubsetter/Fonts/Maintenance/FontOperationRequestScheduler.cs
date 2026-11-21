@@ -15,7 +15,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 /// <summary>Schedules persisted font requests once Jellyfin tasks are registered and maintenance gates are idle.</summary>
 public sealed class FontOperationRequestScheduler : BackgroundService, IFontOperationRequestDispatcher
 {
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _retryDelay = TimeSpan.FromSeconds(5);
     private readonly IFontOperationRepository _repository;
     private readonly ITaskManager _taskManager;
     private readonly Func<bool> _isBusy;
@@ -71,6 +71,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
     /// <summary>Waits for catalog recovery, then dispatches pending operations as their Jellyfin tasks become available and maintenance is idle.</summary>
     /// <param name="stoppingToken">Cancels waits for recovery or queue signals and is passed to pending operations.</param>
     /// <returns>The scheduling task, which exits on shutdown or when catalog recovery fails.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A scheduling failure is logged and retried so the hosted worker continues draining its durable queue.")]
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (_readiness is not null && !await _readiness.WaitAsync(stoppingToken).ConfigureAwait(false))
@@ -85,7 +86,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
             {
                 if (retry)
                 {
-                    await _signal.WaitAsync(RetryDelay, stoppingToken).ConfigureAwait(false);
+                    await _signal.WaitAsync(_retryDelay, stoppingToken).ConfigureAwait(false);
                 }
                 else
                 {
@@ -143,7 +144,11 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
             FontTaskExecutionResult result = await _executePending(kind, cancellationToken).ConfigureAwait(false);
             if (result.OperationRequestId.HasValue)
             {
-                _logger.LogInformation("Completed pending font request {RequestId} with outcome {Outcome} and batch {BatchId}.", result.OperationRequestId, result.Outcome, result.BatchId);
+                if (_logger.IsEnabled(LogLevel.Information))
+                {
+                    _logger.LogInformation("Completed pending font request {RequestId} with outcome {Outcome} and batch {BatchId}.", result.OperationRequestId, result.Outcome, result.BatchId);
+                }
+
                 Signal();
             }
 

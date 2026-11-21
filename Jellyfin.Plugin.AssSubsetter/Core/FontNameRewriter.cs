@@ -1,6 +1,7 @@
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Jellyfin.Plugin.AssSubsetter.Core;
@@ -14,7 +15,7 @@ public static class FontNameRewriter
     private const uint NameTag = 0x6E616D65; // 'name' in big-endian
 
     // Name IDs that contain font family/identity information and must be renamed.
-    private static readonly ushort[] TargetNameIds = new ushort[] { 1, 4, 6, 16 };
+    private static readonly ushort[] _targetNameIds = [1, 4, 6, 16];
 
     /// <summary>
     ///     Generates a random 8-character uppercase alphanumeric prefix, matching the style used by mkvlib/mkvtool.
@@ -22,15 +23,8 @@ public static class FontNameRewriter
     /// <returns>An 8-character random string.</returns>
     public static string GenerateRandomPrefix()
     {
-        const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        var random = new Random();
-        var sb = new StringBuilder(8);
-        for (int i = 0; i < 8; i++)
-        {
-            sb.Append(chars[random.Next(chars.Length)]);
-        }
-
-        return sb.ToString();
+        const string Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        return RandomNumberGenerator.GetString(Chars, 8);
     }
 
     /// <summary>
@@ -100,6 +94,8 @@ public static class FontNameRewriter
         ushort nameCount = BinaryPrimitives.ReadUInt16BigEndian(nameSpan.Slice(2, 2));
         ushort storageOffset = BinaryPrimitives.ReadUInt16BigEndian(nameSpan.Slice(4, 2));
 
+        ArgumentNullException.ThrowIfNull(newFamilyName);
+
         // Build new name records and string storage
         var newRecords = new List<NameRecord>();
         var newStringData = new List<byte>();
@@ -120,7 +116,7 @@ public static class FontNameRewriter
             ushort offset = BinaryPrimitives.ReadUInt16BigEndian(nameSpan.Slice(recordOffset + 10, 2));
 
             byte[] stringBytes;
-            bool isTargetNameId = Array.IndexOf(TargetNameIds, nameId) >= 0;
+            bool isTargetNameId = Array.IndexOf(_targetNameIds, nameId) >= 0;
 
             if (isTargetNameId)
             {
@@ -131,18 +127,18 @@ public static class FontNameRewriter
             {
                 // Keep original string data
                 int srcStart = storageOffset + offset;
-                stringBytes = srcStart + length <= nameSpan.Length ? nameSpan.Slice(srcStart, length).ToArray() : Array.Empty<byte>();
+                stringBytes = srcStart + length <= nameSpan.Length ? [.. nameSpan.Slice(srcStart, length)] : [];
             }
 
             ushort newOffset = (ushort)newStringData.Count;
             newRecords.Add(new NameRecord
             {
-                PlatformId = platformId,
-                EncodingId = encodingId,
-                LanguageId = languageId,
-                NameId = nameId,
-                Length = (ushort)stringBytes.Length,
-                Offset = newOffset
+                _platformId = platformId,
+                _encodingId = encodingId,
+                _languageId = languageId,
+                _nameId = nameId,
+                _length = (ushort)stringBytes.Length,
+                _offset = newOffset
             });
             newStringData.AddRange(stringBytes);
         }
@@ -153,7 +149,7 @@ public static class FontNameRewriter
         var newNameSpan = newNameTable.AsSpan();
 
         // Header
-        BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(0, 2), 0); // format
+        BinaryPrimitives.WriteUInt16BigEndian(newNameSpan[..2], 0); // format
         BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(2, 2), (ushort)newRecords.Count);
         ushort newStorageOffset = (ushort)(6 + (newRecords.Count * 12));
         BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(4, 2), newStorageOffset);
@@ -163,12 +159,12 @@ public static class FontNameRewriter
         {
             int recOff = 6 + (i * 12);
             var rec = newRecords[i];
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff, 2), rec.PlatformId);
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 2, 2), rec.EncodingId);
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 4, 2), rec.LanguageId);
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 6, 2), rec.NameId);
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 8, 2), rec.Length);
-            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 10, 2), rec.Offset);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff, 2), rec._platformId);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 2, 2), rec._encodingId);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 4, 2), rec._languageId);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 6, 2), rec._nameId);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 8, 2), rec._length);
+            BinaryPrimitives.WriteUInt16BigEndian(newNameSpan.Slice(recOff + 10, 2), rec._offset);
         }
 
         // String storage
@@ -315,11 +311,11 @@ public static class FontNameRewriter
 
     private struct NameRecord
     {
-        public ushort PlatformId;
-        public ushort EncodingId;
-        public ushort LanguageId;
-        public ushort NameId;
-        public ushort Length;
-        public ushort Offset;
+        public ushort _platformId;
+        public ushort _encodingId;
+        public ushort _languageId;
+        public ushort _nameId;
+        public ushort _length;
+        public ushort _offset;
     }
 }

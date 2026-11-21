@@ -7,7 +7,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 
 internal sealed class InMemoryFontRepository : IFontRepository
 {
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
     private readonly Dictionary<long, Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot> _inputs = [];
     private readonly Dictionary<long, IReadOnlyList<FontFileRecord>> _generations = [];
     private readonly HashSet<long> _buildingGenerations = [];
@@ -84,7 +84,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
             }
 
             var ordered = rows.OrderBy(row => row.Item.OldPath, StringComparer.Ordinal).ThenBy(row => row.Key, StringComparer.Ordinal).ToArray();
-            return Task.FromResult(new FontRenameStatePage(context, ordered.Skip((int)Math.Min(((long)page - 1) * pageSize, int.MaxValue)).Take(pageSize).ToArray(), ordered.LongLength));
+            return Task.FromResult(new FontRenameStatePage(context, [.. ordered.Skip((int)Math.Min(((long)page - 1) * pageSize, int.MaxValue)).Take(pageSize)], ordered.LongLength));
         }
     }
 
@@ -184,7 +184,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            return Task.FromResult<IReadOnlyList<OperationRequest>>(_operationRequests.Where(request => request.Kind == FontOperationKind.NormalizeNames && request.Status is OperationRequestStatus.Pending or OperationRequestStatus.Running).ToArray());
+            return Task.FromResult<IReadOnlyList<OperationRequest>>([.. _operationRequests.Where(request => request.Kind == FontOperationKind.NormalizeNames && request.Status is OperationRequestStatus.Pending or OperationRequestStatus.Running)]);
         }
     }
 
@@ -194,7 +194,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            return Task.FromResult<IReadOnlyList<RenameItemRecord>>(_maintenanceBatches.SelectMany(batch => batch.RenameItems.Select(item => item with { MaintenanceBatchId = batch.Id, OperationRequestId = batch.OperationRequestId })).ToArray());
+            return Task.FromResult<IReadOnlyList<RenameItemRecord>>([.. _maintenanceBatches.SelectMany(batch => batch.RenameItems.Select(item => item with { MaintenanceBatchId = batch.Id, OperationRequestId = batch.OperationRequestId }))]);
         }
     }
 
@@ -203,7 +203,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            return Task.FromResult<IReadOnlyList<OperationRequest>>(_operationRequests.Where(request => request.Kind == FontOperationKind.NormalizeNames).ToArray());
+            return Task.FromResult<IReadOnlyList<OperationRequest>>([.. _operationRequests.Where(request => request.Kind == FontOperationKind.NormalizeNames)]);
         }
     }
 
@@ -224,7 +224,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         {
             lock (_sync)
             {
-                return _operationRequests.ToArray();
+                return [.. _operationRequests];
             }
         }
     }
@@ -235,7 +235,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         {
             lock (_sync)
             {
-                return _performanceSamples.ToArray();
+                return [.. _performanceSamples];
             }
         }
     }
@@ -294,7 +294,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
                 throw new InvalidOperationException("A generation cannot contain duplicate normalized paths.");
             }
 
-            _generations[generationId] = files.ToArray();
+            _generations[generationId] = [.. files];
             return Task.CompletedTask;
         }
     }
@@ -306,13 +306,15 @@ internal sealed class InMemoryFontRepository : IFontRepository
         lock (_sync)
         {
             HashSet<long> retainedPublished = publishedGenerationRetentionCount == 0
-                ? _generations.Keys.Where(id => !_buildingGenerations.Contains(id)).ToHashSet()
-                : _generations.Keys.Where(id => !_buildingGenerations.Contains(id)).OrderByDescending(id => id).Take(publishedGenerationRetentionCount).ToHashSet();
-            long[] obsolete = _generations.Keys
-                .Where(id => id != _publishedGenerationId
-                    && ((!_buildingGenerations.Contains(id) && !retainedPublished.Contains(id)) || (_buildingGenerations.Contains(id) && _generationCreatedUtc[id] < abandonedBeforeUtc))
-                    && !_analysisBatches.Any(batch => batch.GenerationId == id))
-                .ToArray();
+                ? [.. _generations.Keys.Where(id => !_buildingGenerations.Contains(id))]
+                : [.. _generations.Keys.Where(id => !_buildingGenerations.Contains(id)).OrderByDescending(id => id).Take(publishedGenerationRetentionCount)];
+            long[] obsolete =
+            [
+                .. _generations.Keys
+                    .Where(id => id != _publishedGenerationId
+                                 && ((!_buildingGenerations.Contains(id) && !retainedPublished.Contains(id)) || (_buildingGenerations.Contains(id) && _generationCreatedUtc[id] < abandonedBeforeUtc))
+                                 && !_analysisBatches.Any(batch => batch.GenerationId == id))
+            ];
             foreach (long id in obsolete)
             {
                 _generations.Remove(id);
@@ -351,27 +353,25 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
     private Task<IReadOnlyList<RuntimeFontFace>> LoadRuntimeFacesCore(long generationId, CancellationToken cancellationToken)
     {
-            RuntimeFontFace[] faces = _generations[generationId]
-                .SelectMany(file => file.Faces.Select(face => new RuntimeFontFace(
-                    face.Id,
-                    file.Path,
-                    face.FaceIndex,
-                    face.FamilyName,
-                    face.StyleName,
-                    face.Names,
-                    face.Weight,
-                    face.Width,
-                    face.Slant,
-                    face.IsItalic,
-                    face.IsFixedPitch,
-                    face.Technology,
-                    face.RetentionScore,
-                    face.IsRuntimePreferred)
-                {
-                    NameRecords = face.NameRecords,
-                    UnicodeCoverage = face.UnicodeCoverage
-                }))
-                .ToArray();
+            RuntimeFontFace[] faces =
+            [
+                .. _generations[generationId]
+                    .SelectMany(file => file.Faces.Select(face => new RuntimeFontFace(
+                        face.Id,
+                        file.Path,
+                        face.FaceIndex,
+                        face.FamilyName,
+                        face.StyleName,
+                        face.Names,
+                        face.Weight,
+                        face.Width,
+                        face.Slant,
+                        face.IsItalic,
+                        face.IsFixedPitch,
+                        face.Technology,
+                        face.RetentionScore,
+                        face.IsRuntimePreferred) { NameRecords = face.NameRecords, UnicodeCoverage = face.UnicodeCoverage }))
+            ];
             return RuntimeSnapshotReadDelay is { } delay
                 ? CompleteRuntimeSnapshotReadAsync(faces, delay, cancellationToken)
                 : Task.FromResult<IReadOnlyList<RuntimeFontFace>>(faces);
@@ -389,9 +389,11 @@ internal sealed class InMemoryFontRepository : IFontRepository
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        IReadOnlyList<FontFileRecord> metadata = PublishedFiles
-            .Select(file => file with { Faces = file.Faces.Select(face => face with { UnicodeCoverage = [] }).ToArray() })
-            .ToArray();
+        IReadOnlyList<FontFileRecord> metadata =
+        [
+            .. PublishedFiles
+                .Select(file => file with { Faces = [.. file.Faces.Select(face => face with { UnicodeCoverage = [] })] })
+        ];
         return Task.FromResult(metadata);
     }
 
@@ -484,11 +486,13 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            AnalysisBatch[] ordered = _analysisBatches
-                .Where(batch => !_buildingGenerations.Contains(batch.GenerationId))
-                .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
-                .ThenByDescending(batch => batch.Id)
-                .ToArray();
+            AnalysisBatch[] ordered =
+            [
+                .. _analysisBatches
+                    .Where(batch => !_buildingGenerations.Contains(batch.GenerationId))
+                    .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
+                    .ThenByDescending(batch => batch.Id)
+            ];
             IReadOnlyList<AnalysisBatch> page = offset >= ordered.Length
                 ? []
                 : ordered.Skip((int)offset).Take(pageSize).ToArray();
@@ -523,12 +527,18 @@ internal sealed class InMemoryFontRepository : IFontRepository
             if (_generations.TryGetValue(batch.GenerationId, out IReadOnlyList<FontFileRecord>? inventory))
             {
                 Dictionary<long, FontFaceAnalysisRecord> scores = batch.FaceScores.ToDictionary(face => face.FaceId);
-                _generations[batch.GenerationId] = inventory.Select(file => file with
-                {
-                    Faces = file.Faces.Select(face => scores.TryGetValue(face.Id, out FontFaceAnalysisRecord? score)
-                        ? face with { RetentionScore = score.RetentionScore, IsRuntimePreferred = score.IsRuntimePreferred }
-                        : face).ToArray()
-                }).ToArray();
+                _generations[batch.GenerationId] =
+                [
+                    .. inventory.Select(file => file with
+                    {
+                        Faces =
+                        [
+                            .. file.Faces.Select(face => scores.TryGetValue(face.Id, out FontFaceAnalysisRecord? score)
+                                ? face with { RetentionScore = score.RetentionScore, IsRuntimePreferred = score.IsRuntimePreferred }
+                                : face)
+                        ]
+                    })
+                ];
             }
 
             _analysisBatches.Add(persisted);
@@ -568,29 +578,35 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
         lock (_sync)
         {
-            HashSet<long> newest = _analysisBatches
-                .Where(batch => batch.Status is AnalysisBatchStatus.Complete or AnalysisBatchStatus.Stale or AnalysisBatchStatus.Failed)
-                .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
-                .ThenByDescending(batch => batch.Id)
-                .Take(retentionCount)
-                .Select(batch => batch.Id)
-                .ToHashSet();
+            HashSet<long> newest =
+            [
+                .. _analysisBatches
+                    .Where(batch => batch.Status is AnalysisBatchStatus.Complete or AnalysisBatchStatus.Stale or AnalysisBatchStatus.Failed)
+                    .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
+                    .ThenByDescending(batch => batch.Id)
+                    .Take(retentionCount)
+                    .Select(batch => batch.Id)
+            ];
             long? currentValid = _analysisBatches
                 .Where(batch => batch.GenerationId == _publishedGenerationId && batch.Status == AnalysisBatchStatus.Complete)
                 .OrderByDescending(batch => batch.CompletedUtc)
                 .ThenByDescending(batch => batch.Id)
                 .Select(batch => (long?)batch.Id)
                 .FirstOrDefault();
-            HashSet<long> active = _operationRequests
-                .Where(request => request.Status is OperationRequestStatus.Pending or OperationRequestStatus.Running)
-                .Where(request => request.AnalysisBatchId.HasValue)
-                .Select(request => request.AnalysisBatchId!.Value)
-                .ToHashSet();
-            HashSet<long> toRemove = _analysisBatches
-                .Where(batch => batch.Status is AnalysisBatchStatus.Complete or AnalysisBatchStatus.Stale or AnalysisBatchStatus.Failed)
-                .Where(batch => !newest.Contains(batch.Id) && batch.Id != currentValid && !active.Contains(batch.Id))
-                .Select(batch => batch.Id)
-                .ToHashSet();
+            HashSet<long> active =
+            [
+                .. _operationRequests
+                    .Where(request => request.Status is OperationRequestStatus.Pending or OperationRequestStatus.Running)
+                    .Where(request => request.AnalysisBatchId.HasValue)
+                    .Select(request => request.AnalysisBatchId!.Value)
+            ];
+            HashSet<long> toRemove =
+            [
+                .. _analysisBatches
+                    .Where(batch => batch.Status is AnalysisBatchStatus.Complete or AnalysisBatchStatus.Stale or AnalysisBatchStatus.Failed)
+                    .Where(batch => !newest.Contains(batch.Id) && batch.Id != currentValid && !active.Contains(batch.Id))
+                    .Select(batch => batch.Id)
+            ];
             for (int index = 0; index < _operationRequests.Count; index++)
             {
                 OperationRequest request = _operationRequests[index];
@@ -623,9 +639,9 @@ internal sealed class InMemoryFontRepository : IFontRepository
                     && _renameCandidateState?.OperationRequestId == request.Id
                     && _renameCandidateState.Status is FontRenameCandidateGenerationStatus.Pending or FontRenameCandidateGenerationStatus.Running)
                 {
-                    const string error = "The analysis task was interrupted during rename candidate generation.";
-                    _operationRequests[i] = request with { Status = OperationRequestStatus.Failed, CompletedUtc = DateTimeOffset.UtcNow, Error = error };
-                    _renameCandidateState = _renameCandidateState with { Status = FontRenameCandidateGenerationStatus.Stale, Error = error };
+                    const string Error = "The analysis task was interrupted during rename candidate generation.";
+                    _operationRequests[i] = request with { Status = OperationRequestStatus.Failed, CompletedUtc = DateTimeOffset.UtcNow, Error = Error };
+                    _renameCandidateState = _renameCandidateState with { Status = FontRenameCandidateGenerationStatus.Stale, Error = Error };
                 }
             }
 
@@ -753,7 +769,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            return Task.FromResult<IReadOnlyList<FontOperationKind>>(_operationRequests.Where(request => request.Status == OperationRequestStatus.Pending).Select(request => request.Kind).Distinct().Order().ToArray());
+            return Task.FromResult<IReadOnlyList<FontOperationKind>>([.. _operationRequests.Where(request => request.Status == OperationRequestStatus.Pending).Select(request => request.Kind).Distinct().Order()]);
         }
     }
 
@@ -869,10 +885,12 @@ internal sealed class InMemoryFontRepository : IFontRepository
             IEnumerable<MaintenanceBatch> filtered = kinds is null
                 ? _maintenanceBatches
                 : _maintenanceBatches.Where(batch => kinds.Contains(batch.Kind));
-            MaintenanceBatch[] ordered = filtered
-                .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
-                .ThenByDescending(batch => batch.Id)
-                .ToArray();
+            MaintenanceBatch[] ordered =
+            [
+                .. filtered
+                    .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc)
+                    .ThenByDescending(batch => batch.Id)
+            ];
             IReadOnlyList<MaintenanceBatch> page = offset >= ordered.Length
                 ? []
                 : ordered.Skip((int)offset).Take(pageSize).ToArray();
@@ -889,15 +907,17 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            QuarantineItemRecord[] items = _maintenanceBatches
-                .Where(batch => batch.Kind == FontOperationKind.Quarantine)
-                .SelectMany(batch => batch.Items.Select(item => item with { MaintenanceBatchId = batch.Id }))
-                .GroupBy(item => item.SourcePath, StringComparer.Ordinal)
-                .Select(group => group.OrderByDescending(item => item.Id).ThenByDescending(item => item.MaintenanceBatchId).First())
-                .Where(item => statuses.Contains(item.Status))
-                .OrderByDescending(item => item.Id)
-                .ThenByDescending(item => item.MaintenanceBatchId)
-                .ToArray();
+            QuarantineItemRecord[] items =
+            [
+                .. _maintenanceBatches
+                    .Where(batch => batch.Kind == FontOperationKind.Quarantine)
+                    .SelectMany(batch => batch.Items.Select(item => item with { MaintenanceBatchId = batch.Id }))
+                    .GroupBy(item => item.SourcePath, StringComparer.Ordinal)
+                    .Select(group => group.OrderByDescending(item => item.Id).ThenByDescending(item => item.MaintenanceBatchId).First())
+                    .Where(item => statuses.Contains(item.Status))
+                    .OrderByDescending(item => item.Id)
+                    .ThenByDescending(item => item.MaintenanceBatchId)
+            ];
             IReadOnlyList<QuarantineItemRecord> page = offset >= items.Length
                 ? []
                 : items.Skip((int)offset).Take(pageSize).ToArray();
@@ -933,10 +953,12 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            IReadOnlyList<PerformanceSample> result = _performanceSamples
-                .OrderByDescending(sample => sample.RecordedUtc)
-                .Take(maximumCount)
-                .ToArray();
+            IReadOnlyList<PerformanceSample> result =
+            [
+                .. _performanceSamples
+                    .OrderByDescending(sample => sample.RecordedUtc)
+                    .Take(maximumCount)
+            ];
             return Task.FromResult(result);
         }
     }

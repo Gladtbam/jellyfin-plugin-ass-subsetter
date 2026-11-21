@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using Jellyfin.Plugin.AssSubsetter.Models;
@@ -16,6 +17,7 @@ public class AssDocumentParser
     /// </summary>
     /// <param name="filePath">The ASS file path.</param>
     /// <returns>A dictionary mapping FontName to a HashSet of used Unicode codepoints.</returns>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves the instance API used by consumers that receive this parser through dependency injection.")]
     public Dictionary<FontDescriptor, HashSet<uint>> ExtractUsedCharacters(string filePath)
     {
         var usedChars = new Dictionary<FontDescriptor, HashSet<uint>>();
@@ -53,7 +55,7 @@ public class AssDocumentParser
             {
                 if (trimmedLine.StartsWith("Format:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var formatStr = trimmedLine.Substring(7).Trim();
+                    var formatStr = trimmedLine[7..].Trim();
                     var columns = formatStr.Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
                     styleNameIndex = columns.IndexOf("name");
                     styleFontIndex = columns.IndexOf("fontname");
@@ -62,7 +64,7 @@ public class AssDocumentParser
                 }
                 else if (trimmedLine.StartsWith("Style:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var styleStr = trimmedLine.Substring(6).Trim();
+                    var styleStr = trimmedLine[6..].Trim();
                     var parts = styleStr.Split(',');
                     if (styleNameIndex >= 0 && styleNameIndex < parts.Length &&
                         styleFontIndex >= 0 && styleFontIndex < parts.Length)
@@ -71,7 +73,7 @@ public class AssDocumentParser
                         string fontName = parts[styleFontIndex].Trim();
                         if (fontName.StartsWith('@'))
                         {
-                            fontName = fontName.Substring(1); // Ignore @ vertical font prefix
+                            fontName = fontName[1..]; // Ignore @ vertical font prefix
                         }
 
                         int? weight = null;
@@ -108,7 +110,7 @@ public class AssDocumentParser
                         styles[name] = desc;
                         if (!usedChars.ContainsKey(desc))
                         {
-                            usedChars[desc] = new HashSet<uint>();
+                            usedChars[desc] = [];
                         }
                     }
                 }
@@ -117,14 +119,14 @@ public class AssDocumentParser
             {
                 if (trimmedLine.StartsWith("Format:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var formatStr = trimmedLine.Substring(7).Trim();
+                    var formatStr = trimmedLine[7..].Trim();
                     var columns = formatStr.Split(',').Select(s => s.Trim().ToLowerInvariant()).ToList();
                     eventStyleIndex = columns.IndexOf("style");
                     eventTextIndex = columns.IndexOf("text");
                 }
                 else if (trimmedLine.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var dialogueStr = trimmedLine.Substring(9).Trim();
+                    var dialogueStr = trimmedLine[9..].Trim();
                     var parts = dialogueStr.Split(',', eventTextIndex + 1);
 
                     if (eventStyleIndex >= 0 && eventStyleIndex < parts.Length &&
@@ -139,7 +141,7 @@ public class AssDocumentParser
 
                         if (!usedChars.ContainsKey(currentFont))
                         {
-                            usedChars[currentFont] = new HashSet<uint>();
+                            usedChars[currentFont] = [];
                         }
 
                         ParseTextLine(text, currentFont, defaultFont, styles, usedChars);
@@ -161,7 +163,7 @@ public class AssDocumentParser
         return result;
     }
 
-    private void ParseTextLine(string text, FontDescriptor currentFont, FontDescriptor defaultFont, Dictionary<string, FontDescriptor> styles, Dictionary<FontDescriptor, HashSet<uint>> usedChars)
+    private static void ParseTextLine(string text, FontDescriptor currentFont, FontDescriptor defaultFont, Dictionary<string, FontDescriptor> styles, Dictionary<FontDescriptor, HashSet<uint>> usedChars)
     {
         bool inDrawingMode = false;
 
@@ -181,7 +183,7 @@ public class AssDocumentParser
                 ApplyOverrideTags(tagContent, ref currentFont, defaultFont, styles, ref inDrawingMode);
                 if (!usedChars.ContainsKey(currentFont))
                 {
-                    usedChars[currentFont] = new HashSet<uint>();
+                    usedChars[currentFont] = [];
                 }
 
                 i = endTag;
@@ -252,7 +254,7 @@ public class AssDocumentParser
                 }
             }
 
-            string name = content.Substring(start, nameEnd - start).ToLowerInvariant();
+            string name = content[start..nameEnd].ToLowerInvariant();
             int end = nameEnd;
             int depth = 0;
             bool stringArgument = name is "fn" or "r";
@@ -281,14 +283,14 @@ public class AssDocumentParser
 
             // Parenthesized tags (notably nested transforms) are consumed as a unit.
             // Their children must not leak into the static font/drawing state.
-            string value = content.Substring(nameEnd, end - nameEnd).Trim();
+            string value = content[nameEnd..end].Trim();
             position = end;
             switch (name)
             {
                 case "fn":
                     if (value.StartsWith('@'))
                     {
-                        value = value.Substring(1);
+                        value = value[1..];
                     }
 
                     currentFont = currentFont with { FontName = value.Length == 0 ? defaultFont.FontName : value };
@@ -335,7 +337,7 @@ public class AssDocumentParser
 
         if (styleName.StartsWith('*') || styleName.StartsWith('@'))
         {
-            return styleName.Substring(1);
+            return styleName[1..];
         }
 
         return styleName;

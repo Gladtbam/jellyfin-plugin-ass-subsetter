@@ -47,7 +47,7 @@ public sealed class FontIdentityResolverTests
             records.Add(Name(17, "Typographic Style"));
         }
 
-        FontIdentityEvidence result = FontIdentityResolver.Resolve(Face(records.ToArray()));
+        FontIdentityEvidence result = FontIdentityResolver.Resolve(Face([.. records]));
 
         Assert.Equal(expectedFamily, result.FamilyName);
         Assert.Equal(expectedStyle, result.SubfamilyName);

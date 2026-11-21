@@ -45,9 +45,11 @@ public class MksMuxer
     /// <param name="outputPath">Final cache output path.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><see langword="true" /> when a non-empty MKS was atomically promoted.</returns>
-    [SuppressMessage("Security", "CA3006:Review code for process command injection vulnerabilities", Justification = "The executable is Jellyfin's FFmpeg and every argument is passed separately through ArgumentList.")]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A failed FFmpeg process or muxing operation must leave the caller free to serve the original subtitle.")]
     public virtual async Task<bool> MuxAsync(SubsetArtifact artifact, string outputPath, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(artifact);
+
         string? ffmpegPath = _ffmpegPathFactory();
         if (string.IsNullOrWhiteSpace(ffmpegPath))
         {
@@ -215,7 +217,7 @@ public class MksMuxer
         string stderr = await stderrTask.ConfigureAwait(false);
         if (process.ExitCode != 0 && stderr.Length > 0)
         {
-            string boundedStderr = stderr.Length <= MaximumLoggedStderrLength ? stderr : stderr.Substring(0, MaximumLoggedStderrLength);
+            string boundedStderr = stderr.Length <= MaximumLoggedStderrLength ? stderr : stderr[..MaximumLoggedStderrLength];
             _logger.LogWarning("[AssSubsetter] FFmpeg stderr: {Stderr}", boundedStderr);
         }
 
@@ -231,13 +233,12 @@ public class MksMuxer
                 File.Delete(path);
             }
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS file {Path}.", path);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS file {Path}.", path);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS file {Path}.", path);
+            }
         }
     }
 
@@ -250,13 +251,12 @@ public class MksMuxer
                 Directory.Delete(path, true);
             }
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS workspace {Path}.", path);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS workspace {Path}.", path);
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogDebug(ex, "[AssSubsetter] Could not delete temporary MKS workspace {Path}.", path);
+            }
         }
     }
 }

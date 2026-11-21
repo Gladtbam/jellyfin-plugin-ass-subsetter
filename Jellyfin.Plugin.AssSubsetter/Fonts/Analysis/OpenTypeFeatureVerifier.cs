@@ -9,13 +9,13 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Checks supported optional OpenType table structures without crediting unsupported formats.</summary>
 internal static class OpenTypeFeatureVerifier
 {
-    private static readonly string[] LayoutTags = ["GDEF", "GPOS", "GSUB", "BASE", "JSTF", "MATH", "kern", "kerx", "morx"];
-    private static readonly string[] ColorTags = ["COLR", "CPAL", "CBDT", "CBLC", "sbix", "SVG ", "EBDT", "EBLC"];
-    private static readonly string[] VariationTags = ["fvar", "gvar", "CFF2", "avar", "HVAR", "VVAR", "MVAR", "STAT", "cvar"];
+    private static readonly string[] _layoutTags = ["GDEF", "GPOS", "GSUB", "BASE", "JSTF", "MATH", "kern", "kerx", "morx"];
+    private static readonly string[] _colorTags = ["COLR", "CPAL", "CBDT", "CBLC", "sbix", "SVG ", "EBDT", "EBLC"];
+    private static readonly string[] _variationTags = ["fvar", "gvar", "CFF2", "avar", "HVAR", "VVAR", "MVAR", "STAT", "cvar"];
 
     internal static FontVerificationStatus VerifyLayout(OpenTypeFace face)
     {
-        string[] present = LayoutTags.Where(tag => Has(face, tag)).ToArray();
+        string[] present = [.. _layoutTags.Where(tag => Has(face, tag))];
         if (present.Length == 0)
         {
             return FontVerificationStatus.NotApplicable;
@@ -48,7 +48,7 @@ internal static class OpenTypeFeatureVerifier
 
     internal static FontVerificationStatus VerifyColor(OpenTypeFace face)
     {
-        string[] present = ColorTags.Where(tag => Has(face, tag)).ToArray();
+        string[] present = [.. _colorTags.Where(tag => Has(face, tag))];
         if (present.Length == 0)
         {
             return FontVerificationStatus.NotApplicable;
@@ -131,7 +131,7 @@ internal static class OpenTypeFeatureVerifier
 
     internal static FontVerificationStatus VerifyAxes(OpenTypeFace face, InspectedFontFace inspected)
     {
-        string[] present = VariationTags.Where(tag => Has(face, tag)).ToArray();
+        string[] present = [.. _variationTags.Where(tag => Has(face, tag))];
         if (present.Length == 0 || (present.Length == 1 && present[0] == "STAT"))
         {
             return FontVerificationStatus.NotApplicable;

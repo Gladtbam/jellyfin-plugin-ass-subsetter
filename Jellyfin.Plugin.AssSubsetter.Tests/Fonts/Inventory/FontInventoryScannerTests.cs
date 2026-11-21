@@ -130,7 +130,7 @@ public sealed class FontInventoryScannerTests : IDisposable
         await StageAndPublishAsync(scanner, repository);
         FontFileRecord legacy = Assert.Single(repository.PublishedFiles);
         long incompleteGeneration = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
-        await repository.WriteInventoryAsync(incompleteGeneration, [legacy with { GenerationId = incompleteGeneration, Faces = legacy.Faces.Select(face => face with { NameRecords = [] }).ToArray() }], CancellationToken.None);
+        await repository.WriteInventoryAsync(incompleteGeneration, [legacy with { GenerationId = incompleteGeneration, Faces = [.. legacy.Faces.Select(face => face with { NameRecords = [] })] }], CancellationToken.None);
         await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = incompleteGeneration, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
         await StageAndPublishAsync(scanner, repository);
         Assert.Equal(0, repository.PerformanceSamples[^1].ReusedCount);
@@ -159,7 +159,7 @@ public sealed class FontInventoryScannerTests : IDisposable
         long incompleteGeneration = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
         await repository.WriteInventoryAsync(
             incompleteGeneration,
-            [initial with { GenerationId = incompleteGeneration, Faces = initial.Faces.Select(face => face with { UnicodeCoverage = [] }).ToArray() }],
+            [initial with { GenerationId = incompleteGeneration, Faces = [.. initial.Faces.Select(face => face with { UnicodeCoverage = [] })] }],
             CancellationToken.None);
         await repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = incompleteGeneration, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, CancellationToken.None);
 

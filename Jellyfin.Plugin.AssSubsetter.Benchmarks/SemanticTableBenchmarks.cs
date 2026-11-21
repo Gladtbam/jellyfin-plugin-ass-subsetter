@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
@@ -5,6 +6,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Benchmarks;
 
 /// <summary>Measures fingerprinting of unchanged layout table payloads.</summary>
 [MemoryDiagnoser]
+[SuppressMessage("Design", "CA1515:Consider making public types internal", Justification = "BenchmarkDotNet discovers benchmarks on public types.")]
 public class SemanticTableBenchmarks
 {
     private OpenTypeFace _face = null!;
@@ -15,6 +17,7 @@ public class SemanticTableBenchmarks
 
     /// <summary>Creates a table outside the measured operation.</summary>
     [GlobalSetup]
+    [SuppressMessage("Security", "CA5394:Do not use insecure randomness", Justification = "A fixed seed makes synthetic benchmark data reproducible.")]
     public void Setup()
     {
         uint tag = OpenTypeTag.FromString("GPOS");

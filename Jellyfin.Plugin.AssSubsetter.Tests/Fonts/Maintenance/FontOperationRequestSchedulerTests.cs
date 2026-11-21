@@ -214,7 +214,8 @@ public sealed class FontOperationRequestSchedulerTests
             await new FontOperationRequestStore(repository, TimeProvider.System).CreateTaskAsync(FontOperationKind.Analyze, "rename-refresh:startup", token);
         });
         var coordinator = new FontMaintenanceCoordinator();
-        using var cache = FontCacheManagerFixture.CreateManager(repository, coordinator);
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var cache = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var recovery = FontCacheManagerFixture.CreateStartupService(cache, repository,
             new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"))),

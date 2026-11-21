@@ -12,8 +12,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 /// </summary>
 public sealed class FontDirectoryPolicyResolver
 {
-    private static readonly char[] Separators = [';', ','];
-    private readonly IReadOnlyList<FontDirectoryRoot> _roots;
+    private static readonly char[] _separators = [';', ','];
 
     /// <summary>Initializes a new instance of the <see cref="FontDirectoryPolicyResolver"/> class.</summary>
     /// <param name="customDirectories">Configured scan directories.</param>
@@ -50,16 +49,15 @@ public sealed class FontDirectoryPolicyResolver
             AddPolicy(policies, path, DomainPolicy.Preferred);
         }
 
-        _roots = policies.Select(pair => new FontDirectoryRoot(pair.Key, pair.Value)).OrderBy(root => root.Path, FontPathComparison.Comparer).ToArray();
+        ConfiguredRoots = [.. policies.Select(pair => new FontDirectoryRoot(pair.Key, pair.Value)).OrderBy(root => root.Path, FontPathComparison.Comparer)];
     }
 
     /// <summary>Gets all normalized configured roots, including temporarily unavailable roots.</summary>
-    /// <returns>Canonical policy inputs.</returns>
-    public IReadOnlyList<FontDirectoryRoot> GetConfiguredRoots() => _roots;
+    public IReadOnlyList<FontDirectoryRoot> ConfiguredRoots { get; }
 
     /// <summary>Gets normalized existing roots eligible for inventory scanning.</summary>
     /// <returns>The roots with their directly configured policy flags.</returns>
-    public IReadOnlyList<FontDirectoryRoot> GetScanRoots() => _roots.Where(root => Directory.Exists(root.Path)).ToArray();
+    public IReadOnlyList<FontDirectoryRoot> GetScanRoots() => [.. ConfiguredRoots.Where(root => Directory.Exists(root.Path))];
 
     /// <summary>Combines every ancestor policy that applies to a font path.</summary>
     /// <param name="path">The observed font path.</param>
@@ -68,7 +66,7 @@ public sealed class FontDirectoryPolicyResolver
     {
         string fullPath = Path.GetFullPath(path);
         DomainPolicy policy = DomainPolicy.None;
-        foreach (FontDirectoryRoot root in _roots)
+        foreach (FontDirectoryRoot root in ConfiguredRoots)
         {
             if (FontPathComparison.IsWithin(fullPath, root.Path))
             {
@@ -89,7 +87,7 @@ public sealed class FontDirectoryPolicyResolver
             return null;
         }
 
-        return _roots.Where(root => (root.Policy & DomainPolicy.Custom) != 0 && Directory.Exists(root.Path) && FontPathComparison.IsWithin(path, root.Path))
+        return ConfiguredRoots.Where(root => (root.Policy & DomainPolicy.Custom) != 0 && Directory.Exists(root.Path) && FontPathComparison.IsWithin(path, root.Path))
             .OrderByDescending(root => root.Path.Length)
             .Select(root => root.Path)
             .FirstOrDefault();
@@ -117,7 +115,7 @@ public sealed class FontDirectoryPolicyResolver
 
     private static string[] Split(string? paths) => string.IsNullOrWhiteSpace(paths)
         ? []
-        : paths.Split(Separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        : paths.Split(_separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private static IEnumerable<string> GetPlatformDefaults()
     {

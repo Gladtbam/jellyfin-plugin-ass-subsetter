@@ -41,6 +41,9 @@ public sealed class FontRenamePlanner
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(files);
+        ArgumentNullException.ThrowIfNull(quarantineCandidateFileIds);
+        ArgumentNullException.ThrowIfNull(policy);
         FontNamingCompilation fileProgram = FontNamingTemplate.Compile(rules.FileNameTemplate, FontTemplateKind.FileName);
         FontNamingCompilation folderProgram = FontNamingTemplate.Compile(rules.FolderTemplate, FontTemplateKind.Folder);
         if (rules.FormatVersion != FontNamingRules.CurrentFormatVersion || fileProgram.Program is null || folderProgram.Program is null)
@@ -72,7 +75,7 @@ public sealed class FontRenamePlanner
             FontTemplateResult folder = FontNamingTemplate.Expand(folderProgram.Program, fields);
             item = item with
             {
-                NamingEvidence = new(name.Evidence.Fields.Concat(folder.Evidence.Fields).Concat(fields.Get("version").Evidence).Distinct().ToArray(), name.Evidence.Selections.Concat(folder.Evidence.Selections).Distinct().ToArray()),
+                NamingEvidence = new([.. name.Evidence.Fields.Concat(folder.Evidence.Fields).Concat(fields.Get("version").Evidence).Distinct()], [.. name.Evidence.Selections.Concat(folder.Evidence.Selections).Distinct()]),
                 SkipReason = name.SkipReason ?? folder.SkipReason
             };
             items[file.Id] = item;
@@ -177,7 +180,7 @@ public sealed class FontRenamePlanner
 
             assigned.Add(id, (owner.Path, owner.Fingerprint));
             var item = items[id];
-            items[id] = item with { NamingEvidence = item.NamingEvidence with { Fields = item.NamingEvidence.Fields.Concat(owner.Proposal.Fields.Get("fingerprint").Evidence).Distinct().ToArray() } };
+            items[id] = item with { NamingEvidence = item.NamingEvidence with { Fields = [.. item.NamingEvidence.Fields.Concat(owner.Proposal.Fields.Get("fingerprint").Evidence).Distinct()] } };
             // A displaced base winner may itself own a fingerprint target in another group.
             if (baseWinners.TryGetValue(owner.Path, out var displaced) && fingerprintOwners.ContainsKey(displaced.FileId) && !assigned.ContainsKey(displaced.FileId))
             {
@@ -196,7 +199,7 @@ public sealed class FontRenamePlanner
 
             var fingerprint = proposal.Fields.Get("fingerprint");
             var item = items[proposal.FileId];
-            items[proposal.FileId] = item with { NamingEvidence = item.NamingEvidence with { Fields = item.NamingEvidence.Fields.Concat(fingerprint.Evidence).Distinct().ToArray() } };
+            items[proposal.FileId] = item with { NamingEvidence = item.NamingEvidence with { Fields = [.. item.NamingEvidence.Fields.Concat(fingerprint.Evidence).Distinct()] } };
             if (fingerprint.BlocksWhenReferenced)
             {
                 items[proposal.FileId] = items[proposal.FileId] with { SkipReason = "fingerprint:" + fingerprint.MissingReason };
@@ -247,7 +250,7 @@ public sealed class FontRenamePlanner
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return new FontRenameSnapshot(generationId, analysisBatchId, rules, rules.GetFingerprint(), items.Values.OrderBy(item => item.File.Id).ToArray());
+        return new FontRenameSnapshot(generationId, analysisBatchId, rules, rules.GetFingerprint(), [.. items.Values.OrderBy(item => item.File.Id)]);
     }
 
     private static int GetBudget(string parent) => 240 - Encoding.UTF8.GetByteCount(parent) - 1;
@@ -285,7 +288,7 @@ public sealed class FontRenamePlanner
             return Convert.ToHexString(file.Faces[0].StrictFingerprint.Span);
         }
 
-        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(file.Faces.OrderBy(face => face.FaceIndex).SelectMany(face => face.StrictFingerprint.ToArray()).ToArray()));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData([.. file.Faces.OrderBy(face => face.FaceIndex).SelectMany(face => face.StrictFingerprint.ToArray())]));
     }
 
     private sealed record Proposal(long FileId, string Parent, string Stem, string ProtectedSuffix, string Extension, string BasePath, FontNamingFields Fields);

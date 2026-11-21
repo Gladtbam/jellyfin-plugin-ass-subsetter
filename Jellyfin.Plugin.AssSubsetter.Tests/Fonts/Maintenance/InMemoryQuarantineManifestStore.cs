@@ -10,7 +10,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 /// <summary>Provides a process-local manifest store for deterministic maintenance tests.</summary>
 internal sealed class InMemoryQuarantineManifestStore : IQuarantineManifestStore
 {
-    private readonly object _sync = new();
+    private readonly Lock _sync = new();
     private readonly Dictionary<long, QuarantineManifest> _manifests = [];
 
     /// <summary>Writes or replaces the complete manifest for one batch.</summary>
@@ -43,7 +43,7 @@ internal sealed class InMemoryQuarantineManifestStore : IQuarantineManifestStore
                 manifest.ValidateCurrentFormat();
             }
 
-            return Task.FromResult<IReadOnlyList<QuarantineManifest>>(_manifests.Values.OrderBy(manifest => manifest.BatchId).ToArray());
+            return Task.FromResult<IReadOnlyList<QuarantineManifest>>([.. _manifests.Values.OrderBy(manifest => manifest.BatchId)]);
         }
     }
 }

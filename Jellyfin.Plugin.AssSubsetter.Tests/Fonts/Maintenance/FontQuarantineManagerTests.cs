@@ -13,6 +13,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 
 public sealed class FontQuarantineManagerTests
 {
+    private static readonly double[] _emptyBatchProgress = [0d];
+
     [Fact]
     public async Task PurgeDoesNotCountAnItemWhoseDeletionFails()
     {
@@ -25,7 +27,7 @@ public sealed class FontQuarantineManagerTests
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => fixture.Manager.PurgeExpiredAsync(CancellationToken.None, new RecordingProgress(reports.Add)));
 
-        Assert.Equal(new[] { 0d }, reports);
+        Assert.Equal(_emptyBatchProgress, reports);
         Assert.True(fixture.FileSystem.FileExists(blockedPath));
     }
 
@@ -95,7 +97,8 @@ public sealed class FontQuarantineManagerTests
             Items = [Assert.Single(manifest.Items) with { Status = durableStatus }]
         }, CancellationToken.None);
         var coordinator = new FontMaintenanceCoordinator();
-        using var manager = Tests.Services.FontCacheManagerFixture.CreateManager(fixture.Repository, coordinator);
+        using var managerFixture = new Tests.Services.FontCacheManagerFixture(fixture.Repository, coordinator);
+        var manager = managerFixture.Manager;
         var readiness = new FontCatalogReadiness();
         using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
             manager,
@@ -1199,34 +1202,40 @@ public sealed class FontQuarantineManagerTests
                     StartedUtc = DateTimeOffset.UnixEpoch,
                     CompletedUtc = DateTimeOffset.UnixEpoch,
                     SummaryJson = "{}",
-                    Relations = inventory.Skip(1).Select(candidate => new FontRelationRecord
-                    {
-                        LeftFaceId = 11,
-                        RightFaceId = candidate.Faces[0].Id,
-                        RelationshipKind = FontRelationshipKind.StrictFaceDuplicate,
-                        ReplacementDirection = FontReplacementDirection.LeftReplacesRight,
-                        EvidenceVersion = evidenceVersion,
-                        EvidenceJson = "{}"
-                    }).ToArray(),
-                    Groups = inventory.Skip(1).Select(candidate =>
-                        new DuplicateGroupRecord
+                    Relations =
+                    [
+                        .. inventory.Skip(1).Select(candidate => new FontRelationRecord
                         {
-                            RetainedFaceId = 11,
-                            EvidenceJson = "{}",
-                            ReclaimableBytes = candidate.Size,
-                            Members =
-                            [
-                                Member(11, 1, DuplicateGroupMemberDecision.Retained),
-                                Member(candidate.Faces[0].Id, candidate.Id, DuplicateGroupMemberDecision.QuarantineCandidate)
-                            ]
-                        }).ToArray()
+                            LeftFaceId = 11,
+                            RightFaceId = candidate.Faces[0].Id,
+                            RelationshipKind = FontRelationshipKind.StrictFaceDuplicate,
+                            ReplacementDirection = FontReplacementDirection.LeftReplacesRight,
+                            EvidenceVersion = evidenceVersion,
+                            EvidenceJson = "{}"
+                        })
+                    ],
+                    Groups =
+                    [
+                        .. inventory.Skip(1).Select(candidate =>
+                            new DuplicateGroupRecord
+                            {
+                                RetainedFaceId = 11,
+                                EvidenceJson = "{}",
+                                ReclaimableBytes = candidate.Size,
+                                Members =
+                                [
+                                    Member(11, 1, DuplicateGroupMemberDecision.Retained),
+                                    Member(candidate.Faces[0].Id, candidate.Id, DuplicateGroupMemberDecision.QuarantineCandidate)
+                                ]
+                            })
+                    ]
                 },
                 CancellationToken.None);
             var requestStore = new FontOperationRequestStore(repository, System.TimeProvider.System);
             OperationRequest request = await requestStore.CreateAsync(
                 FontOperationKind.Quarantine,
                 analysis.Id,
-                inventory.Skip(1).Select(file => file.Id).ToArray(),
+                [.. inventory.Skip(1).Select(file => file.Id)],
                 "quarantine-request",
                 CancellationToken.None);
             var fileSystem = new FakeQuarantineFileSystem(sameVolume);
@@ -1384,7 +1393,7 @@ public sealed class FontQuarantineManagerTests
         {
             CopyCount++;
             var source = _files[sourcePath];
-            byte[] bytes = source.Bytes.ToArray();
+            byte[] bytes = [.. source.Bytes];
             if (CorruptCopiedBytes)
             {
                 bytes[0] ^= 0xff;
@@ -1415,7 +1424,7 @@ public sealed class FontQuarantineManagerTests
             if (CorruptMovedBytes)
             {
                 (byte[] bytes, DateTimeOffset modifiedUtc) = _files[destinationPath];
-                bytes = bytes.ToArray();
+                bytes = [.. bytes];
                 bytes[0] ^= 0xff;
                 _files[destinationPath] = (bytes, modifiedUtc);
             }

@@ -15,8 +15,11 @@ public sealed class FontNamingFieldResolverTests
     [InlineData(null, "Bold", null, "Regular", "", "", "family-only")]
     public void CompletePairsDoNotMixSources(string? typedFamily, string? typedStyle, string? legacyFamily, string? legacyStyle, string family, string style, string selection)
     {
+        ArgumentNullException.ThrowIfNull(family);
+        ArgumentNullException.ThrowIfNull(style);
+
         (ushort Id, string? Value)[] names = [(16, typedFamily), (17, typedStyle), (1, legacyFamily), (2, legacyStyle)];
-        var fields = Resolve(names.Where(name => name.Value is not null).Select(name => (name.Id, name.Value!)).ToArray());
+        var fields = Resolve([.. names.Where(name => name.Value is not null).Select(name => (name.Id, name.Value!))]);
         Assert.Equal(family, fields.Get("family").Text);
         Assert.Equal(style, fields.Get("style").Text);
         Assert.Equal(style.Length == 0 ? "" : "-" + style, fields.Get("styleSuffix").Text);

@@ -8,18 +8,18 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Serializes versioned deep evidence with concrete set restoration.</summary>
 internal static class FontDeepEvidenceJson
 {
-    private static readonly JsonSerializerOptions Options = CreateOptions();
+    private static readonly JsonSerializerOptions _options = CreateOptions();
 
     /// <summary>Serializes one file's complete deep comparison evidence.</summary>
     /// <param name="evidence">The evidence to persist.</param>
     /// <returns>The JSON payload.</returns>
-    public static string Serialize(FontDeepAnalysisEvidence evidence) => JsonSerializer.Serialize(evidence, Options);
+    public static string Serialize(FontDeepAnalysisEvidence evidence) => JsonSerializer.Serialize(evidence, _options);
 
     /// <summary>Restores one file's complete deep comparison evidence.</summary>
     /// <param name="payload">The stored JSON payload.</param>
     /// <returns>The restored evidence.</returns>
     public static FontDeepAnalysisEvidence Deserialize(string payload)
-        => JsonSerializer.Deserialize<FontDeepAnalysisEvidence>(payload, Options)
+        => JsonSerializer.Deserialize<FontDeepAnalysisEvidence>(payload, _options)
             ?? throw new JsonException("Deep font evidence payload is empty.");
 
     private static JsonSerializerOptions CreateOptions()

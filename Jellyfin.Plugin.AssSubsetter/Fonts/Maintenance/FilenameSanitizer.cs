@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 
 /// <summary>Builds portable Unicode filename components without rewriting font data.</summary>
-public static class FilenameSanitizer
+public static partial class FilenameSanitizer
 {
     /// <summary>Removes cross-platform forbidden characters and normalizes separators.</summary>
     /// <param name="value">The original name evidence.</param>
@@ -13,11 +13,11 @@ public static class FilenameSanitizer
     public static string Sanitize(string value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        string cleaned = Regex.Replace(value.Normalize(NormalizationForm.FormC), "[<>:\"/\\\\|?*\\p{Cc}]", "-", RegexOptions.CultureInvariant);
-        cleaned = Regex.Replace(cleaned, "[-_]+", "-", RegexOptions.CultureInvariant).Trim(' ', '.', '-');
-        cleaned = Regex.Replace(cleaned, "\\s+", " ", RegexOptions.CultureInvariant);
+        string cleaned = InvalidFilenameCharactersRegex().Replace(value.Normalize(NormalizationForm.FormC), "-");
+        cleaned = FilenameSeparatorsRegex().Replace(cleaned, "-").Trim(' ', '.', '-');
+        cleaned = FilenameWhitespaceRegex().Replace(cleaned, " ");
         string stem = cleaned.Split('.')[0];
-        if (Regex.IsMatch(stem, "^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        if (ReservedDeviceNameRegex().IsMatch(stem))
         {
             cleaned = "_" + cleaned;
         }
@@ -33,6 +33,8 @@ public static class FilenameSanitizer
     /// <returns>The bounded filename.</returns>
     public static string LimitPath(string stem, string extension, string suffix, int maximumLength)
     {
+        ArgumentNullException.ThrowIfNull(stem);
+        ArgumentNullException.ThrowIfNull(extension);
         int available = Math.Min(240, maximumLength) - Encoding.UTF8.GetByteCount(extension + suffix);
         if (available < 1)
         {
@@ -54,4 +56,20 @@ public static class FilenameSanitizer
 
         return bounded.ToString().TrimEnd(' ', '.') + suffix + extension.ToLowerInvariant();
     }
+
+    /// <summary>Gets the pattern for filename characters forbidden on supported platforms.</summary>
+    /// <returns>The shared validation and sanitization pattern.</returns>
+    [GeneratedRegex("[<>:\"/\\\\|?*\\p{Cc}]", RegexOptions.CultureInvariant)]
+    internal static partial Regex InvalidFilenameCharactersRegex();
+
+    /// <summary>Gets the pattern for reserved Windows device names.</summary>
+    /// <returns>The pattern applied to the part before the first period.</returns>
+    [GeneratedRegex("^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    internal static partial Regex ReservedDeviceNameRegex();
+
+    [GeneratedRegex("[-_]+", RegexOptions.CultureInvariant)]
+    private static partial Regex FilenameSeparatorsRegex();
+
+    [GeneratedRegex(@"\s+", RegexOptions.CultureInvariant)]
+    private static partial Regex FilenameWhitespaceRegex();
 }

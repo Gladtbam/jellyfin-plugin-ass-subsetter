@@ -13,7 +13,7 @@ internal static class FontNamingTestData
         StyleName = "not-a-style-record",
         Names = [],
         Technology = "TrueType",
-        NameRecords = names.Select(name => new OpenTypeNameRecord(3, 1, 0x0409, name.Id, name.Value)).ToArray()
+        NameRecords = [.. names.Select(name => new OpenTypeNameRecord(3, 1, 0x0409, name.Id, name.Value))]
     };
 
     public static FontFileRecord File(string path, params FontFaceRecord[] faces) => new()

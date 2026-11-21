@@ -8,6 +8,11 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.ScheduledTasks;
 
 public sealed class FontTaskProgressTests
 {
+    private static readonly double[] _completedAnalysisProgress = [0d, 40d, 99d, 100d];
+    private static readonly double[] _failedAnalysisProgress = [0d, 60d];
+    private static readonly double[] _failedPerFileProgress = [0d, 99d];
+    private static readonly double[] _completedQuarantineProgress = [0d, 35d, 99d, 100d];
+
     [Fact]
     public async Task AnalysisProgressRemainsMonotonicAndCompletesOnlyAfterExecution()
     {
@@ -25,7 +30,7 @@ public sealed class FontTaskProgressTests
 
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
-        Assert.Equal(new[] { 0d, 40d, 99d, 100d }, reports);
+        Assert.Equal(_completedAnalysisProgress, reports);
         Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Information && entry.Message.Contains("ElapsedMs", StringComparison.Ordinal) && entry.Message.Contains("RequestId: 3", StringComparison.Ordinal));
     }
 
@@ -51,7 +56,7 @@ public sealed class FontTaskProgressTests
 
         Assert.Equal(4L, exception.Data[FontScheduledTaskExecution.OperationRequestIdDataKey]);
         Assert.Equal(9L, exception.Data[FontScheduledTaskExecution.BatchIdDataKey]);
-        Assert.Equal(new[] { 0d, 60d }, reports);
+        Assert.Equal(_failedAnalysisProgress, reports);
         Assert.Contains(logger.Entries, entry => entry.Message.Contains("ElapsedMs", StringComparison.Ordinal) && entry.Message.Contains("BatchId: 9", StringComparison.Ordinal));
     }
 
@@ -71,7 +76,7 @@ public sealed class FontTaskProgressTests
 
         await Assert.ThrowsAsync<IOException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
 
-        Assert.Equal(new[] { 0d, 99d }, reports);
+        Assert.Equal(_failedPerFileProgress, reports);
         Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Error && entry.Exception is IOException);
     }
 
@@ -122,7 +127,7 @@ public sealed class FontTaskProgressTests
 
         await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
 
-        Assert.Equal(new[] { 0d, 35d, 99d, 100d }, reports);
+        Assert.Equal(_completedQuarantineProgress, reports);
     }
 
     [Theory]
@@ -145,7 +150,7 @@ public sealed class FontTaskProgressTests
             await Assert.ThrowsAsync<InvalidOperationException>(() => task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None));
         else
             await task.ExecuteAsync(new InlineProgress(reports.Add), CancellationToken.None);
-        double[] finished = reports.ToArray();
+        double[] finished = [.. reports];
 
         delayed!.Report(90);
         delayed.Report(100);

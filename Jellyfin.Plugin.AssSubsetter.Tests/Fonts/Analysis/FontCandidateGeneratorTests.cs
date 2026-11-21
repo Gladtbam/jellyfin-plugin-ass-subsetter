@@ -70,7 +70,7 @@ public sealed class FontCandidateGeneratorTests
         Assert.Equal([new FontCandidatePair(1, 3), new FontCandidatePair(1, 7), new FontCandidatePair(3, 7)], result.Pairs);
         // Hash, strict fingerprint, identity, PostScript, two names and coverage: seven buckets.
         Assert.Equal(21, result.BucketPairCount);
-        Assert.Equal(result.Pairs, FontCandidateGenerator.Generate(faces.Reverse().ToArray()).Pairs);
+        Assert.Equal(result.Pairs, FontCandidateGenerator.Generate([.. faces.Reverse()]).Pairs);
     }
 
     private static FontFaceEvidence Face(long faceId, string identity, string strict)
