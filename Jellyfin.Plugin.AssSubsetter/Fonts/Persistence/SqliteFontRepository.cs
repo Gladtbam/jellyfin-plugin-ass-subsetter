@@ -260,15 +260,8 @@ public sealed partial class SqliteFontRepository : IFontRepository
                 object? result = await command.ExecuteScalarAsync(token).ConfigureAwait(false);
                 long batchId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
 
-                foreach (FontRelationRecord relation in batch.Relations)
-                {
-                    await InsertRelationAsync(connection, transaction, batchId, relation, token).ConfigureAwait(false);
-                }
-
-                foreach (DuplicateGroupRecord group in batch.Groups)
-                {
-                    await InsertGroupAsync(connection, transaction, batchId, group, token).ConfigureAwait(false);
-                }
+                await InsertRelationsAsync(connection, transaction, batchId, batch.Relations, token).ConfigureAwait(false);
+                await InsertGroupsAsync(connection, transaction, batchId, batch.Groups, token).ConfigureAwait(false);
 
                 SqliteCommand update = connection.CreateCommand();
                 await using var updateScope = update.ConfigureAwait(false);
@@ -823,13 +816,18 @@ public sealed partial class SqliteFontRepository : IFontRepository
         }
     }
 
-    private static async Task InsertRelationAsync(
+    private static async Task InsertRelationsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         long batchId,
-        FontRelationRecord relation,
+        IReadOnlyList<FontRelationRecord> relations,
         CancellationToken cancellationToken)
     {
+        if (relations.Count == 0)
+        {
+            return;
+        }
+
         SqliteCommand command = connection.CreateCommand();
         await using var commandScope = command.ConfigureAwait(false);
         command.Transaction = transaction;
@@ -838,22 +836,37 @@ public sealed partial class SqliteFontRepository : IFontRepository
             VALUES ($batchId, $leftFaceId, $rightFaceId, $kind, $direction, $evidenceVersion, $evidenceJson);
             """;
         command.Parameters.AddWithValue("$batchId", batchId);
-        command.Parameters.AddWithValue("$leftFaceId", relation.LeftFaceId);
-        command.Parameters.AddWithValue("$rightFaceId", relation.RightFaceId);
-        command.Parameters.AddWithValue("$kind", (int)relation.RelationshipKind);
-        command.Parameters.AddWithValue("$direction", (int)relation.ReplacementDirection);
-        command.Parameters.AddWithValue("$evidenceVersion", relation.EvidenceVersion);
-        command.Parameters.AddWithValue("$evidenceJson", relation.EvidenceJson);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        SqliteParameter leftFaceId = command.Parameters.Add("$leftFaceId", SqliteType.Integer);
+        SqliteParameter rightFaceId = command.Parameters.Add("$rightFaceId", SqliteType.Integer);
+        SqliteParameter kind = command.Parameters.Add("$kind", SqliteType.Integer);
+        SqliteParameter direction = command.Parameters.Add("$direction", SqliteType.Integer);
+        SqliteParameter evidenceVersion = command.Parameters.Add("$evidenceVersion", SqliteType.Integer);
+        SqliteParameter evidenceJson = command.Parameters.Add("$evidenceJson", SqliteType.Text);
+        await command.PrepareAsync(cancellationToken).ConfigureAwait(false);
+        foreach (FontRelationRecord relation in relations)
+        {
+            leftFaceId.Value = relation.LeftFaceId;
+            rightFaceId.Value = relation.RightFaceId;
+            kind.Value = (int)relation.RelationshipKind;
+            direction.Value = (int)relation.ReplacementDirection;
+            evidenceVersion.Value = relation.EvidenceVersion;
+            evidenceJson.Value = relation.EvidenceJson;
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
-    private static async Task InsertGroupAsync(
+    private static async Task InsertGroupsAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         long batchId,
-        DuplicateGroupRecord group,
+        IReadOnlyList<DuplicateGroupRecord> groups,
         CancellationToken cancellationToken)
     {
+        if (groups.Count == 0)
+        {
+            return;
+        }
+
         SqliteCommand groupCommand = connection.CreateCommand();
         await using var groupCommandScope = groupCommand.ConfigureAwait(false);
         groupCommand.Transaction = transaction;
@@ -863,29 +876,44 @@ public sealed partial class SqliteFontRepository : IFontRepository
             SELECT last_insert_rowid();
             """;
         groupCommand.Parameters.AddWithValue("$batchId", batchId);
-        groupCommand.Parameters.AddWithValue("$retainedFaceId", group.RetainedFaceId);
-        groupCommand.Parameters.AddWithValue("$reclaimableBytes", group.ReclaimableBytes);
-        groupCommand.Parameters.AddWithValue("$evidenceJson", group.EvidenceJson);
-        object? result = await groupCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-        long groupId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+        SqliteParameter retainedFaceId = groupCommand.Parameters.Add("$retainedFaceId", SqliteType.Integer);
+        SqliteParameter reclaimableBytes = groupCommand.Parameters.Add("$reclaimableBytes", SqliteType.Integer);
+        SqliteParameter evidenceJson = groupCommand.Parameters.Add("$evidenceJson", SqliteType.Text);
+        await groupCommand.PrepareAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (DuplicateGroupMemberRecord member in group.Members)
+        SqliteCommand memberCommand = connection.CreateCommand();
+        await using var memberCommandScope = memberCommand.ConfigureAwait(false);
+        memberCommand.Transaction = transaction;
+        memberCommand.CommandText = """
+            INSERT INTO group_member(duplicate_group_id, face_id, file_id, decision, retention_score, score_json, reason)
+            VALUES ($groupId, $faceId, $fileId, $decision, $retentionScore, $scoreJson, $reason);
+            """;
+        SqliteParameter groupId = memberCommand.Parameters.Add("$groupId", SqliteType.Integer);
+        SqliteParameter faceId = memberCommand.Parameters.Add("$faceId", SqliteType.Integer);
+        SqliteParameter fileId = memberCommand.Parameters.Add("$fileId", SqliteType.Integer);
+        SqliteParameter decision = memberCommand.Parameters.Add("$decision", SqliteType.Integer);
+        SqliteParameter retentionScore = memberCommand.Parameters.Add("$retentionScore", SqliteType.Integer);
+        SqliteParameter scoreJson = memberCommand.Parameters.Add("$scoreJson", SqliteType.Text);
+        SqliteParameter reason = memberCommand.Parameters.Add("$reason", SqliteType.Text);
+        await memberCommand.PrepareAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (DuplicateGroupRecord group in groups)
         {
-            SqliteCommand memberCommand = connection.CreateCommand();
-            await using var memberCommandScope = memberCommand.ConfigureAwait(false);
-            memberCommand.Transaction = transaction;
-            memberCommand.CommandText = """
-                INSERT INTO group_member(duplicate_group_id, face_id, file_id, decision, retention_score, score_json, reason)
-                VALUES ($groupId, $faceId, $fileId, $decision, $retentionScore, $scoreJson, $reason);
-                """;
-            memberCommand.Parameters.AddWithValue("$groupId", groupId);
-            memberCommand.Parameters.AddWithValue("$faceId", member.FaceId);
-            memberCommand.Parameters.AddWithValue("$fileId", member.FileId);
-            memberCommand.Parameters.AddWithValue("$decision", (int)member.Decision);
-            memberCommand.Parameters.AddWithValue("$retentionScore", member.RetentionScore);
-            memberCommand.Parameters.AddWithValue("$scoreJson", member.ScoreJson);
-            memberCommand.Parameters.AddWithValue("$reason", member.Reason);
-            await memberCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            retainedFaceId.Value = group.RetainedFaceId;
+            reclaimableBytes.Value = group.ReclaimableBytes;
+            evidenceJson.Value = group.EvidenceJson;
+            object? result = await groupCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            groupId.Value = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+            foreach (DuplicateGroupMemberRecord member in group.Members)
+            {
+                faceId.Value = member.FaceId;
+                fileId.Value = member.FileId;
+                decision.Value = (int)member.Decision;
+                retentionScore.Value = member.RetentionScore;
+                scoreJson.Value = member.ScoreJson;
+                reason.Value = member.Reason;
+                await memberCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 

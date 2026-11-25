@@ -155,6 +155,62 @@ public sealed partial class SqliteFontRepositoryTests
 
 
     [Fact]
+    public async Task AnalysisPage_ShouldFindGroupMembersByIndexWithoutScanningHistory()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var publishedBatches = new List<long>();
+        for (int index = 0; index < 2; index++)
+        {
+            long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+            await fixture.Repository.WriteInventoryAsync(generation,
+                [CreateFile($"font-{index}-a.ttf", "Family A"), CreateFile($"font-{index}-b.ttf", "Family B")], token);
+            IReadOnlyList<FontFileRecord> files = await fixture.Repository.LoadInventoryAsync(generation, token);
+            AnalysisBatch batch = await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch
+            {
+                GenerationId = generation,
+                Status = AnalysisBatchStatus.Complete,
+                CompletedUtc = DateTimeOffset.UnixEpoch.AddDays(index),
+                SummaryJson = "{\"faceScores\":[]}",
+                Groups =
+                [
+                    .. files.Select(file => new DuplicateGroupRecord
+                    {
+                        RetainedFaceId = file.Faces[0].Id,
+                        EvidenceJson = "{}",
+                        Members = [new DuplicateGroupMemberRecord { FaceId = file.Faces[0].Id, FileId = file.Id, ScoreJson = "{}", Reason = file.Path }]
+                    })
+                ]
+            }, token);
+            publishedBatches.Add(batch.Id);
+        }
+
+        string? memberSql = null;
+        (string Name, object Value)[] parameters = [];
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command =>
+        {
+            if (command.CommandText.Contains("FROM \"group_member\"", StringComparison.Ordinal))
+            {
+                memberSql = command.CommandText;
+                parameters = [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, parameter.Value!))];
+            }
+        });
+
+        var page = await fixture.Repository.LoadAnalysisBatchPageAsync(0, 1, token);
+        Assert.Equal(2, page.TotalCount);
+        AnalysisBatch newest = Assert.Single(page.Items);
+        Assert.Equal(publishedBatches[1], newest.Id);
+        Assert.Collection(newest.Groups,
+            group => Assert.Equal("font-1-a.ttf", Assert.Single(group.Members).Reason),
+            group => Assert.Equal("font-1-b.ttf", Assert.Single(group.Members).Reason));
+        Assert.NotNull(memberSql);
+        IReadOnlyList<string> plans = await ExplainAsync(fixture, memberSql, parameters, token);
+        Assert.DoesNotContain(plans, plan => plan.Contains("CORRELATED", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(plans, plan => plan.StartsWith("SEARCH ", StringComparison.Ordinal)
+            && plan.Contains("(duplicate_group_id=?)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task QuarantinePageCount_ShouldRankHistoryWithoutCorrelatedScans()
     {
         await using var fixture = await SqliteRepositoryFixture.CreateAsync();
@@ -198,22 +254,32 @@ public sealed partial class SqliteFontRepositoryTests
         Assert.Equal(40, page.TotalCount);
         Assert.Equal(10, page.Items.Count);
         Assert.NotNull(countSql);
-        await using var connection = await fixture.Database.OpenConnectionAsync(CancellationToken.None);
+        IReadOnlyList<string> plans = await ExplainAsync(fixture, countSql, parameters, TestContext.Current.CancellationToken);
+        Assert.DoesNotContain(plans, plan => plan.Contains("CORRELATED", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<IReadOnlyList<string>> ExplainAsync(
+        SqliteRepositoryFixture fixture,
+        string sql,
+        (string Name, object Value)[] parameters,
+        CancellationToken token)
+    {
+        await using var connection = await fixture.Database.OpenConnectionAsync(token);
         await using var explain = connection.CreateCommand();
-        explain.CommandText = "EXPLAIN QUERY PLAN " + countSql;
+        explain.CommandText = "EXPLAIN QUERY PLAN " + sql;
         foreach (var parameter in parameters)
         {
             explain.Parameters.AddWithValue(parameter.Name, parameter.Value);
         }
 
         var plans = new List<string>();
-        await using var reader = await explain.ExecuteReaderAsync(TestContext.Current.CancellationToken);
-        while (await reader.ReadAsync(TestContext.Current.CancellationToken))
+        await using var reader = await explain.ExecuteReaderAsync(token);
+        while (await reader.ReadAsync(token))
         {
             plans.Add(reader.GetString(3));
         }
 
-        Assert.DoesNotContain(plans, plan => plan.Contains("CORRELATED", StringComparison.OrdinalIgnoreCase));
+        return plans;
     }
 
     [Fact]

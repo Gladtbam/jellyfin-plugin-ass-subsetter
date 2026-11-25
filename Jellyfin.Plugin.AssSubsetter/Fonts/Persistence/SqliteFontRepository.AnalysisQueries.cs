@@ -70,10 +70,12 @@ public sealed partial class SqliteFontRepository
         long[] ids = [.. rows.Select(row => row.Id)];
         List<FontRelationRow> relations = await context.Set<FontRelationRow>().Where(row => ids.Contains(row.AnalysisBatchId))
             .OrderBy(row => row.LeftFaceId).ThenBy(row => row.RightFaceId).ToListAsync(cancellationToken).ConfigureAwait(false);
-        List<DuplicateGroupRow> groups = await context.Set<DuplicateGroupRow>().Where(row => ids.Contains(row.AnalysisBatchId))
-            .OrderBy(row => row.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
+        IQueryable<DuplicateGroupRow> groupsQuery = context.Set<DuplicateGroupRow>().Where(row => ids.Contains(row.AnalysisBatchId));
+        List<DuplicateGroupRow> groups = await groupsQuery.OrderBy(row => row.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
+        // Start from the selected group IDs so SQLite can seek members instead of scanning the history.
+        IQueryable<long> groupIds = groupsQuery.Select(group => group.Id);
         List<GroupMemberRow> members = await context.Set<GroupMemberRow>()
-            .Where(row => context.Set<DuplicateGroupRow>().Any(group => group.Id == row.DuplicateGroupId && ids.Contains(group.AnalysisBatchId)))
+            .Where(row => groupIds.Contains(row.DuplicateGroupId))
             .OrderBy(row => row.Id).ToListAsync(cancellationToken).ConfigureAwait(false);
         var relationsByBatch = relations.ToLookup(row => row.AnalysisBatchId);
         var groupsByBatch = groups.ToLookup(row => row.AnalysisBatchId);
