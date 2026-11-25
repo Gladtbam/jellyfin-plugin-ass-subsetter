@@ -263,6 +263,87 @@ public sealed partial class SqliteFontRepositoryTests
     }
 
     [Fact]
+    public async Task DuplicateGroupReads_ShouldPageBeforeLoadingMembersAndScopeDetailToItsOwnGroup()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        long generation = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        FontFileRecord collection = CreateFile("collection.ttc", "Collection");
+        await fixture.Repository.WriteInventoryAsync(generation,
+        [
+            collection with { Faces = [collection.Faces[0], collection.Faces[0] with { FaceIndex = 1 }] },
+            CreateFile("copy.ttf", "Collection"),
+            CreateFile("other.ttf", "Other")
+        ], token);
+        var inventory = await fixture.Repository.LoadInventoryAsync(generation, token);
+        var retained = inventory[0];
+        var duplicate = inventory[1];
+        var unrelated = inventory[2];
+        var report = await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch
+        {
+            GenerationId = generation,
+            Status = AnalysisBatchStatus.Complete,
+            SummaryJson = "{\"faceScores\":[]}",
+            Groups =
+            [
+                new DuplicateGroupRecord
+                {
+                    RetainedFaceId = unrelated.Faces[0].Id,
+                    EvidenceJson = "{}",
+                    ReclaimableBytes = 100,
+                    Members = [GroupMember(unrelated, DuplicateGroupMemberDecision.Retained)]
+                },
+                new DuplicateGroupRecord
+                {
+                    RetainedFaceId = retained.Faces[0].Id,
+                    EvidenceJson = "{}",
+                    ReclaimableBytes = 20,
+                    Members = [GroupMember(retained, DuplicateGroupMemberDecision.Retained), GroupMember(duplicate, DuplicateGroupMemberDecision.QuarantineCandidate)]
+                }
+            ],
+            Relations =
+            [
+                new FontRelationRecord { LeftFaceId = retained.Faces[0].Id, RightFaceId = duplicate.Faces[0].Id, EvidenceJson = "{}" },
+                new FontRelationRecord { LeftFaceId = duplicate.Faces[0].Id, RightFaceId = unrelated.Faces[0].Id, EvidenceJson = "{}" }
+            ]
+        }, token);
+
+        var commands = new List<string>();
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command => commands.Add(command.CommandText));
+        var query = new FontManagementQuery(fixture.Repository);
+        var page = await query.GetGroupsAsync(new FontGroupQuery(2, 1, null, null, "reclaimableBytes"), token);
+        var filtered = await query.GetGroupsAsync(new FontGroupQuery(1, 1, report.Id, "quarantineCandidate", null), token);
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(1, filtered.TotalCount);
+        var selected = Assert.Single(page.Items);
+        Assert.Equal(selected.Id, Assert.Single(filtered.Items).Id);
+        Assert.Equal(20, selected.ReclaimableBytes);
+        Assert.Equal([retained.Id, duplicate.Id], selected.Members.Select(member => member.FileId));
+        Assert.DoesNotContain(commands, sql => sql.Contains("\"font_relation\"", StringComparison.Ordinal)
+            || sql.Contains("\"evidence_json\"", StringComparison.Ordinal));
+        Assert.Contains(commands, sql => sql.Contains("LIMIT", StringComparison.OrdinalIgnoreCase)
+            && sql.Contains("duplicate_group", StringComparison.Ordinal));
+
+        commands.Clear();
+        var detail = await query.GetGroupDetailAsync(report.Id, selected.Id, token);
+
+        Assert.NotNull(detail);
+        var pair = Assert.Single(detail.Pairs);
+        Assert.Equal(retained.Faces[0].Id, pair.LeftFaceId);
+        Assert.Equal(duplicate.Faces[0].Id, pair.RightFaceId);
+        Assert.Contains("1 other Faces share the file", pair.CollectionFaceImpact, StringComparison.Ordinal);
+        Assert.Contains(commands, sql => sql.Contains("\"font_relation\"", StringComparison.Ordinal)
+            && sql.Contains("\"group_member\"", StringComparison.Ordinal));
+        Assert.Contains(commands, sql => sql.Contains("\"font_file\"", StringComparison.Ordinal)
+            && sql.Contains("\"group_member\"", StringComparison.Ordinal));
+        Assert.Null(await query.GetGroupDetailAsync(report.Id + 1, selected.Id, token));
+    }
+
+    private static DuplicateGroupMemberRecord GroupMember(FontFileRecord file, DuplicateGroupMemberDecision decision)
+        => new() { FaceId = file.Faces[0].Id, FileId = file.Id, Decision = decision, ScoreJson = "{}", Reason = decision.ToString() };
+
+    [Fact]
     public async Task AnalysisPage_ShouldFindGroupMembersByIndexWithoutScanningHistory()
     {
         await using var fixture = await SqliteRepositoryFixture.CreateAsync();

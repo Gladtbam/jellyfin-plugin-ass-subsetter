@@ -56,6 +56,14 @@ public sealed partial class SqliteFontRepository
         await using var transactionScope = transaction.ConfigureAwait(false);
         long? generation = generationId ?? await PublishedGenerationAsync(context, cancellationToken).ConfigureAwait(false);
         IQueryable<FontFileRow> filesQuery = context.Set<FontFileRow>().Where(file => file.GenerationId == generation);
+        var result = await ReadInventoryAsync(context, filesQuery, includeCoverage, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result;
+    }
+
+    private static async Task<IReadOnlyList<FontFileRecord>> ReadInventoryAsync(
+        FontDbContext context, IQueryable<FontFileRow> filesQuery, bool includeCoverage, CancellationToken cancellationToken)
+    {
         List<FontFileRow> files = await filesQuery.OrderBy(file => file.NormalizedPath).ToListAsync(cancellationToken).ConfigureAwait(false);
         IQueryable<FontFaceRow> facesQuery = context.Set<FontFaceRow>().Where(face => filesQuery.Select(file => file.Id).Contains(face.FileId));
         List<FontFaceRow> faces = await facesQuery.OrderBy(face => face.FaceIndex).ToListAsync(cancellationToken).ConfigureAwait(false);
@@ -65,7 +73,7 @@ public sealed partial class SqliteFontRepository
         var metadata = await LoadFaceMetadataAsync(context, facesQuery.Select(face => face.Id), includeCoverage, cancellationToken).ConfigureAwait(false);
         ILookup<long, FontFaceRow> facesByFile = faces.ToLookup(face => face.FileId);
         ILookup<long, FontPathAliasRow> aliasesByFile = aliases.ToLookup(alias => alias.FileId);
-        FontFileRecord[] result = [.. files.Select(file => new FontFileRecord
+        return [.. files.Select(file => new FontFileRecord
         {
             Id = file.Id, GenerationId = file.GenerationId, Path = file.Path, NormalizedPath = file.NormalizedPath,
             PhysicalIdentity = file.PhysicalIdentity, PathAliases = [.. aliasesByFile[file.Id].Select(alias => alias.Path)],
@@ -84,8 +92,6 @@ public sealed partial class SqliteFontRepository
                 UnicodeCoverage = metadata.Coverage.GetValueOrDefault(face.Id) ?? []
             })]
         })];
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return result;
     }
 
     private async Task<IReadOnlyList<RuntimeFontFace>> LoadRuntimeFacesCoreAsync(long? generationId, CancellationToken cancellationToken)

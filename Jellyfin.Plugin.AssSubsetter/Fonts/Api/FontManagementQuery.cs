@@ -95,25 +95,10 @@ public sealed class FontManagementQuery
         (int page, int pageSize) = NormalizePage(query.Page, query.PageSize);
         DuplicateGroupMemberDecision? decision = ParseDecision(query.Decision);
         string sort = NormalizeSort(query.Sort);
-        AnalysisBatch? batch = query.AnalysisBatchId.HasValue
-            ? await _repository.GetAnalysisBatchAsync(query.AnalysisBatchId.Value, cancellationToken).ConfigureAwait(false)
-            : await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
-        if (batch is null)
-        {
-            return new PagedResult<FontGroupDto>([], page, pageSize, 0);
-        }
-
-        IEnumerable<DuplicateGroupRecord> groups = batch.Groups;
-        if (decision.HasValue)
-        {
-            groups = groups.Where(group => group.Members.Any(member => member.Decision == decision.Value));
-        }
-
-        groups = sort == "reclaimableBytes"
-            ? groups.OrderByDescending(group => group.ReclaimableBytes).ThenBy(group => group.Id)
-            : groups.OrderBy(group => group.Id);
-        FontGroupDto[] mapped = [.. groups.Select(group => ToDto(batch.Id, group))];
-        return Page(mapped, page, pageSize);
+        long offset = ((long)page - 1) * pageSize;
+        var result = await _repository.LoadDuplicateGroupPageAsync(
+            query.AnalysisBatchId, offset, pageSize, decision, sort == "reclaimableBytes", cancellationToken).ConfigureAwait(false);
+        return new PagedResult<FontGroupDto>([.. result.Items.Select(ToDto)], page, pageSize, result.TotalCount);
     }
 
     /// <summary>Loads pageable relationship and unclassifiable-state rows with safe allowlisted filters.</summary>
@@ -151,9 +136,9 @@ public sealed class FontManagementQuery
             .SelectMany(group => group.Members)
             .ToLookup(member => member.FaceId);
         Dictionary<long, FontFaceAnalysisRecord> scoresByFace = batch.FaceScores.ToDictionary(score => score.FaceId);
-        var rows = new List<FontReportItemDto>(batch.Relations.Count + files.Count);
+        var rows = new List<ReportRow>(batch.Relations.Count + files.Count);
         var replacementReports = FontReportReplacementProjector.Project(batch, files);
-        rows.AddRange(replacementReports.Rows);
+        rows.AddRange(replacementReports.Rows.Select(item => new ReportRow(item)));
         foreach (FontRelationRecord relation in batch.Relations.Where(relation => !replacementReports.CoveredRelations.Contains(relation)))
         {
             var evidence = new List<(FontFileRecord File, FontFaceRecord Face)>(2);
@@ -167,7 +152,7 @@ public sealed class FontManagementQuery
                 evidence.Add(right);
             }
 
-            rows.Add(new FontReportItemDto(
+            var item = new FontReportItemDto(
                 batch.Id,
                 relation.Id,
                 relation.RelationshipKind,
@@ -179,77 +164,74 @@ public sealed class FontManagementQuery
                 [.. evidence.Select(item => Path.GetDirectoryName(item.File.Path) ?? string.Empty).Distinct(FontPathComparison.Comparer).Order(FontPathComparison.Comparer)],
                 [.. evidence.Select(item => item.Face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
                 null,
-                ToPairEvidence(relation, faces),
-                [
-                    .. evidence.Select(item => item.Face.Id)
-                        .Where(scoresByFace.ContainsKey)
-                        .Select(faceId => ToReportScore(scoresByFace[faceId]))
-                ],
-                [
-                    .. membersByFace[relation.LeftFaceId].Concat(membersByFace[relation.RightFaceId])
-                        .Select(member => member.Reason)
-                        .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                        .Distinct(StringComparer.Ordinal)
-                ]));
+                null,
+                [],
+                []);
+            rows.Add(new ReportRow(item, relation));
         }
 
-        rows.AddRange(files.Where(file => file.Health == FontFileHealth.Unclassifiable).Select(file => new FontReportItemDto(
-            batch.Id,
-            null,
-            null,
-            true,
-            FontReportAction.Retain,
-            [file.Id],
-            [.. file.Faces.Select(face => face.Id).Order()],
-            [file.Path],
-            [Path.GetDirectoryName(file.Path) ?? string.Empty],
-            [.. file.Faces.Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
-            file.Error,
-            null,
-            [
-                .. file.Faces.Select(face => face.Id)
-                    .Where(scoresByFace.ContainsKey)
-                    .Select(faceId => ToReportScore(scoresByFace[faceId]))
-            ],
-            [])));
+        foreach (FontFileRecord file in files.Where(file => file.Health == FontFileHealth.Unclassifiable))
+        {
+            var item = new FontReportItemDto(
+                batch.Id,
+                null,
+                null,
+                true,
+                FontReportAction.Retain,
+                [file.Id],
+                [.. file.Faces.Select(face => face.Id).Order()],
+                [file.Path],
+                [Path.GetDirectoryName(file.Path) ?? string.Empty],
+                [.. file.Faces.Select(face => face.Technology).Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
+                file.Error,
+                null,
+                [],
+                []);
+            rows.Add(new ReportRow(item, UnclassifiableFile: file));
+        }
 
-        IEnumerable<FontReportItemDto> filtered = rows;
+        IEnumerable<ReportRow> filtered = rows;
         if (relationship.HasValue)
         {
-            filtered = filtered.Where(item => item.RelationshipKind == relationship.Value || item.Replacement?.RelationshipKinds.Contains(relationship.Value) == true);
+            filtered = filtered.Where(row => row.Item.RelationshipKind == relationship.Value || row.Item.Replacement?.RelationshipKinds.Contains(relationship.Value) == true);
         }
 
         filtered = unclassifiable switch
         {
-            UnclassifiableFilter.Only => filtered.Where(item => item.IsUnclassifiable),
-            UnclassifiableFilter.Exclude => filtered.Where(item => !item.IsUnclassifiable),
+            UnclassifiableFilter.Only => filtered.Where(row => row.Item.IsUnclassifiable),
+            UnclassifiableFilter.Exclude => filtered.Where(row => !row.Item.IsUnclassifiable),
             _ => filtered
         };
         if (directory is not null)
         {
-            filtered = filtered.Where(item => item.Directories.Any(candidate => FontPathComparison.Comparer.Equals(NormalizeDirectory(candidate), directory)));
+            filtered = filtered.Where(row => row.Item.Directories.Any(candidate => FontPathComparison.Comparer.Equals(NormalizeDirectory(candidate), directory)));
         }
 
         if (technology is not null)
         {
-            filtered = filtered.Where(item => item.Technologies.Contains(technology, StringComparer.Ordinal));
+            filtered = filtered.Where(row => row.Item.Technologies.Contains(technology, StringComparer.Ordinal));
         }
 
         if (action.HasValue)
         {
-            filtered = filtered.Where(item => item.Action == action.Value);
+            filtered = filtered.Where(row => row.Item.Action == action.Value);
         }
 
-        FontReportItemDto[] ordered =
+        ReportRow[] ordered =
         [
             .. filtered
-                .OrderBy(item => item.IsUnclassifiable)
-                .ThenBy(item => item.Replacement is null)
-                .ThenByDescending(item => item.Replacement?.ReclaimableBytes ?? 0)
-                .ThenBy(item => item.Replacement?.GroupId ?? item.RelationId ?? long.MaxValue)
-                .ThenBy(item => item.FileIds.Count == 0 ? 0 : item.FileIds[0])
+                .OrderBy(row => row.Item.IsUnclassifiable)
+                .ThenBy(row => row.Item.Replacement is null)
+                .ThenByDescending(row => row.Item.Replacement?.ReclaimableBytes ?? 0)
+                .ThenBy(row => row.Item.Replacement?.GroupId ?? row.Item.RelationId ?? long.MaxValue)
+                .ThenBy(row => row.Item.FileIds.Count == 0 ? 0 : row.Item.FileIds[0])
         ];
-        return Page(ordered, page, pageSize);
+        var selected = Page(ordered, page, pageSize);
+        return new PagedResult<FontReportItemDto>(
+            [.. selected.Items.Select(row => ReadReportEvidence(row, faces, scoresByFace, membersByFace))],
+            page,
+            pageSize,
+            selected.TotalCount);
     }
 
     /// <summary>Loads one safe structured duplicate-group detail from persisted data.</summary>
@@ -259,24 +241,15 @@ public sealed class FontManagementQuery
     /// <returns>The group detail, or <see langword="null"/> when either identifier is absent.</returns>
     public async Task<FontGroupDetailDto?> GetGroupDetailAsync(long analysisBatchId, long groupId, CancellationToken cancellationToken)
     {
-        AnalysisBatch? batch = await _repository.GetAnalysisBatchAsync(analysisBatchId, cancellationToken).ConfigureAwait(false);
-        DuplicateGroupRecord? group = batch?.Groups.FirstOrDefault(candidate => candidate.Id == groupId);
-        if (batch is null || group is null)
+        if (await _repository.GetDuplicateGroupDetailAsync(analysisBatchId, groupId, cancellationToken).ConfigureAwait(false) is not { } detail)
         {
             return null;
         }
 
-        IReadOnlyList<FontFileRecord> files = await _repository.LoadInventoryAsync(batch.GenerationId, cancellationToken).ConfigureAwait(false);
-        Dictionary<long, (FontFileRecord File, FontFaceRecord Face)> faceFiles = files
+        Dictionary<long, (FontFileRecord File, FontFaceRecord Face)> faceFiles = detail.Files
             .SelectMany(file => file.Faces.Select(face => (face.Id, Value: (File: file, Face: face))))
             .ToDictionary(pair => pair.Id, pair => pair.Value);
-        HashSet<long> faces = [.. group.Members.Select(member => member.FaceId)];
-        PairEvidenceDto[] pairs =
-        [
-            .. batch.Relations
-                .Where(relation => faces.Contains(relation.LeftFaceId) && faces.Contains(relation.RightFaceId))
-                .Select(relation => ToPairEvidence(relation, faceFiles))
-        ];
+        PairEvidenceDto[] pairs = [.. detail.Relations.Select(relation => ToPairEvidence(relation, faceFiles))];
         string[] constraints =
         [
             .. pairs.SelectMany(pair => pair.EvidenceKeys)
@@ -284,13 +257,13 @@ public sealed class FontManagementQuery
         ];
         string[] skipReasons =
         [
-            .. group.Members
+            .. detail.Group.Members
                 .Where(member => member.Decision != DuplicateGroupMemberDecision.QuarantineCandidate)
                 .Select(member => member.Reason)
                 .Where(reason => !string.IsNullOrWhiteSpace(reason))
                 .Distinct(StringComparer.Ordinal)
         ];
-        FontGroupDto groupDto = ToDto(batch.Id, group);
+        FontGroupDto groupDto = ToDto(detail.Group);
         FontGroupMemberDto[] members =
         [
             .. groupDto.Members
@@ -455,7 +428,38 @@ public sealed class FontManagementQuery
 
     internal static PerformanceSampleDto ToDto(PerformanceSample sample) => new(sample.GenerationId, sample.Phase, sample.Duration, sample.ItemCount, sample.ReusedCount, sample.RecordedUtc);
 
-    private static FontGroupDto ToDto(long batchId, DuplicateGroupRecord group) => new(group.Id, batchId, group.RetainedFaceId, group.ReclaimableBytes, [.. group.Members.Select(member => new FontGroupMemberDto(member.FileId, member.FaceId, member.Decision, member.RetentionScore, member.Reason, ReadScore(member.ScoreJson)))]);
+    private static FontGroupDto ToDto(DuplicateGroupSummary group) => new(group.Id, group.AnalysisBatchId, group.RetainedFaceId, group.ReclaimableBytes, [.. group.Members.Select(member => new FontGroupMemberDto(member.FileId, member.FaceId, member.Decision, member.RetentionScore, member.Reason, ReadScore(member.ScoreJson)))]);
+
+    private static FontReportItemDto ReadReportEvidence(
+        ReportRow row,
+        Dictionary<long, (FontFileRecord File, FontFaceRecord Face)> faces,
+        Dictionary<long, FontFaceAnalysisRecord> scoresByFace,
+        ILookup<long, DuplicateGroupMemberRecord> membersByFace)
+    {
+        if (row.Relation is { } relation)
+        {
+            long[] pairFaces = [relation.LeftFaceId, relation.RightFaceId];
+            return row.Item with
+            {
+                PairEvidence = ToPairEvidence(relation, faces),
+                Scores = ReadScores(pairFaces.Where(faces.ContainsKey)),
+                RetainedRationale =
+                [
+                    .. membersByFace[relation.LeftFaceId].Concat(membersByFace[relation.RightFaceId])
+                        .Select(member => member.Reason)
+                        .Where(reason => !string.IsNullOrWhiteSpace(reason))
+                        .Distinct(StringComparer.Ordinal)
+                ]
+            };
+        }
+
+        return row.UnclassifiableFile is { } file
+            ? row.Item with { Scores = ReadScores(file.Faces.Select(face => face.Id)) }
+            : row.Item;
+
+        FontReportScoreDto[] ReadScores(IEnumerable<long> faceIds)
+            => [.. faceIds.Where(scoresByFace.ContainsKey).Select(faceId => ToReportScore(scoresByFace[faceId]))];
+    }
 
     private static (int Page, int PageSize) NormalizePage(int page, int pageSize) => (Math.Max(page, 1), Math.Clamp(pageSize, 1, MaximumPageSize));
 
@@ -695,4 +699,6 @@ public sealed class FontManagementQuery
     private static string[] ReadStringArray(JsonElement root, string name) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.Array ? [.. value.EnumerateArray().Where(element => element.ValueKind == JsonValueKind.String).Select(element => element.GetString()!)] : [];
 
     private static int ReadInt(JsonElement root, string name) => root.ValueKind == JsonValueKind.Object && root.TryGetProperty(name, out JsonElement value) && value.TryGetInt32(out int result) ? result : 0;
+
+    private readonly record struct ReportRow(FontReportItemDto Item, FontRelationRecord? Relation = null, FontFileRecord? UnclassifiableFile = null);
 }

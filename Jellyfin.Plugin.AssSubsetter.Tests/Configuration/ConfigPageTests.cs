@@ -155,15 +155,6 @@ public class ConfigPageTests
     }
 
     [Fact]
-    public void EmbeddedConfigPage_ShouldUseExactQuarantineCandidateQueryFilter()
-    {
-        var html = GetConfigPageAssets();
-
-        Assert.Contains("decision: 'quarantineCandidate'", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("decision: 'QuarantineCandidate'", html, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void EmbeddedConfigPage_ShouldExposeOverviewDiagnosticsAndEveryAnalysisReportFilter()
     {
         var html = GetConfigPageAssets();
@@ -235,7 +226,7 @@ public class ConfigPageTests
         var html = GetConfigPageAssets();
 
         Assert.Contains("QuarantineCandidate", html, StringComparison.Ordinal);
-        Assert.Contains("candidateFileIds.size", html, StringComparison.Ordinal);
+        Assert.Contains("overview.eligibleQuarantineCount", html, StringComparison.Ordinal);
         Assert.Contains("confirmAllVerified", html, StringComparison.Ordinal);
         Assert.Contains("batchId", html, StringComparison.Ordinal);
         Assert.Contains("itemCount", html, StringComparison.Ordinal);

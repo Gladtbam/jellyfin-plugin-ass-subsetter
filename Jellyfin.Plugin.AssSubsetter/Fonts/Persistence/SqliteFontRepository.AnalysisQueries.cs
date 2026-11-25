@@ -183,19 +183,7 @@ public sealed partial class SqliteFontRepository
                 ReclaimableBytes = row.ReclaimableBytes,
                 SummaryJson = row.SummaryJson,
                 FaceScores = ReadFaceScores(row.SummaryJson, (AnalysisBatchStatus)row.Status),
-                Relations =
-                [
-                    .. relationsByBatch[row.Id].Select(relation => new FontRelationRecord
-                    {
-                        Id = relation.Id,
-                        LeftFaceId = relation.LeftFaceId,
-                        RightFaceId = relation.RightFaceId,
-                        RelationshipKind = (FontRelationshipKind)relation.RelationshipKind,
-                        ReplacementDirection = (FontReplacementDirection)relation.ReplacementDirection,
-                        EvidenceVersion = relation.EvidenceVersion,
-                        EvidenceJson = relation.EvidenceJson
-                    })
-                ],
+                Relations = [.. relationsByBatch[row.Id].Select(ToRelation)],
                 Groups =
                 [
                     .. groupsByBatch[row.Id].Select(group => new DuplicateGroupRecord
@@ -204,24 +192,34 @@ public sealed partial class SqliteFontRepository
                         RetainedFaceId = group.RetainedFaceId,
                         ReclaimableBytes = group.ReclaimableBytes,
                         EvidenceJson = group.EvidenceJson,
-                        Members =
-                        [
-                            .. membersByGroup[group.Id].Select(member => new DuplicateGroupMemberRecord
-                            {
-                                Id = member.Id,
-                                FaceId = member.FaceId,
-                                FileId = member.FileId,
-                                Decision = (DuplicateGroupMemberDecision)member.Decision,
-                                RetentionScore = member.RetentionScore,
-                                ScoreJson = member.ScoreJson,
-                                Reason = member.Reason
-                            })
-                        ]
+                        Members = [.. membersByGroup[group.Id].Select(ToGroupMember)]
                     })
                 ]
             })
         ];
     }
+
+    private static FontRelationRecord ToRelation(FontRelationRow row) => new()
+    {
+        Id = row.Id,
+        LeftFaceId = row.LeftFaceId,
+        RightFaceId = row.RightFaceId,
+        RelationshipKind = (FontRelationshipKind)row.RelationshipKind,
+        ReplacementDirection = (FontReplacementDirection)row.ReplacementDirection,
+        EvidenceVersion = row.EvidenceVersion,
+        EvidenceJson = row.EvidenceJson
+    };
+
+    private static DuplicateGroupMemberRecord ToGroupMember(GroupMemberRow row) => new()
+    {
+        Id = row.Id,
+        FaceId = row.FaceId,
+        FileId = row.FileId,
+        Decision = (DuplicateGroupMemberDecision)row.Decision,
+        RetentionScore = row.RetentionScore,
+        ScoreJson = row.ScoreJson,
+        Reason = row.Reason
+    };
 
     private static void ValidatePage(long offset, int pageSize)
     {

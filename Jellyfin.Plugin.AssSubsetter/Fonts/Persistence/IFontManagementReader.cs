@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
@@ -29,4 +31,23 @@ public interface IFontManagementReader : IFontInventoryReader, IFontAnalysisRead
     /// <param name="cancellationToken">Cancels the query.</param>
     /// <returns>The requested page and total count.</returns>
     Task<FontRepositoryPage<AnalysisBatchSummary>> LoadAnalysisSummaryPageAsync(long offset, int pageSize, CancellationToken cancellationToken);
+
+    /// <summary>Loads one page of duplicate groups and their members.</summary>
+    /// <param name="analysisBatchId">The owning report, or null for the latest complete published report.</param>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The maximum number of groups.</param>
+    /// <param name="decision">An optional member decision that each group must contain.</param>
+    /// <param name="sortByReclaimableBytes">Whether to sort by reclaimable bytes descending before group identifier.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The page and exact filtered group count.</returns>
+    Task<FontRepositoryPage<DuplicateGroupSummary>> LoadDuplicateGroupPageAsync(
+        long? analysisBatchId, long offset, int pageSize, DuplicateGroupMemberDecision? decision, bool sortByReclaimableBytes, CancellationToken cancellationToken);
+
+    /// <summary>Loads one group's displayed members, their files, and their pair relations.</summary>
+    /// <param name="analysisBatchId">The owning report identifier.</param>
+    /// <param name="groupId">The persisted group identifier.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The group detail, or null if the group does not belong to the report.</returns>
+    Task<(DuplicateGroupSummary Group, IReadOnlyList<FontFileRecord> Files, IReadOnlyList<FontRelationRecord> Relations)?> GetDuplicateGroupDetailAsync(
+        long analysisBatchId, long groupId, CancellationToken cancellationToken);
 }

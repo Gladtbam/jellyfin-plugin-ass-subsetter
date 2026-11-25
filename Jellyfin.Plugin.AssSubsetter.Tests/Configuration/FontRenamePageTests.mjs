@@ -127,6 +127,93 @@ test('overview renders generation, health, eligible file count, reclaimed bytes,
     assert.ok(allText(p.document.querySelector('#FontPerformanceRows')).includes('parsing'));
 });
 
+test('bulk quarantine confirms fresh overview totals with one read before queuing', async () => {
+    const p = page({
+        overview: { latestAnalysis: { id: 7, isCurrent: true }, eligibleQuarantineCount: 3, reclaimableBytes: 4096 }
+    });
+    p.context.fontManagementState.analysisBatchId = 7;
+    p.context.fontManagementState.analysisBatch = { id: 7, isCurrent: true, reclaimableBytes: 1024 };
+    const confirmations = [];
+    p.context.window.confirm = message => {
+        confirmations.push({ message, reads: [...p.gets], posts: p.posts.length });
+        return true;
+    };
+
+    await p.document.querySelector('#QuarantineAllVerifiedButton').fire('click');
+
+    assert.deepEqual(p.gets, ['overview']);
+    assert.equal(confirmations.length, 2);
+    assert.deepEqual(confirmations[0].reads, []);
+    assert.deepEqual(confirmations[1].reads, ['overview']);
+    assert.equal(confirmations[1].posts, 0);
+    assert.match(confirmations[1].message, /3 physical files from analysis batch 7, totalling 4096 bytes/);
+    assert.deepEqual(p.posts, [{
+        path: 'operations/quarantine/all-verified',
+        body: { batchId: 7, confirmAllVerified: true, idempotencyKey: 'retry-key' }
+    }]);
+});
+
+test('bulk quarantine stops when the fresh overview has no matching current batch', async () => {
+    for (const latestAnalysis of [{ id: 7, isCurrent: false }, { id: 8, isCurrent: true }, null]) {
+        const p = page({ overview: { latestAnalysis, eligibleQuarantineCount: 3, reclaimableBytes: 4096 } });
+        p.context.fontManagementState.analysisBatchId = 7;
+        p.context.fontManagementState.analysisBatch = { id: 7, isCurrent: true };
+        let confirmations = 0;
+        p.context.window.confirm = () => { confirmations += 1; return true; };
+
+        await p.document.querySelector('#QuarantineAllVerifiedButton').fire('click');
+
+        assert.deepEqual(p.gets, ['overview']);
+        assert.equal(confirmations, 1);
+        assert.equal(p.posts.length, 0);
+        assert.match(allText(p.document.querySelector('#FontReportState')), /stale/);
+    }
+});
+
+test('bulk quarantine leaves the new batch report intact when the batch selection changes', async () => {
+    let finishRead;
+    const defer = value => new Promise(resolve => { finishRead = () => resolve(value); });
+    const p = page({
+        'analysis-batches': { items: [{ id: 7, isCurrent: true }, { id: 6, isCurrent: false }] },
+        reports: { items: [], totalCount: 1, page: 1 },
+        overview: () => defer({ latestAnalysis: { id: 7, isCurrent: true }, eligibleQuarantineCount: 1, reclaimableBytes: 4096 }),
+        groups: () => defer({ items: [{ reclaimableBytes: 4096, members: [{ fileId: 2, decision: 1 }] }], totalCount: 1 })
+    });
+    await p.context.loadFontAnalysis();
+    let confirmations = 0;
+    p.context.window.confirm = () => { confirmations += 1; return true; };
+    const confirmation = p.document.querySelector('#QuarantineAllVerifiedButton').fire('click');
+    const select = p.document.querySelector('#AnalysisBatchSelect');
+    select.value = '6';
+    select.selectedIndex = 1;
+    select.fire('change');
+    await new Promise(resolve => setImmediate(resolve));
+    finishRead();
+    await confirmation;
+
+    assert.equal(p.context.fontManagementState.analysisBatchId, 6);
+    assert.equal(confirmations, 1);
+    assert.equal(p.posts.length, 0);
+    assert.equal(p.document.querySelector('#FontReportState').className, 'fontManagementState fontManagementState-ready');
+});
+
+test('bulk quarantine shows an empty state when no files are eligible', async () => {
+    const p = page({
+        overview: { latestAnalysis: { id: 7, isCurrent: true }, eligibleQuarantineCount: 0, reclaimableBytes: 0 }
+    });
+    p.context.fontManagementState.analysisBatchId = 7;
+    p.context.fontManagementState.analysisBatch = { id: 7, isCurrent: true };
+    let confirmations = 0;
+    p.context.window.confirm = () => { confirmations += 1; return true; };
+
+    await p.document.querySelector('#QuarantineAllVerifiedButton').fire('click');
+
+    assert.deepEqual(p.gets, ['overview']);
+    assert.equal(confirmations, 1);
+    assert.equal(p.posts.length, 0);
+    assert.equal(p.document.querySelector('#FontReportState').className, 'fontManagementState fontManagementState-empty');
+});
+
 test('quarantine shows status views across batches and restores each batch selection', async () => {
     const p = page({ 'quarantine/items': {
         items: [

@@ -512,6 +512,47 @@ internal sealed class InMemoryFontRepository : IFontRepository
         }
     }
 
+    public async Task<FontRepositoryPage<DuplicateGroupSummary>> LoadDuplicateGroupPageAsync(
+        long? analysisBatchId, long offset, int pageSize, DuplicateGroupMemberDecision? decision, bool sortByReclaimableBytes, CancellationToken cancellationToken)
+    {
+        AnalysisBatch? batch = analysisBatchId is long batchId
+            ? await GetAnalysisBatchAsync(batchId, cancellationToken)
+            : await GetLatestCompleteAnalysisAsync(cancellationToken);
+        if (batch is null)
+        {
+            return new([], 0);
+        }
+
+        var groups = batch.Groups.Where(group => decision is null || group.Members.Any(member => member.Decision == decision));
+        var ordered = sortByReclaimableBytes
+            ? groups.OrderByDescending(group => group.ReclaimableBytes).ThenBy(group => group.Id).ToArray()
+            : groups.OrderBy(group => group.Id).ToArray();
+        return new(
+            offset >= ordered.Length ? [] : [.. ordered.Skip((int)offset).Take(pageSize).Select(group => SummarizeGroup(batch.Id, group))],
+            ordered.Length);
+    }
+
+    public async Task<(DuplicateGroupSummary Group, IReadOnlyList<FontFileRecord> Files, IReadOnlyList<FontRelationRecord> Relations)?> GetDuplicateGroupDetailAsync(
+        long analysisBatchId, long groupId, CancellationToken cancellationToken)
+    {
+        var batch = await GetAnalysisBatchAsync(analysisBatchId, cancellationToken);
+        var group = batch?.Groups.FirstOrDefault(candidate => candidate.Id == groupId);
+        if (batch is null || group is null)
+        {
+            return null;
+        }
+
+        var files = await LoadInventoryAsync(batch.GenerationId, cancellationToken);
+        var faces = group.Members.Select(member => member.FaceId).ToHashSet();
+        return (
+            SummarizeGroup(batch.Id, group),
+            [.. files.Where(file => file.Faces.Any(face => faces.Contains(face.Id)))],
+            [.. batch.Relations.Where(relation => faces.Contains(relation.LeftFaceId) && faces.Contains(relation.RightFaceId))]);
+    }
+
+    private static DuplicateGroupSummary SummarizeGroup(long batchId, DuplicateGroupRecord group)
+        => new(batchId, group.Id, group.RetainedFaceId, group.ReclaimableBytes, group.Members);
+
     public Task<FontRepositoryPage<AnalysisBatch>> LoadAnalysisBatchPageAsync(long offset, int pageSize, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);

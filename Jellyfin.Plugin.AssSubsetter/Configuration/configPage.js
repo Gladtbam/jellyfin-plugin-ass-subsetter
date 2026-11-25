@@ -1922,47 +1922,31 @@ function loadGroupDetail(batchId, groupId, target) {
     });
 }
 
-function loadAllVerifiedCandidatePage(batchId, pageNumber, candidateFileIds, reclaimableBytes) {
-    var pageSize = Math.min(200, 200);
-    return getFontJson('groups', {
-        page: pageNumber,
-        pageSize: pageSize,
-        analysisBatchId: batchId,
-        decision: 'quarantineCandidate',
-        sort: 'reclaimableBytes'
-    }).then(function (page) {
-        (page.items || []).forEach(function (group) {
-            reclaimableBytes.value += Number(group.reclaimableBytes || 0);
-            (group.members || []).forEach(function (member) {
-                if (decisionName(member.decision) === 'QuarantineCandidate') {
-                    candidateFileIds.add(member.fileId);
-                }
-            });
-        });
-        if (pageNumber * pageSize < Number(page.totalCount || 0)) {
-            return loadAllVerifiedCandidatePage(batchId, pageNumber + 1, candidateFileIds, reclaimableBytes);
-        }
-
-        return { candidateFileIds: candidateFileIds, reclaimableBytes: reclaimableBytes.value };
-    });
-}
-
 function confirmAllVerified() {
-    if (!fontManagementState.analysisBatch || fontManagementState.analysisBatch.isCurrent !== true) {
-        setElementText('#FontOperationStatus', currentStrings().renameStale);
+    var strings = currentStrings();
+    var selectedBatch = fontManagementState.analysisBatch;
+    if (!selectedBatch || selectedBatch.isCurrent !== true) {
+        setElementText('#FontOperationStatus', strings.renameStale);
         return Promise.resolve();
     }
-    var strings = currentStrings();
     var batchId = fontManagementState.analysisBatchId;
     if (!batchId || !window.confirm(strings.confirmAllVerifiedFirst)) return Promise.resolve();
     setViewState('#FontReportState', 'loading', strings.loadingState);
-    var candidateFileIds = new Set();
-    var bytesAccumulator = { value: 0 };
-    return loadAllVerifiedCandidatePage(batchId, 1, candidateFileIds, bytesAccumulator).then(function (result) {
-        var itemCount = candidateFileIds.size;
-        var bytes = fontManagementState.analysisBatch && fontManagementState.analysisBatch.id === batchId
-            ? Number(fontManagementState.analysisBatch.reclaimableBytes || result.reclaimableBytes)
-            : result.reclaimableBytes;
+
+    function selectionIsUnchanged() {
+        return fontManagementState.analysisBatchId === batchId && fontManagementState.analysisBatch === selectedBatch;
+    }
+
+    return getFontJson('overview').then(function (overview) {
+        if (!selectionIsUnchanged()) return;
+        var latest = overview.latestAnalysis;
+        if (!latest || latest.id !== batchId || latest.isCurrent !== true) {
+            setViewState('#FontReportState', 'error', strings.renameStale);
+            return;
+        }
+
+        var itemCount = Number(overview.eligibleQuarantineCount || 0);
+        var bytes = Number(overview.reclaimableBytes || 0);
         setViewState('#FontReportState', itemCount ? 'ready' : 'empty', itemCount ? '' : strings.emptyState);
         if (!itemCount) return;
         var confirmation = formatNamedText(strings.confirmAllVerified, {
@@ -1970,13 +1954,14 @@ function confirmAllVerified() {
             itemCount: itemCount,
             bytes: bytes
         });
-        if (!window.confirm(confirmation)) return;
+        if (!window.confirm(confirmation) || !selectionIsUnchanged()) return;
         return queueOperation('operations/quarantine/all-verified', {
             batchId: batchId,
             confirmAllVerified: true,
             idempotencyKey: createIdempotencyKey()
         });
     }).catch(function (error) {
+        if (!selectionIsUnchanged()) return;
         setViewState('#FontReportState', 'error', formatText(strings.errorState, error.message));
     });
 }

@@ -14,7 +14,13 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly SqliteTransaction _transaction;
-    private readonly Dictionary<string, SqliteCommand> _commands = new(StringComparer.Ordinal);
+    private readonly List<SqliteCommand> _commands = [];
+    private SqliteCommand? _insertFile;
+    private SqliteCommand? _insertAlias;
+    private SqliteCommand? _insertFace;
+    private SqliteCommand? _insertName;
+    private SqliteCommand? _insertCoverage;
+    private SqliteCommand? _insertNameEvidence;
 
     internal SqliteInventoryWriter(SqliteConnection connection, SqliteTransaction transaction)
     {
@@ -27,7 +33,8 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
         foreach (FontFileRecord file in files)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            SqliteCommand fileCommand = Command(
+            SqliteCommand fileCommand = Bind(
+                ref _insertFile,
                 """
                 INSERT INTO font_file(generation_id, path, normalized_path, physical_identity, size, modified_utc, sha256, directory_policy, link_kind, health, error)
                 VALUES ($generationId, $path, $normalizedPath, $identity, $size, $modified, $sha256, $policy, $link, $health, $error);
@@ -47,7 +54,8 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
             long fileId = Convert.ToInt64(await fileCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
             foreach (string alias in file.PathAliases)
             {
-                await Command(
+                await Bind(
+                    ref _insertAlias,
                     "INSERT INTO font_path_alias(file_id, path, normalized_path) VALUES ($fileId, $path, $normalizedPath);",
                     ("$fileId", fileId),
                     ("$path", alias),
@@ -57,7 +65,8 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
 
             foreach (FontFaceRecord face in file.Faces)
             {
-                SqliteCommand faceCommand = Command(
+                SqliteCommand faceCommand = Bind(
+                    ref _insertFace,
                     """
                     INSERT INTO font_face(file_id, face_index, strict_fingerprint, family_name, style_name, weight, width, slant, is_italic, is_fixed_pitch, technology, units_per_em, version, retention_score, is_runtime_preferred)
                     VALUES ($fileId, $index, $fingerprint, $family, $style, $weight, $width, $slant, $italic, $fixedPitch, $technology, $units, $version, $score, $preferred);
@@ -82,7 +91,8 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
                 for (int ordinal = 0; ordinal < face.Names.Count; ordinal++)
                 {
                     string name = face.Names[ordinal];
-                    await Command(
+                    await Bind(
+                        ref _insertName,
                         "INSERT INTO face_name(face_id, ordinal, name, normalized_name) VALUES ($faceId, $ordinal, $name, $normalized);",
                         ("$faceId", faceId),
                         ("$ordinal", ordinal),
@@ -93,14 +103,16 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
 
                 if (face.UnicodeCoverage.Count > 0)
                 {
-                    await Command(
+                    await Bind(
+                        ref _insertCoverage,
                         "INSERT INTO face_coverage(face_id, coverage_kind, compact_value) VALUES ($faceId, 1, $coverage);",
                         ("$faceId", faceId),
                         ("$coverage", UnicodeCoverageCodec.Encode(face.UnicodeCoverage)))
                         .ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
-                await Command(
+                await Bind(
+                    ref _insertNameEvidence,
                     "INSERT INTO face_name_evidence(face_id, names_json) VALUES ($faceId, $json);",
                     ("$faceId", faceId),
                     ("$json", JsonSerializer.Serialize(face.NameRecords)))
@@ -111,27 +123,37 @@ internal sealed class SqliteInventoryWriter : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (SqliteCommand command in _commands.Values)
+        foreach (SqliteCommand command in _commands)
         {
             await command.DisposeAsync().ConfigureAwait(false);
         }
     }
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "This private helper receives only the fixed inventory INSERT statements above; all values are bound parameters.")]
-    private SqliteCommand Command(string sql, params (string Name, object? Value)[] values)
+    private SqliteCommand Bind(ref SqliteCommand? command, string sql, params ReadOnlySpan<(string Name, object? Value)> values)
     {
-        if (!_commands.TryGetValue(sql, out SqliteCommand? command))
+        if (command is null)
         {
-            command = _connection.CreateCommand();
-            command.Transaction = _transaction;
-            command.CommandText = sql;
-            foreach (var value in values)
+            SqliteCommand preparedCommand = _connection.CreateCommand();
+            try
             {
-                command.Parameters.AddWithValue(value.Name, value.Value ?? DBNull.Value);
+                preparedCommand.Transaction = _transaction;
+                preparedCommand.CommandText = sql;
+                foreach (var value in values)
+                {
+                    preparedCommand.Parameters.AddWithValue(value.Name, value.Value ?? DBNull.Value);
+                }
+
+                preparedCommand.Prepare();
+                _commands.Add(preparedCommand);
+            }
+            catch
+            {
+                preparedCommand.Dispose();
+                throw;
             }
 
-            command.Prepare();
-            _commands.Add(sql, command);
+            command = preparedCommand;
         }
         else
         {
