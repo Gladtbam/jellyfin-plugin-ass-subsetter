@@ -41,7 +41,7 @@ public sealed class FontManagementQuery
     /// <returns>The administrator overview.</returns>
     public async Task<FontOverviewDto> GetOverviewAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<FontFileRecord> files = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
+        var counts = await _repository.GetPublishedInventoryCountsAsync(cancellationToken).ConfigureAwait(false);
         AnalysisBatch? latest = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
         FontDatabaseHealth health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<PerformanceSample> samples = await _repository.LoadRecentPerformanceSamplesAsync(50, cancellationToken).ConfigureAwait(false);
@@ -55,8 +55,8 @@ public sealed class FontManagementQuery
             .LongCount() ?? 0;
         return new FontOverviewDto(
             health.PublishedGenerationId,
-            files.Count,
-            files.Sum(file => file.Faces.Count),
+            counts.FileCount,
+            counts.FaceCount,
             latestState,
             eligibleQuarantineCount,
             currentAnalysis?.ReclaimableBytes ?? 0,
@@ -77,12 +77,14 @@ public sealed class FontManagementQuery
         (int normalizedPage, int normalizedSize) = NormalizePage(page, pageSize);
         long offset = checked(((long)normalizedPage - 1) * normalizedSize);
         FontRepositoryPage<AnalysisBatch> result = await _repository.LoadAnalysisBatchPageAsync(offset, normalizedSize, cancellationToken).ConfigureAwait(false);
-        var items = new List<AnalysisBatchDto>();
-        foreach (var batch in result.Items)
+        if (result.Items.Count == 0)
         {
-            items.Add(await GetAnalysisStateAsync(batch, cancellationToken).ConfigureAwait(false));
+            return new PagedResult<AnalysisBatchDto>([], normalizedPage, normalizedSize, result.TotalCount);
         }
 
+        var published = await _repository.GetPublishedAnalysisStateAsync(_policy is not null, cancellationToken).ConfigureAwait(false);
+        var configured = CaptureConfiguredAnalysisInput();
+        AnalysisBatchDto[] items = [.. result.Items.Select(batch => ToAnalysisState(batch, published, configured))];
         return new PagedResult<AnalysisBatchDto>(items, normalizedPage, normalizedSize, result.TotalCount);
     }
 
@@ -386,34 +388,42 @@ public sealed class FontManagementQuery
     public async Task<AnalysisBatchDto> GetAnalysisStateAsync(AnalysisBatch batch, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(batch);
-        var health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
-        var latest = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
+        var published = await _repository.GetPublishedAnalysisStateAsync(_policy is not null, cancellationToken).ConfigureAwait(false);
+        return ToAnalysisState(batch, published, CaptureConfiguredAnalysisInput());
+    }
+
+    private FontAnalysisInputSnapshot? CaptureConfiguredAnalysisInput()
+        => _policy is null ? null : FontInventoryInputComparer.Capture([], _policy(), PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
+
+    private static AnalysisBatchDto ToAnalysisState(
+        AnalysisBatch batch,
+        (long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input) published,
+        FontAnalysisInputSnapshot? configured)
+    {
         var reasons = new List<string>();
         if (batch.Status != AnalysisBatchStatus.Complete)
         {
             reasons.Add(batch.Status == AnalysisBatchStatus.Stale ? "files-changed" : "analysis-incomplete");
         }
 
-        if (batch.GenerationId != health.PublishedGenerationId)
+        if (batch.GenerationId != published.GenerationId)
         {
             reasons.Add("generation-superseded");
         }
 
-        if (latest?.Id != batch.Id)
+        if (published.LatestAnalysisId != batch.Id)
         {
             reasons.Add("analysis-superseded");
         }
 
-        if (_policy is not null)
+        if (configured is not null)
         {
-            var saved = await _repository.GetPublishedAnalysisInputAsync(cancellationToken).ConfigureAwait(false);
-            var configured = FontInventoryInputComparer.Capture([], _policy(), PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
-            if (saved?.PolicyFingerprint != configured.PolicyFingerprint)
+            if (published.Input?.PolicyFingerprint != configured.PolicyFingerprint)
             {
                 reasons.Add("directory-policy-changed");
             }
 
-            if (saved?.EvidenceFingerprint != configured.EvidenceFingerprint || batch.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion)
+            if (published.Input?.EvidenceFingerprint != configured.EvidenceFingerprint || batch.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion)
             {
                 reasons.Add("evidence-version-changed");
             }

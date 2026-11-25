@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Microsoft.EntityFrameworkCore;
 using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
@@ -19,12 +21,36 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         var transaction = await BeginReadSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         await using var transactionScope = transaction.ConfigureAwait(false);
-        AnalysisBatchRow? row = await context.Set<AnalysisBatchRow>()
-            .Where(row => row.Status == (int)AnalysisBatchStatus.Complete
-                && context.Set<SchemaInfoRow>().Any(schema => schema.SingletonId == 1 && schema.PublishedGenerationId == row.GenerationId))
-            .OrderByDescending(row => row.CompletedUtc).ThenByDescending(row => row.Id).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        AnalysisBatchRow? row = await CompleteAnalysisBatches(context)
+            .Where(row => context.Set<SchemaInfoRow>().Any(schema => schema.SingletonId == 1 && schema.PublishedGenerationId == row.GenerationId))
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         return row is null ? null : (await LoadAnalysisRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
     }
+
+    /// <inheritdoc/>
+    public async Task<(long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisStateAsync(
+        bool includeInput, CancellationToken cancellationToken)
+    {
+        FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var scope = context.ConfigureAwait(false);
+        var completeBatches = CompleteAnalysisBatches(context);
+        var state = await context.Set<SchemaInfoRow>().Where(row => row.SingletonId == 1)
+            .Select(schema => new
+            {
+                schema.PublishedGenerationId,
+                LatestAnalysisId = completeBatches.Where(batch => batch.GenerationId == schema.PublishedGenerationId)
+                    .Select(batch => (long?)batch.Id).FirstOrDefault(),
+                InputJson = includeInput ? context.Set<ScanGenerationRow>()
+                    .Where(generation => generation.Id == schema.PublishedGenerationId).Select(generation => generation.InputJson).FirstOrDefault() : null
+            }).SingleAsync(cancellationToken).ConfigureAwait(false);
+        return (state.PublishedGenerationId, state.LatestAnalysisId, state.InputJson is null
+            ? null
+            : JsonSerializer.Deserialize<FontAnalysisInputSnapshot>(state.InputJson));
+    }
+
+    private static IOrderedQueryable<AnalysisBatchRow> CompleteAnalysisBatches(FontDbContext context)
+        => context.Set<AnalysisBatchRow>().Where(row => row.Status == (int)AnalysisBatchStatus.Complete)
+            .OrderByDescending(row => row.CompletedUtc).ThenByDescending(row => row.Id);
 
     /// <inheritdoc/>
     public async Task<AnalysisBatch?> GetAnalysisBatchAsync(long batchId, CancellationToken cancellationToken)

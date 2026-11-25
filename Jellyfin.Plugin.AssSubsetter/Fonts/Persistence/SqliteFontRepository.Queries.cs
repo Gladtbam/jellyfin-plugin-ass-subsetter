@@ -17,6 +17,23 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 public sealed partial class SqliteFontRepository
 {
     /// <inheritdoc/>
+    public async Task<(long FileCount, long FaceCount)> GetPublishedInventoryCountsAsync(CancellationToken cancellationToken)
+    {
+        FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var scope = context.ConfigureAwait(false);
+        var counts = await context.Set<SchemaInfoRow>().Where(row => row.SingletonId == 1)
+            .Select(schema => new
+            {
+                Files = context.Set<FontFileRow>().LongCount(file => file.GenerationId == schema.PublishedGenerationId),
+                Faces = (from file in context.Set<FontFileRow>()
+                         join face in context.Set<FontFaceRow>() on file.Id equals face.FileId
+                         where file.GenerationId == schema.PublishedGenerationId
+                         select face.Id).LongCount()
+            }).SingleAsync(cancellationToken).ConfigureAwait(false);
+        return (counts.Files, counts.Faces);
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryAsync(CancellationToken cancellationToken)
         => LoadInventoryCoreAsync(null, false, cancellationToken);
 

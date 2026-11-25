@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
@@ -153,6 +155,78 @@ public sealed partial class SqliteFontRepositoryTests
         Assert.Empty((await fixture.Repository.LoadQuarantineItemPageAsync(long.MaxValue, 10, new HashSet<QuarantineItemStatus> { QuarantineItemStatus.Quarantined }, CancellationToken.None)).Items);
     }
 
+
+    [Fact]
+    public async Task Overview_ShouldCountOnlyPublishedInventoryWithoutLoadingFaceMetadata()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var query = new FontManagementQuery(fixture.Repository);
+        var empty = await query.GetOverviewAsync(token);
+        Assert.Equal(0, empty.PublishedFileCount);
+        Assert.Equal(0, empty.PublishedFaceCount);
+
+        long published = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        FontFileRecord collection = CreateFile("collection.ttc", "Collection");
+        await fixture.Repository.WriteInventoryAsync(published,
+        [
+            collection with { Faces = [collection.Faces[0], collection.Faces[0] with { FaceIndex = 1 }] },
+            CreateFile("unreadable.ttf", "Unreadable") with { Faces = [] }
+        ], token);
+        await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = published, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, token);
+        long staged = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        await fixture.Repository.WriteInventoryAsync(staged, [CreateFile("staged.ttf", "Staged")], token);
+
+        var commands = new List<string>();
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command => commands.Add(command.CommandText));
+
+        var overview = await query.GetOverviewAsync(token);
+
+        Assert.Equal(published, overview.PublishedGenerationId);
+        Assert.Equal(2, overview.PublishedFileCount);
+        Assert.Equal(2, overview.PublishedFaceCount);
+        Assert.DoesNotContain(commands, sql => sql.Contains("\"face_name\"", StringComparison.Ordinal));
+        Assert.Single(commands, sql => sql.Contains("FROM \"font_relation\"", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnalysisHistory_ShouldReadCurrentStateOnceWithoutReloadingLatestReport(bool checkPolicy)
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        var policy = new FontDirectoryPolicyResolver(fixture.RootPath, null, null, false);
+        var input = FontInventoryInputComparer.Capture([], policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
+        for (int index = 0; index < 3; index++)
+        {
+            long generation = await fixture.Repository.BeginGenerationAsync(input, [], token);
+            await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch
+            {
+                GenerationId = generation,
+                Status = AnalysisBatchStatus.Complete,
+                EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion,
+                CompletedUtc = DateTimeOffset.UnixEpoch.AddDays(index),
+                SummaryJson = "{\"faceScores\":[]}"
+            }, token);
+        }
+
+        var commands = new List<string>();
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command => commands.Add(command.CommandText));
+
+        var page = await new FontManagementQuery(fixture.Repository, checkPolicy ? () => policy : null)
+            .GetAnalysisBatchesAsync(1, 3, token);
+
+        Assert.Equal(3, page.TotalCount);
+        Assert.True(page.Items[0].IsCurrent);
+        Assert.All(page.Items.Skip(1), item =>
+        {
+            Assert.False(item.IsCurrent);
+            Assert.Equal(["generation-superseded", "analysis-superseded"], item.StaleReasons);
+        });
+        Assert.Single(commands, sql => sql.Contains("FROM \"font_relation\"", StringComparison.Ordinal));
+        Assert.Single(commands, sql => sql.Contains("FROM \"schema_info\"", StringComparison.Ordinal));
+    }
 
     [Fact]
     public async Task AnalysisPage_ShouldFindGroupMembersByIndexWithoutScanningHistory()

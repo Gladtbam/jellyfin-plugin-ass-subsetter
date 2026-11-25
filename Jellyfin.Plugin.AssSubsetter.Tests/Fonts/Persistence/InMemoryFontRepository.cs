@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
@@ -397,6 +398,13 @@ internal sealed class InMemoryFontRepository : IFontRepository
         return Task.FromResult(metadata);
     }
 
+    public Task<(long FileCount, long FaceCount)> GetPublishedInventoryCountsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<FontFileRecord> files = PublishedFiles;
+        return Task.FromResult(((long)files.Count, files.Sum(file => (long)file.Faces.Count)));
+    }
+
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryForReuseAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -460,14 +468,26 @@ internal sealed class InMemoryFontRepository : IFontRepository
         cancellationToken.ThrowIfCancellationRequested();
         lock (_sync)
         {
-            AnalysisBatch? result = _analysisBatches
-                .Where(batch => batch.Status == AnalysisBatchStatus.Complete && batch.GenerationId == _publishedGenerationId)
-                .OrderByDescending(batch => batch.CompletedUtc)
-                .ThenByDescending(batch => batch.Id)
-                .FirstOrDefault();
-            return Task.FromResult(result);
+            return Task.FromResult(FindLatestCompleteAnalysis());
         }
     }
+
+    public Task<(long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisStateAsync(
+        bool includeInput, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            var input = includeInput && _publishedGenerationId is long generationId ? _inputs[generationId] : null;
+            return Task.FromResult((_publishedGenerationId, FindLatestCompleteAnalysis()?.Id, input));
+        }
+    }
+
+    private AnalysisBatch? FindLatestCompleteAnalysis() => _analysisBatches
+        .Where(batch => batch.Status == AnalysisBatchStatus.Complete && batch.GenerationId == _publishedGenerationId)
+        .OrderByDescending(batch => batch.CompletedUtc)
+        .ThenByDescending(batch => batch.Id)
+        .FirstOrDefault();
 
     public Task<AnalysisBatch?> GetAnalysisBatchAsync(long batchId, CancellationToken cancellationToken)
     {
