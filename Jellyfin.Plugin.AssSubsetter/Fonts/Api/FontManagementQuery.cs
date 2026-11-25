@@ -42,24 +42,20 @@ public sealed class FontManagementQuery
     public async Task<FontOverviewDto> GetOverviewAsync(CancellationToken cancellationToken)
     {
         var counts = await _repository.GetPublishedInventoryCountsAsync(cancellationToken).ConfigureAwait(false);
-        AnalysisBatch? latest = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
+        var latest = await _repository.GetLatestCompleteAnalysisSummaryAsync(cancellationToken).ConfigureAwait(false);
         FontDatabaseHealth health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
         IReadOnlyList<PerformanceSample> samples = await _repository.LoadRecentPerformanceSamplesAsync(50, cancellationToken).ConfigureAwait(false);
-        AnalysisBatchDto? latestState = latest is null ? null : await GetAnalysisStateAsync(latest, cancellationToken).ConfigureAwait(false);
-        AnalysisBatch? currentAnalysis = latestState?.IsCurrent == true ? latest : null;
-        long eligibleQuarantineCount = currentAnalysis?.Groups
-            .SelectMany(group => group.Members)
-            .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-            .Select(member => member.FileId)
-            .Distinct()
-            .LongCount() ?? 0;
+        AnalysisBatchDto? latestState = latest is { } report
+            ? await GetAnalysisStateAsync(ToDto(report.Summary), report.Summary.EvidenceVersion, cancellationToken).ConfigureAwait(false)
+            : null;
+        var currentAnalysis = latestState?.IsCurrent == true ? latest : null;
         return new FontOverviewDto(
             health.PublishedGenerationId,
             counts.FileCount,
             counts.FaceCount,
             latestState,
-            eligibleQuarantineCount,
-            currentAnalysis?.ReclaimableBytes ?? 0,
+            currentAnalysis?.EligibleQuarantineCount ?? 0,
+            currentAnalysis?.Summary.ReclaimableBytes ?? 0,
             ToDto(health),
             [.. samples.Select(ToDto)])
         {
@@ -76,7 +72,7 @@ public sealed class FontManagementQuery
     {
         (int normalizedPage, int normalizedSize) = NormalizePage(page, pageSize);
         long offset = checked(((long)normalizedPage - 1) * normalizedSize);
-        FontRepositoryPage<AnalysisBatch> result = await _repository.LoadAnalysisBatchPageAsync(offset, normalizedSize, cancellationToken).ConfigureAwait(false);
+        FontRepositoryPage<AnalysisBatchSummary> result = await _repository.LoadAnalysisSummaryPageAsync(offset, normalizedSize, cancellationToken).ConfigureAwait(false);
         if (result.Items.Count == 0)
         {
             return new PagedResult<AnalysisBatchDto>([], normalizedPage, normalizedSize, result.TotalCount);
@@ -84,7 +80,7 @@ public sealed class FontManagementQuery
 
         var published = await _repository.GetPublishedAnalysisStateAsync(_policy is not null, cancellationToken).ConfigureAwait(false);
         var configured = CaptureConfiguredAnalysisInput();
-        AnalysisBatchDto[] items = [.. result.Items.Select(batch => ToAnalysisState(batch, published, configured))];
+        AnalysisBatchDto[] items = [.. result.Items.Select(batch => ToAnalysisState(ToDto(batch), batch.EvidenceVersion, published, configured))];
         return new PagedResult<AnalysisBatchDto>(items, normalizedPage, normalizedSize, result.TotalCount);
     }
 
@@ -385,18 +381,24 @@ public sealed class FontManagementQuery
     /// <param name="batch">Saved report.</param>
     /// <param name="cancellationToken">Cancels current input reads.</param>
     /// <returns>The report with explicit stale reasons.</returns>
-    public async Task<AnalysisBatchDto> GetAnalysisStateAsync(AnalysisBatch batch, CancellationToken cancellationToken)
+    public Task<AnalysisBatchDto> GetAnalysisStateAsync(AnalysisBatch batch, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(batch);
+        return GetAnalysisStateAsync(ToDto(batch), batch.EvidenceVersion, cancellationToken);
+    }
+
+    private async Task<AnalysisBatchDto> GetAnalysisStateAsync(AnalysisBatchDto batch, int evidenceVersion, CancellationToken cancellationToken)
+    {
         var published = await _repository.GetPublishedAnalysisStateAsync(_policy is not null, cancellationToken).ConfigureAwait(false);
-        return ToAnalysisState(batch, published, CaptureConfiguredAnalysisInput());
+        return ToAnalysisState(batch, evidenceVersion, published, CaptureConfiguredAnalysisInput());
     }
 
     private FontAnalysisInputSnapshot? CaptureConfiguredAnalysisInput()
         => _policy is null ? null : FontInventoryInputComparer.Capture([], _policy(), PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
 
     private static AnalysisBatchDto ToAnalysisState(
-        AnalysisBatch batch,
+        AnalysisBatchDto batch,
+        int evidenceVersion,
         (long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input) published,
         FontAnalysisInputSnapshot? configured)
     {
@@ -423,13 +425,13 @@ public sealed class FontManagementQuery
                 reasons.Add("directory-policy-changed");
             }
 
-            if (published.Input?.EvidenceFingerprint != configured.EvidenceFingerprint || batch.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion)
+            if (published.Input?.EvidenceFingerprint != configured.EvidenceFingerprint || evidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion)
             {
                 reasons.Add("evidence-version-changed");
             }
         }
 
-        return ToDto(batch) with { IsCurrent = reasons.Count == 0, StaleReasons = reasons };
+        return batch with { IsCurrent = reasons.Count == 0, StaleReasons = reasons };
     }
 
     internal static QuarantineItemDto ToDto(QuarantineItemRecord item) => new(item.Id, item.MaintenanceBatchId, item.FileId, item.Status, item.SourcePath, item.QuarantinePath, item.QuarantinedUtc, item.ExpiresUtc, item.RestoredUtc, item.Error);
@@ -444,6 +446,8 @@ public sealed class FontManagementQuery
     internal static OperationRequestDto ToDto(OperationRequest request) => new(request.Id, request.Kind, request.Status, request.AnalysisBatchId, request.CreatedUtc, request.ClaimedUtc, request.CompletedUtc, request.Error) { ScanResult = ReadScanResult(request) };
 
     internal static AnalysisBatchDto ToDto(AnalysisBatch batch) => new(batch.Id, batch.GenerationId, batch.Status, batch.StartedUtc, batch.CompletedUtc, batch.CandidateCount, batch.ComparisonCount, batch.ReclaimableBytes, batch.Groups.Count);
+
+    private static AnalysisBatchDto ToDto(AnalysisBatchSummary batch) => new(batch.Id, batch.GenerationId, batch.Status, batch.StartedUtc, batch.CompletedUtc, batch.CandidateCount, batch.ComparisonCount, batch.ReclaimableBytes, batch.GroupCount);
 
     internal static MaintenanceBatchDto ToDto(MaintenanceBatch batch) => new(batch.Id, batch.OperationRequestId, batch.Kind, batch.Status, batch.StartedUtc, batch.CompletedUtc, batch.Items.Count + batch.RenameItems.Count);
 

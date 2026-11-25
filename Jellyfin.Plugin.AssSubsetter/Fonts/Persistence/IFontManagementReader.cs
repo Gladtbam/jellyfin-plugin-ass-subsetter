@@ -17,4 +17,16 @@ public interface IFontManagementReader : IFontInventoryReader, IFontAnalysisRead
     /// <param name="cancellationToken">Cancels the query.</param>
     /// <returns>The generation, latest completed analysis identifier and optional saved input from one database snapshot.</returns>
     Task<(long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisStateAsync(bool includeInput, CancellationToken cancellationToken);
+
+    /// <summary>Reads the latest complete report's summary and counts distinct candidate files.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The summary and candidate count, or null before a completed publication.</returns>
+    Task<(AnalysisBatchSummary Summary, long EligibleQuarantineCount)?> GetLatestCompleteAnalysisSummaryAsync(CancellationToken cancellationToken);
+
+    /// <summary>Reads a page of analysis summaries and its total count.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of reports to load.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The requested page and total count.</returns>
+    Task<FontRepositoryPage<AnalysisBatchSummary>> LoadAnalysisSummaryPageAsync(long offset, int pageSize, CancellationToken cancellationToken);
 }

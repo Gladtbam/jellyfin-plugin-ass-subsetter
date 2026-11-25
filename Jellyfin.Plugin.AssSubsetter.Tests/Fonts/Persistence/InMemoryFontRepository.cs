@@ -472,6 +472,20 @@ internal sealed class InMemoryFontRepository : IFontRepository
         }
     }
 
+    public async Task<(AnalysisBatchSummary Summary, long EligibleQuarantineCount)?> GetLatestCompleteAnalysisSummaryAsync(CancellationToken cancellationToken)
+    {
+        AnalysisBatch? latest = await GetLatestCompleteAnalysisAsync(cancellationToken);
+        if (latest is null)
+        {
+            return null;
+        }
+
+        long count = latest.Groups.SelectMany(group => group.Members)
+            .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
+            .Select(member => member.FileId).Distinct().LongCount();
+        return (Summarize(latest), count);
+    }
+
     public Task<(long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisStateAsync(
         bool includeInput, CancellationToken cancellationToken)
     {
@@ -519,6 +533,16 @@ internal sealed class InMemoryFontRepository : IFontRepository
             return Task.FromResult(new FontRepositoryPage<AnalysisBatch>(page, ordered.Length));
         }
     }
+
+    public async Task<FontRepositoryPage<AnalysisBatchSummary>> LoadAnalysisSummaryPageAsync(long offset, int pageSize, CancellationToken cancellationToken)
+    {
+        var page = await LoadAnalysisBatchPageAsync(offset, pageSize, cancellationToken);
+        return new FontRepositoryPage<AnalysisBatchSummary>([.. page.Items.Select(Summarize)], page.TotalCount);
+    }
+
+    private static AnalysisBatchSummary Summarize(AnalysisBatch batch)
+        => new(batch.Id, batch.GenerationId, batch.Status, batch.EvidenceVersion, batch.StartedUtc, batch.CompletedUtc,
+            batch.CandidateCount, batch.ComparisonCount, batch.ReclaimableBytes, batch.Groups.Count);
 
     public Task<AnalysisBatch> PublishAnalysisAsync(AnalysisBatch batch, CancellationToken cancellationToken, FontRenameCandidatePreparation? preparedCandidates = null)
     {

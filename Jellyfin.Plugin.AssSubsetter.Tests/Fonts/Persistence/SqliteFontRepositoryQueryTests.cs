@@ -151,13 +151,16 @@ public sealed partial class SqliteFontRepositoryTests
         var page = await fixture.Repository.LoadAnalysisBatchPageAsync((long)int.MaxValue + 1, 10, CancellationToken.None);
         Assert.Equal(1, page.TotalCount);
         Assert.Empty(page.Items);
+        var summaries = await fixture.Repository.LoadAnalysisSummaryPageAsync((long)int.MaxValue + 1, 10, CancellationToken.None);
+        Assert.Equal(1, summaries.TotalCount);
+        Assert.Empty(summaries.Items);
         Assert.Empty((await fixture.Repository.LoadMaintenanceBatchPageAsync(long.MaxValue, 10, null, CancellationToken.None)).Items);
         Assert.Empty((await fixture.Repository.LoadQuarantineItemPageAsync(long.MaxValue, 10, new HashSet<QuarantineItemStatus> { QuarantineItemStatus.Quarantined }, CancellationToken.None)).Items);
     }
 
 
     [Fact]
-    public async Task Overview_ShouldCountOnlyPublishedInventoryWithoutLoadingFaceMetadata()
+    public async Task Overview_ShouldCountPublishedInventoryAndDistinctCandidatesWithoutLoadingEvidence()
     {
         await using var fixture = await SqliteRepositoryFixture.CreateAsync();
         CancellationToken token = TestContext.Current.CancellationToken;
@@ -168,12 +171,36 @@ public sealed partial class SqliteFontRepositoryTests
 
         long published = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
         FontFileRecord collection = CreateFile("collection.ttc", "Collection");
+        FontFileRecord copy = CreateFile("copy.ttc", "Collection");
         await fixture.Repository.WriteInventoryAsync(published,
         [
             collection with { Faces = [collection.Faces[0], collection.Faces[0] with { FaceIndex = 1 }] },
+            copy with { Faces = [copy.Faces[0], copy.Faces[0] with { FaceIndex = 1 }] },
             CreateFile("unreadable.ttf", "Unreadable") with { Faces = [] }
         ], token);
-        await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = published, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, token);
+        var files = await fixture.Repository.LoadInventoryAsync(published, token);
+        var retained = files.Single(file => file.Path == collection.Path);
+        var candidate = files.Single(file => file.Path == copy.Path);
+        await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch
+        {
+            GenerationId = published,
+            Status = AnalysisBatchStatus.Complete,
+            SummaryJson = "{\"faceScores\":[]}",
+            ReclaimableBytes = candidate.Size,
+            Groups =
+            [
+                .. Enumerable.Range(0, 2).Select(index => new DuplicateGroupRecord
+                {
+                    RetainedFaceId = retained.Faces[index].Id,
+                    EvidenceJson = "{}",
+                    Members =
+                    [
+                        new DuplicateGroupMemberRecord { FileId = retained.Id, FaceId = retained.Faces[index].Id, Decision = DuplicateGroupMemberDecision.Retained, ScoreJson = "{}", Reason = "retained" },
+                        new DuplicateGroupMemberRecord { FileId = candidate.Id, FaceId = candidate.Faces[index].Id, Decision = DuplicateGroupMemberDecision.QuarantineCandidate, ScoreJson = "{}", Reason = "candidate" }
+                    ]
+                })
+            ]
+        }, token);
         long staged = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
         await fixture.Repository.WriteInventoryAsync(staged, [CreateFile("staged.ttf", "Staged")], token);
 
@@ -183,10 +210,16 @@ public sealed partial class SqliteFontRepositoryTests
         var overview = await query.GetOverviewAsync(token);
 
         Assert.Equal(published, overview.PublishedGenerationId);
-        Assert.Equal(2, overview.PublishedFileCount);
-        Assert.Equal(2, overview.PublishedFaceCount);
+        Assert.Equal(3, overview.PublishedFileCount);
+        Assert.Equal(4, overview.PublishedFaceCount);
+        Assert.Equal(2, overview.LatestAnalysis!.GroupCount);
+        Assert.Equal(1, overview.EligibleQuarantineCount);
+        Assert.Equal(candidate.Size, overview.ReclaimableBytes);
+        var history = await query.GetAnalysisBatchesAsync(1, 1, token);
+        Assert.Equal(2, Assert.Single(history.Items).GroupCount);
         Assert.DoesNotContain(commands, sql => sql.Contains("\"face_name\"", StringComparison.Ordinal));
-        Assert.Single(commands, sql => sql.Contains("FROM \"font_relation\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(commands, sql => sql.Contains("\"summary_json\"", StringComparison.Ordinal)
+            || sql.Contains("\"evidence_json\"", StringComparison.Ordinal) || sql.Contains("\"score_json\"", StringComparison.Ordinal));
     }
 
     [Theory]
@@ -224,7 +257,8 @@ public sealed partial class SqliteFontRepositoryTests
             Assert.False(item.IsCurrent);
             Assert.Equal(["generation-superseded", "analysis-superseded"], item.StaleReasons);
         });
-        Assert.Single(commands, sql => sql.Contains("FROM \"font_relation\"", StringComparison.Ordinal));
+        Assert.DoesNotContain(commands, sql => sql.Contains("FROM \"font_relation\"", StringComparison.Ordinal)
+            || sql.Contains("FROM \"group_member\"", StringComparison.Ordinal));
         Assert.Single(commands, sql => sql.Contains("FROM \"schema_info\"", StringComparison.Ordinal));
     }
 
