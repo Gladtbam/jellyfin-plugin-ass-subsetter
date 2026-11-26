@@ -211,15 +211,13 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
 
         try
         {
-            FontAnalysisWorkflowResult result = await _workflow.RunAsync(request.Id, request.Kind == FontOperationKind.RebuildDerivedData, progress, cancellationToken).ConfigureAwait(false);
-            AnalysisBatch batch = result.Batch;
-            FontInventoryScanResult scan = result.Scan;
+            var (batchId, batchStatus, scan) = await _workflow.RunForMaintenanceAsync(request.Id, request.Kind == FontOperationKind.RebuildDerivedData, progress, cancellationToken).ConfigureAwait(false);
             long generationId = scan.GenerationId;
-            OperationRequestStatus status = batch.Status == AnalysisBatchStatus.Complete
+            OperationRequestStatus status = batchStatus == AnalysisBatchStatus.Complete
                 ? OperationRequestStatus.Complete
                 : OperationRequestStatus.Failed;
             await CompleteRequestAsync(
-                request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batch.Id, scan.HasChanges, scan.ChangeReasons), _jsonOptions) : null },
+                request with { ResultJson = status == OperationRequestStatus.Complete ? JsonSerializer.Serialize(new FontScanOutcome(generationId, batchId, scan.HasChanges, scan.ChangeReasons), _jsonOptions) : null },
                 status,
                 status == OperationRequestStatus.Failed ? "The analysis batch did not complete." : null).ConfigureAwait(false);
             if (status == OperationRequestStatus.Complete)
@@ -228,8 +226,8 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
             }
 
             return new FontTaskExecutionResult(
-                batch.Id,
-                status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batch.Status.ToString(),
+                batchId,
+                status == OperationRequestStatus.Complete ? (scan.HasChanges ? "analyzed" : "no-changes") : batchStatus.ToString(),
                 request.Id);
         }
         catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)

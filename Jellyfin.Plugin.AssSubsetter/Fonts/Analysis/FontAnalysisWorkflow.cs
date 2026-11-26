@@ -92,6 +92,20 @@ public sealed class FontAnalysisWorkflow
     /// <returns>The analyzed or reused batch and scan.</returns>
     public async Task<FontAnalysisWorkflowResult> RunAsync(long operationRequestId, bool forceRebuild, IProgress<double> progress, CancellationToken cancellationToken)
     {
+        var (_, _, scan, report) = await RunCoreAsync(operationRequestId, forceRebuild, progress, loadReusedReport: true, cancellationToken).ConfigureAwait(false);
+        return new FontAnalysisWorkflowResult(report!, scan);
+    }
+
+    internal async Task<(long BatchId, AnalysisBatchStatus Status, FontInventoryScanResult Scan)> RunForMaintenanceAsync(
+        long operationRequestId, bool forceRebuild, IProgress<double> progress, CancellationToken cancellationToken)
+    {
+        var (batchId, status, scan, _) = await RunCoreAsync(operationRequestId, forceRebuild, progress, loadReusedReport: false, cancellationToken).ConfigureAwait(false);
+        return (batchId, status, scan);
+    }
+
+    private async Task<(long BatchId, AnalysisBatchStatus Status, FontInventoryScanResult Scan, AnalysisBatch? Report)> RunCoreAsync(
+        long operationRequestId, bool forceRebuild, IProgress<double> progress, bool loadReusedReport, CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(progress);
         var stopwatch = Stopwatch.StartNew();
         LogStage(operationRequestId, "inventory-scan", stopwatch);
@@ -101,14 +115,27 @@ public sealed class FontAnalysisWorkflow
         {
             LogStage(operationRequestId, "validate-reused-inputs", stopwatch);
             await _validate(scan, new ScaledProgress(progress, 60, 95), cancellationToken).ConfigureAwait(false);
-            AnalysisBatch current = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("The reused analysis is no longer available.");
-            var health = await _repository.GetDatabaseHealthAsync(cancellationToken).ConfigureAwait(false);
-            var publishedInput = await _repository.GetPublishedAnalysisInputAsync(cancellationToken).ConfigureAwait(false);
-            if (current.GenerationId != generationId || health.PublishedGenerationId != generationId
-                || current.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion || publishedInput != scan.Input)
+            var current = await _repository.GetPublishedAnalysisForReuseAsync(validateFaceScores: false, cancellationToken).ConfigureAwait(false);
+            const string MissingReusedAnalysis = "The reused analysis is no longer available.";
+            if (current.BatchId is not long reusedBatchId)
+            {
+                throw new InvalidOperationException(MissingReusedAnalysis);
+            }
+
+            if (current.GenerationId != generationId || current.EvidenceVersion != FontDuplicateAnalyzer.CurrentEvidenceVersion
+                || current.Input != scan.Input || (scan.ReusedAnalysisBatchId is long scannedBatchId && scannedBatchId != reusedBatchId))
             {
                 throw new InvalidOperationException("The publication changed before its analysis could be reused.");
+            }
+
+            AnalysisBatch? report = null;
+            if (loadReusedReport)
+            {
+                report = await _repository.GetAnalysisBatchAsync(reusedBatchId, cancellationToken).ConfigureAwait(false);
+                if (report?.Status != AnalysisBatchStatus.Complete)
+                {
+                    throw new InvalidOperationException(MissingReusedAnalysis);
+                }
             }
 
             if (_repairCandidates is not null)
@@ -120,10 +147,10 @@ public sealed class FontAnalysisWorkflow
             cancellationToken.ThrowIfCancellationRequested();
             if (_logger.IsEnabled(LogLevel.Information))
             {
-                _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, current.Id, stopwatch.ElapsedMilliseconds);
+                _logger.LogInformation("[AssSubsetter] Analysis reused. RequestId: {RequestId}; GenerationId: {GenerationId}; BatchId: {BatchId}; ElapsedMs: {ElapsedMs}.", operationRequestId, generationId, reusedBatchId, stopwatch.ElapsedMilliseconds);
             }
 
-            return new FontAnalysisWorkflowResult(current, scan);
+            return (reusedBatchId, AnalysisBatchStatus.Complete, scan, report);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -148,7 +175,7 @@ public sealed class FontAnalysisWorkflow
             }
         }
 
-        return new FontAnalysisWorkflowResult(batch, scan);
+        return (batch.Id, batch.Status, scan, batch);
     }
 
     private void LogStage(long requestId, string stage, Stopwatch stopwatch)

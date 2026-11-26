@@ -36,7 +36,7 @@ public sealed class FontInventoryScannerTests : IDisposable
     public async Task InitialEmptyInventory_ShouldStageThenReuseCompletePublication()
     {
         Directory.CreateDirectory(_root);
-        var repository = new InMemoryFontRepository();
+        var repository = new InMemoryFontRepository { ThrowOnFullAnalysisReads = true };
         using FontInventoryScanner scanner = CreateScanner(repository);
         FontInventoryScanResult first = await scanner.StageAsync(cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(first.HasChanges);

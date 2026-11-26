@@ -32,6 +32,8 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
     public bool ThrowOnFullRenameReads { get; set; }
 
+    public bool ThrowOnFullAnalysisReads { get; set; }
+
     public Task<FontRenameStatePage> LoadRenameStatePageAsync(string status, int page, int pageSize, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -479,6 +481,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
     public Task<AnalysisBatch?> GetLatestCompleteAnalysisAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (ThrowOnFullAnalysisReads) throw new InvalidOperationException("Full analysis report loaded during reuse.");
         lock (_sync)
         {
             return Task.FromResult(FindLatestCompleteAnalysis());
@@ -510,6 +513,18 @@ internal sealed class InMemoryFontRepository : IFontRepository
         }
     }
 
+    public Task<(long? GenerationId, long? BatchId, int? EvidenceVersion, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisForReuseAsync(
+        bool validateFaceScores, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_sync)
+        {
+            var input = _publishedGenerationId is long generationId ? _inputs[generationId] : null;
+            AnalysisBatch? batch = FindLatestCompleteAnalysis();
+            return Task.FromResult((_publishedGenerationId, batch?.Id, batch?.EvidenceVersion, input));
+        }
+    }
+
     private AnalysisBatch? FindLatestCompleteAnalysis() => _analysisBatches
         .Where(batch => batch.Status == AnalysisBatchStatus.Complete && batch.GenerationId == _publishedGenerationId)
         .OrderByDescending(batch => batch.CompletedUtc)
@@ -519,6 +534,7 @@ internal sealed class InMemoryFontRepository : IFontRepository
     public Task<AnalysisBatch?> GetAnalysisBatchAsync(long batchId, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (ThrowOnFullAnalysisReads) throw new InvalidOperationException("Full analysis report loaded during reuse.");
         lock (_sync)
         {
             return Task.FromResult(_analysisBatches.FirstOrDefault(batch => batch.Id == batchId));

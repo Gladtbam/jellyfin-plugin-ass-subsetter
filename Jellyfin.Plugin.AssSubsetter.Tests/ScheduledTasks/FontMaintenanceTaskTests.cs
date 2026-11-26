@@ -118,7 +118,7 @@ public sealed partial class FontMaintenanceTaskTests
     [Fact]
     public async Task UnchangedAnalysisRequest_ShouldReuseBatchWithoutAnalysisOrPublication()
     {
-        var repository = new InMemoryFontRepository();
+        var repository = new InMemoryFontRepository { ThrowOnFullAnalysisReads = true };
         long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], CancellationToken.None);
         AnalysisBatch current = await repository.PublishAnalysisAsync(Analysis(generation) with { EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion }, CancellationToken.None);
 

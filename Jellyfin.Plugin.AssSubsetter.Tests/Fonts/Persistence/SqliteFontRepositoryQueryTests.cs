@@ -5,11 +5,59 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 
 public sealed partial class SqliteFontRepositoryTests
 {
+    [Fact]
+    public async Task PublishedAnalysisReuse_ShouldReadOneProjectionAndRebuildInvalidFaceScores()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string fontRoot = Path.Join(fixture.RootPath, "fonts");
+        Directory.CreateDirectory(fontRoot);
+        using var scanner = new FontInventoryScanner(fixture.Repository,
+            () => new FontDirectoryPolicyResolver(fontRoot, null, null, false),
+            new PathPhysicalFileIdentityProvider(), NullLogger<FontInventoryScanner>.Instance);
+        FontInventoryScanResult initial = await scanner.StageAsync(cancellationToken: token);
+        AnalysisBatch published = await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch
+        {
+            GenerationId = initial.GenerationId,
+            Status = AnalysisBatchStatus.Complete,
+            EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion,
+            SummaryJson = "{\"faceScores\":[]}"
+        }, token);
+
+        List<string> commands = [];
+        using (var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command => commands.Add(command.CommandText)))
+        {
+            var validated = await fixture.Repository.GetPublishedAnalysisForReuseAsync(validateFaceScores: true, token);
+            var rechecked = await fixture.Repository.GetPublishedAnalysisForReuseAsync(validateFaceScores: false, token);
+
+            Assert.Equal((initial.GenerationId, published.Id, published.EvidenceVersion, initial.Input), validated);
+            Assert.Equal(validated, rechecked);
+        }
+
+        Assert.Collection(commands,
+            sql => Assert.Contains("summary_json", sql, StringComparison.Ordinal),
+            sql => Assert.DoesNotContain("summary_json", sql, StringComparison.Ordinal));
+
+        await using (var connection = await fixture.Database.OpenConnectionAsync(token))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "UPDATE analysis_batch SET summary_json = '{\"faceScores\":[null]}' WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", published.Id);
+            await command.ExecuteNonQueryAsync(token);
+        }
+
+        FontInventoryScanResult repair = await scanner.StageAsync(cancellationToken: token);
+        Assert.True(repair.HasChanges);
+        Assert.NotEqual(initial.GenerationId, repair.GenerationId);
+        Assert.Equal("analysis-missing", Assert.Single(repair.ChangeReasons));
+    }
+
     [Theory]
     [InlineData("existing-key")]
     [InlineData(" existing-key ")]

@@ -63,31 +63,22 @@ public sealed class FontInventoryScanner : IDisposable
             var stopwatch = Stopwatch.StartNew();
             (IReadOnlyList<FontFileRecord> records, int reusedCount) = await ObserveAsync(policy, previous, progress, cancellationToken).ConfigureAwait(false);
             FontAnalysisInputSnapshot input = FontInventoryInputComparer.Capture(records, policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
-            FontAnalysisInputSnapshot? publishedInput = await _repository.GetPublishedAnalysisInputAsync(cancellationToken).ConfigureAwait(false);
-            var reasons = FontInventoryInputComparer.GetChangeReasons(publishedInput, input).ToList();
-            AnalysisBatch? analysis;
-            try
-            {
-                analysis = await _repository.GetLatestCompleteAnalysisAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (InvalidDataException)
-            {
-                analysis = null;
-            }
+            var published = await _repository.GetPublishedAnalysisForReuseAsync(validateFaceScores: true, cancellationToken).ConfigureAwait(false);
+            var reasons = FontInventoryInputComparer.GetChangeReasons(published.Input, input).ToList();
 
             if (forceRebuild)
             {
                 reasons.Add("derived-data-rebuild");
             }
 
-            if (analysis is null && !reasons.Contains("initial-scan"))
+            if (published.BatchId is null && !reasons.Contains("initial-scan"))
             {
                 reasons.Add("analysis-missing");
             }
 
             progress?.Report(93);
             bool changed = reasons.Count > 0;
-            long generationId = changed ? await _repository.BeginGenerationAsync(input, reasons, cancellationToken).ConfigureAwait(false) : analysis!.GenerationId;
+            long generationId = changed ? await _repository.BeginGenerationAsync(input, reasons, cancellationToken).ConfigureAwait(false) : published.GenerationId!.Value;
             if (changed)
             {
                 await _repository.WriteInventoryAsync(generationId, [.. records.Select(file => file with { GenerationId = generationId })], cancellationToken).ConfigureAwait(false);
@@ -111,7 +102,7 @@ public sealed class FontInventoryScanner : IDisposable
             }
 
             progress?.Report(100);
-            return new(generationId, changed, input, reasons);
+            return new(generationId, changed, input, reasons) { ReusedAnalysisBatchId = changed ? null : published.BatchId };
         }
         finally
         {

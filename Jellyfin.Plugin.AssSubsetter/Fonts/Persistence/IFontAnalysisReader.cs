@@ -21,6 +21,13 @@ public interface IFontAnalysisReader
     /// <returns>The newest complete report, or <see langword="null"/>.</returns>
     Task<AnalysisBatch?> GetLatestCompleteAnalysisAsync(CancellationToken cancellationToken);
 
+    /// <summary>Reads the current publication and completed batch metadata from one database snapshot.</summary>
+    /// <param name="validateFaceScores">Checks that the report's saved Face scores can be read before reusing it.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The published generation, its latest completed batch, and saved input. A missing or invalid batch has no identifier or evidence version.</returns>
+    Task<(long? GenerationId, long? BatchId, int? EvidenceVersion, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisForReuseAsync(
+        bool validateFaceScores, CancellationToken cancellationToken);
+
     /// <summary>Loads one immutable duplicate-analysis report by identifier.</summary>
     /// <param name="batchId">The persisted analysis batch identifier.</param>
     /// <param name="cancellationToken">A token that cancels the query.</param>

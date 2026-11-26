@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -24,6 +25,49 @@ public sealed partial class SqliteFontRepository
         AnalysisBatchRow? row = await PublishedCompleteAnalysisBatches(context)
             .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
         return row is null ? null : (await LoadAnalysisRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
+    }
+
+    /// <inheritdoc/>
+    public async Task<(long? GenerationId, long? BatchId, int? EvidenceVersion, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisForReuseAsync(
+        bool validateFaceScores, CancellationToken cancellationToken)
+    {
+        FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var scope = context.ConfigureAwait(false);
+        var completeBatches = CompleteAnalysisBatches(context);
+        var publications = context.Set<SchemaInfoRow>().Where(schema => schema.SingletonId == 1)
+            .Select(schema => new
+            {
+                schema.PublishedGenerationId,
+                BatchId = completeBatches.Where(batch => batch.GenerationId == schema.PublishedGenerationId)
+                    .Select(batch => (long?)batch.Id).FirstOrDefault(),
+                InputJson = context.Set<ScanGenerationRow>().Where(generation => generation.Id == schema.PublishedGenerationId)
+                    .Select(generation => generation.InputJson).FirstOrDefault()
+            });
+        var state = await (from publication in publications
+                           join batch in context.Set<AnalysisBatchRow>() on publication.BatchId equals (long?)batch.Id into batches
+                           from batch in batches.DefaultIfEmpty()
+                           select new
+                           {
+                               publication.PublishedGenerationId,
+                               BatchId = (long?)batch.Id,
+                               EvidenceVersion = (int?)batch.EvidenceVersion,
+                               publication.InputJson,
+                               SummaryJson = validateFaceScores ? batch.SummaryJson : null
+                           }).SingleAsync(cancellationToken).ConfigureAwait(false);
+        var input = state.InputJson is null ? null : JsonSerializer.Deserialize<FontAnalysisInputSnapshot>(state.InputJson);
+        if (validateFaceScores && state.BatchId is not null)
+        {
+            try
+            {
+                ReadFaceScores(state.SummaryJson!, AnalysisBatchStatus.Complete);
+            }
+            catch (InvalidDataException)
+            {
+                return (state.PublishedGenerationId, null, null, input);
+            }
+        }
+
+        return (state.PublishedGenerationId, state.BatchId, state.EvidenceVersion, input);
     }
 
     /// <inheritdoc/>
