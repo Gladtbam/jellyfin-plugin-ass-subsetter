@@ -11,7 +11,11 @@ namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 /// </summary>
 public sealed class SubtitleInterceptorResourceFilter : IAsyncResourceFilter
 {
-    /// <inheritdoc />
+    /// <summary>Runs subtitle interception for the authorized request and uses the remaining MVC pipeline as its fallback.</summary>
+    /// <param name="context">The authorized resource request and its request services.</param>
+    /// <param name="next">The continuation for the remaining resource pipeline.</param>
+    /// <returns>A task that completes when interception or the remaining pipeline finishes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> or <paramref name="next"/> is <see langword="null"/>.</exception>
     public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
     {
         ArgumentNullException.ThrowIfNull(context);

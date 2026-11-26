@@ -53,10 +53,12 @@ public static class FontCandidateGenerator
             }
         }
 
-        FontCandidatePair[] pairs = [.. uniquePairs
-            .OrderBy(pair => pair.Left)
-            .ThenBy(pair => pair.Right)
-            .Select(pair => new FontCandidatePair(pair.Left, pair.Right))];
+        FontCandidatePair[] pairs =
+        [
+            .. uniquePairs.OrderBy(pair => pair.Left)
+                .ThenBy(pair => pair.Right)
+                .Select(pair => new FontCandidatePair(pair.Left, pair.Right))
+        ];
         return new FontCandidateGenerationResult(pairs, bucketPairCount);
     }
 
@@ -155,14 +157,14 @@ public static class FontCandidateGenerator
     {
         public static BucketMembershipComparer Instance { get; } = new();
 
-        public bool Equals(List<long>? left, List<long>? right)
-            => ReferenceEquals(left, right)
-                || (left is not null && right is not null && left.SequenceEqual(right));
+        public bool Equals(List<long>? x, List<long>? y)
+            => ReferenceEquals(x, y)
+                || (x is not null && y is not null && x.SequenceEqual(y));
 
-        public int GetHashCode(List<long> bucket)
+        public int GetHashCode(List<long> obj)
         {
             HashCode hash = default;
-            foreach (long faceId in bucket)
+            foreach (long faceId in obj)
             {
                 hash.Add(faceId);
             }

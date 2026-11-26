@@ -9,10 +9,18 @@ using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Reads bounded duplicate-group projections for the management API.</summary>
+/// <content>Reads bounded duplicate-group projections for the management API.</content>
 public sealed partial class SqliteFontRepository
 {
-    /// <inheritdoc/>
+    /// <summary>Loads one page of duplicate groups and their members.</summary>
+    /// <param name="analysisBatchId">The owning report, or null for the latest complete published report.</param>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The maximum number of groups.</param>
+    /// <param name="decision">An optional member decision that each group must contain.</param>
+    /// <param name="sortByReclaimableBytes">Whether to sort by reclaimable bytes descending before group identifier.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The page and exact filtered group count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">The supplied report identifier is nonpositive, the offset is negative, or the page size is outside 1 through 200.</exception>
     public async Task<FontRepositoryPage<DuplicateGroupSummary>> LoadDuplicateGroupPageAsync(
         long? analysisBatchId, long offset, int pageSize, DuplicateGroupMemberDecision? decision, bool sortByReclaimableBytes, CancellationToken cancellationToken)
     {
@@ -73,7 +81,12 @@ public sealed partial class SqliteFontRepository
             count);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads one group's displayed members, their files, and their pair relations.</summary>
+    /// <param name="analysisBatchId">The owning report identifier.</param>
+    /// <param name="groupId">The persisted group identifier.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The group detail, or null if the group does not belong to the report.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="analysisBatchId"/> is zero or negative.</exception>
     public async Task<(DuplicateGroupSummary Group, IReadOnlyList<FontFileRecord> Files, IReadOnlyList<FontRelationRecord> Relations)?> GetDuplicateGroupDetailAsync(
         long analysisBatchId, long groupId, CancellationToken cancellationToken)
     {

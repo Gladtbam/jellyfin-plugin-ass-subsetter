@@ -72,14 +72,16 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
     /// </summary>
     internal int ActivePrefetchTaskCount => _prefetchTasks.Count;
 
-    /// <inheritdoc />
+    /// <summary>Unsubscribes from playback events, cancels prefetch work, and disposes its cancellation source.</summary>
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
-    /// <inheritdoc />
+    /// <summary>Registers the playback progress and stop handlers used to schedule subtitle prefetch.</summary>
+    /// <param name="cancellationToken">The host startup token supplied by the hosted-service contract.</param>
+    /// <returns>A completed task after the handlers are registered.</returns>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (_started)
@@ -94,7 +96,9 @@ public class PlaybackPrefetchService : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>Removes playback handlers, cancels active prefetch work, and waits for the running tasks.</summary>
+    /// <param name="cancellationToken">A token that limits the wait for running prefetch tasks.</param>
+    /// <returns>A task representing shutdown of in-flight prefetch work.</returns>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         try

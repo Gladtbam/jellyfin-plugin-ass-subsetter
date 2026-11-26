@@ -31,11 +31,12 @@ internal sealed class SubtitleFontRequestCache
             }
         }
 
-        KeyValuePair<FontDescriptor, uint[]>[] requests = length < 0 ? [] :
-        [
-            .. new AssDocumentParser().ExtractUsedCharacters(path)
-                .Select(pair => new KeyValuePair<FontDescriptor, uint[]>(pair.Key, [.. pair.Value.Order()]))
-        ];
+        KeyValuePair<FontDescriptor, uint[]>[] requests = length < 0
+            ? []
+            : [
+                .. new AssDocumentParser().ExtractUsedCharacters(path)
+                    .Select(pair => new KeyValuePair<FontDescriptor, uint[]>(pair.Key, [.. pair.Value.Order()]))
+              ];
         source.Refresh();
         if ((source.Exists ? source.Length : -1) != length || (source.Exists ? source.LastWriteTimeUtc.Ticks : 0) != modified)
         {

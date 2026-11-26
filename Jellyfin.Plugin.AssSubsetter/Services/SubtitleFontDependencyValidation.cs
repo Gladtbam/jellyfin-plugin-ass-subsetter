@@ -26,8 +26,11 @@ internal sealed class SubtitleFontDependencyValidation : IDisposable
     internal void Observe(FontDescriptor descriptor, IReadOnlyCollection<uint> characters, FontFileLease? lease, byte[]? bytes)
     {
         string key = SubtitleFontDependencies.RequestKey(descriptor, characters);
-        string identity = lease is null ? "missing" : bytes is null ? "unreadable" :
-            SubtitleFontDependencies.FaceIdentity(Convert.ToHexString(SHA256.HashData(bytes)), lease.FaceIndex);
+        string identity = lease is null
+            ? "missing"
+            : bytes is null
+                ? "unreadable"
+                : SubtitleFontDependencies.FaceIdentity(Convert.ToHexString(SHA256.HashData(bytes)), lease.FaceIndex);
         if (!_expected.Selections.TryGetValue(key, out string? expected) || !StringComparer.Ordinal.Equals(identity, expected))
         {
             _valid = false;
@@ -37,6 +40,6 @@ internal sealed class SubtitleFontDependencyValidation : IDisposable
         _observed.Add(key);
     }
 
-    /// <inheritdoc />
+    /// <summary>Restores the enclosing font dependency validation scope.</summary>
     public void Dispose() => _restore();
 }

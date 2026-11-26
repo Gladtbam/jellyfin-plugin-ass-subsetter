@@ -156,7 +156,11 @@ public sealed class PhysicalQuarantineFileSystem : IQuarantineFileSystem
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc/>
+    /// <summary>Promotes a restore copy without overwriting, allowing a recoverable hard-link move when atomic rename is unsupported.</summary>
+    /// <param name="sourcePath">The verified restore copy.</param>
+    /// <param name="destinationPath">The unoccupied original path.</param>
+    /// <param name="cancellationToken">A token that cancels before promotion.</param>
+    /// <returns>A task representing restore promotion.</returns>
     public Task MoveForRestoreAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

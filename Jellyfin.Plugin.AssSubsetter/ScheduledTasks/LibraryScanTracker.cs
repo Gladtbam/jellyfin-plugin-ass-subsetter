@@ -53,14 +53,16 @@ public class LibraryScanTracker : IHostedService, IDisposable
 
     private PluginConfiguration Config => _configFactory();
 
-    /// <inheritdoc />
+    /// <summary>Unsubscribes from library events and disposes the linked cancellation source.</summary>
     public void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
     }
 
-    /// <inheritdoc />
+    /// <summary>Subscribes to library item events and starts consuming the subtitle-processing queue.</summary>
+    /// <param name="cancellationToken">A host startup token linked to the lifetime of the queue consumer.</param>
+    /// <returns>A task that completes after the subscriptions and consumer are set up.</returns>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _libraryManager.ItemAdded += OnItemAdded;
@@ -73,7 +75,9 @@ public class LibraryScanTracker : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>Unsubscribes from library events, closes the queue, and cancels its consumer.</summary>
+    /// <param name="cancellationToken">The host shutdown token supplied by the hosted-service contract.</param>
+    /// <returns>A task that completes after the queue consumer exits.</returns>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         try

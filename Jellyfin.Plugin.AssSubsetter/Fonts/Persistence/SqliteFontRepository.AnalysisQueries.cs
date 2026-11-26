@@ -12,10 +12,13 @@ using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Analysis projections loaded within one catalog read snapshot.</summary>
+/// <content>Analysis projections loaded within one catalog read snapshot.</content>
 public sealed partial class SqliteFontRepository
 {
-    /// <inheritdoc/>
+    /// <summary>Loads the latest completed report for the published generation, including Face scores, relations, and duplicate groups.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The completed report from one read snapshot, or <see langword="null"/> when no completed report is published.</returns>
+    /// <exception cref="InvalidDataException">The persisted Face score data is invalid.</exception>
     public async Task<AnalysisBatch?> GetLatestCompleteAnalysisAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -27,7 +30,10 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : (await LoadAnalysisRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads the published generation, completed batch metadata, and saved inputs in one query.</summary>
+    /// <param name="validateFaceScores">Whether to read and validate the saved Face scores.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The publication metadata. The batch identifier and evidence version are empty if no completed batch exists or validation rejects its Face scores.</returns>
     public async Task<(long? GenerationId, long? BatchId, int? EvidenceVersion, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisForReuseAsync(
         bool validateFaceScores, CancellationToken cancellationToken)
     {
@@ -70,7 +76,9 @@ public sealed partial class SqliteFontRepository
         return (state.PublishedGenerationId, state.BatchId, state.EvidenceVersion, input);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads the published report summary and counts distinct files marked as quarantine candidates.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The summary and count from one read snapshot, or <see langword="null"/> when no completed report is published.</returns>
     public async Task<(AnalysisBatchSummary Summary, long EligibleQuarantineCount)?> GetLatestCompleteAnalysisSummaryAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -92,7 +100,10 @@ public sealed partial class SqliteFontRepository
         return (summary, count);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads the published generation and its current analysis identity.</summary>
+    /// <param name="includeInput">Whether to include the inventory's saved analysis input.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The generation, latest completed analysis identifier and optional saved input from one database snapshot.</returns>
     public async Task<(long? GenerationId, long? LatestAnalysisId, FontAnalysisInputSnapshot? Input)> GetPublishedAnalysisStateAsync(
         bool includeInput, CancellationToken cancellationToken)
     {
@@ -105,8 +116,10 @@ public sealed partial class SqliteFontRepository
                 schema.PublishedGenerationId,
                 LatestAnalysisId = completeBatches.Where(batch => batch.GenerationId == schema.PublishedGenerationId)
                     .Select(batch => (long?)batch.Id).FirstOrDefault(),
-                InputJson = includeInput ? context.Set<ScanGenerationRow>()
-                    .Where(generation => generation.Id == schema.PublishedGenerationId).Select(generation => generation.InputJson).FirstOrDefault() : null
+                InputJson = includeInput
+                    ? context.Set<ScanGenerationRow>()
+                        .Where(generation => generation.Id == schema.PublishedGenerationId).Select(generation => generation.InputJson).FirstOrDefault()
+                    : null
             }).SingleAsync(cancellationToken).ConfigureAwait(false);
         return (state.PublishedGenerationId, state.LatestAnalysisId, state.InputJson is null
             ? null
@@ -121,7 +134,12 @@ public sealed partial class SqliteFontRepository
         => CompleteAnalysisBatches(context)
             .Where(row => context.Set<SchemaInfoRow>().Any(schema => schema.SingletonId == 1 && schema.PublishedGenerationId == row.GenerationId));
 
-    /// <inheritdoc/>
+    /// <summary>Loads one immutable duplicate-analysis report by identifier.</summary>
+    /// <param name="batchId">The persisted analysis batch identifier.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The report, or <see langword="null"/> when it does not exist.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="batchId"/> is zero or negative.</exception>
+    /// <exception cref="InvalidDataException">The persisted Face score data is invalid.</exception>
     public async Task<AnalysisBatch?> GetAnalysisBatchAsync(long batchId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchId);
@@ -133,7 +151,13 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : (await LoadAnalysisRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads one deterministic administrator page of immutable analysis reports.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of reports to load.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The page and exact total matching report count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is negative or <paramref name="pageSize"/> is outside 1 through 200.</exception>
+    /// <exception cref="InvalidDataException">A selected report contains invalid Face score data.</exception>
     public async Task<FontRepositoryPage<AnalysisBatch>> LoadAnalysisBatchPageAsync(long offset, int pageSize, CancellationToken cancellationToken)
     {
         ValidatePage(offset, pageSize);
@@ -146,7 +170,12 @@ public sealed partial class SqliteFontRepository
         return new FontRepositoryPage<AnalysisBatch>(await LoadAnalysisRecordsAsync(context, rows, cancellationToken).ConfigureAwait(false), count);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads a page of analysis summaries and its total count.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of reports to load.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The requested page and total count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is negative or <paramref name="pageSize"/> is outside 1 through 200.</exception>
     public async Task<FontRepositoryPage<AnalysisBatchSummary>> LoadAnalysisSummaryPageAsync(long offset, int pageSize, CancellationToken cancellationToken)
     {
         ValidatePage(offset, pageSize);

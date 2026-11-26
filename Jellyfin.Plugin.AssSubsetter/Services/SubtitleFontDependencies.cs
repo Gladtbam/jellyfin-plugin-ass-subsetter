@@ -15,9 +15,10 @@ internal sealed class SubtitleFontDependencies
     {
         Selections = selections;
         // Preserve the empty identity for sources without font usage.
-        Fingerprint = selections.Count == 0 ? string.Empty : Convert.ToHexString(SHA256.HashData(
-            Encoding.UTF8.GetBytes(string.Join("\n", selections.OrderBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair => pair.Key + ":" + pair.Value)))));
+        Fingerprint = selections.Count == 0
+            ? string.Empty
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                string.Join("\n", selections.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + ":" + pair.Value)))));
     }
 
     internal IReadOnlyDictionary<string, string> Selections { get; }

@@ -33,16 +33,20 @@ internal sealed record FontReportSnapshot(
         return await readPage(new FontReportSnapshot(
             batch.Id,
             [.. batch.Relations.Select(row => new FontReportRelation(row.Id, row.LeftFaceId, row.RightFaceId, row.RelationshipKind, row.ReplacementDirection))],
-            [.. batch.Groups.Select(group => new FontReportGroup(
-                group.Id,
-                group.ReclaimableBytes,
-                [.. group.Members.Select(member => new FontReportMember(member.FaceId, member.FileId, member.Decision, member.Reason))]))],
-            [.. files.Select(file => new FontReportFile(
-                file.Id,
-                file.Path,
-                file.Health,
-                file.Error,
-                [.. file.Faces.Select(face => new FontReportFace(face.Id, face.Technology))]))],
+            [
+                .. batch.Groups.Select(group => new FontReportGroup(
+                    group.Id,
+                    group.ReclaimableBytes,
+                    [.. group.Members.Select(member => new FontReportMember(member.FaceId, member.FileId, member.Decision, member.Reason))]))
+            ],
+            [
+                .. files.Select(file => new FontReportFile(
+                    file.Id,
+                    file.Path,
+                    file.Health,
+                    file.Error,
+                    [.. file.Faces.Select(face => new FontReportFace(face.Id, face.Technology))]))
+            ],
             (relationIds, scoreFaceIds, _) =>
             {
                 var relations = batch.Relations.Where(relation => relationIds.Contains(relation.Id)).ToArray();

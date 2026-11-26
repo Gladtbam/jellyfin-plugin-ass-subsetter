@@ -10,10 +10,13 @@ using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Maintenance records and typed projections for durable item history.</summary>
+/// <content>Maintenance records and typed projections for durable item history.</content>
 public sealed partial class SqliteFontRepository
 {
-    /// <inheritdoc/>
+    /// <summary>Loads a durable maintenance batch.</summary>
+    /// <param name="batchId">The persisted batch identifier.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The batch, or <see langword="null"/> when it does not exist.</returns>
     public async Task<MaintenanceBatch?> GetMaintenanceBatchAsync(long batchId, CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -24,7 +27,10 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : (await LoadMaintenanceRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads the durable maintenance batch assigned to an immutable operation request.</summary>
+    /// <param name="operationRequestId">The immutable operation request identifier.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The batch, or <see langword="null"/> when the request has not started one.</returns>
     public async Task<MaintenanceBatch?> GetMaintenanceBatchByOperationRequestAsync(long operationRequestId, CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -35,7 +41,13 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : (await LoadMaintenanceRecordsAsync(context, [row], cancellationToken).ConfigureAwait(false))[0];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads one deterministic administrator page of durable maintenance batches.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of batches to load.</param>
+    /// <param name="kinds">The optional fixed set of persisted operation kinds to include.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The page and exact total matching batch count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is negative or <paramref name="pageSize"/> is outside 1 through 200.</exception>
     public async Task<FontRepositoryPage<MaintenanceBatch>> LoadMaintenanceBatchPageAsync(long offset, int pageSize, IReadOnlySet<FontOperationKind>? kinds, CancellationToken cancellationToken)
     {
         ValidatePage(offset, pageSize);
@@ -54,7 +66,13 @@ public sealed partial class SqliteFontRepository
         return new FontRepositoryPage<MaintenanceBatch>(await LoadMaintenanceRecordsAsync(context, rows, cancellationToken).ConfigureAwait(false), count);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads a page of maintenance summaries with item counts.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of batches to load.</param>
+    /// <param name="kinds">The optional operation kinds to include.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The page and its exact total count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is negative or <paramref name="pageSize"/> is outside 1 through 200.</exception>
     public async Task<FontRepositoryPage<MaintenanceBatchSummary>> LoadMaintenanceBatchSummaryPageAsync(
         long offset, int pageSize, IReadOnlySet<FontOperationKind>? kinds, CancellationToken cancellationToken)
     {
@@ -111,7 +129,14 @@ public sealed partial class SqliteFontRepository
             .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc).ThenByDescending(batch => batch.Id);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads the latest quarantine state per source path across operation batches.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded page size.</param>
+    /// <param name="statuses">The item states included in this view.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The matching items and exact total count.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="offset"/> is negative or <paramref name="pageSize"/> is outside 1 through 200.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="statuses"/> is <see langword="null"/>.</exception>
     public async Task<FontRepositoryPage<QuarantineItemRecord>> LoadQuarantineItemPageAsync(long offset, int pageSize, IReadOnlySet<QuarantineItemStatus> statuses, CancellationToken cancellationToken)
     {
         ValidatePage(offset, pageSize);
@@ -151,7 +176,9 @@ public sealed partial class SqliteFontRepository
         return new FontRepositoryPage<QuarantineItemRecord>([.. rows.Select(ToQuarantineItem)], count);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads all durable filename item outcomes with their owning identities.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>Execution outcomes.</returns>
     public async Task<IReadOnlyList<RenameItemRecord>> LoadRenameStateItemsAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);

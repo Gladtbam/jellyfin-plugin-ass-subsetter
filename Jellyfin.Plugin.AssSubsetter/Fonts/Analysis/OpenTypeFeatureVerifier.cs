@@ -387,7 +387,8 @@ internal static class OpenTypeFeatureVerifier
         {
             int delta = unchecked((short)Read16(table, offset + 4));
             return glyphs.All(glyph => ((glyph + delta) & 0xFFFF) < glyphCount)
-                ? FontVerificationStatus.Passed : FontVerificationStatus.Failed;
+                ? FontVerificationStatus.Passed
+                : FontVerificationStatus.Failed;
         }
 
         if (format != 2)
@@ -467,7 +468,8 @@ internal static class OpenTypeFeatureVerifier
         }
 
         return count == glyphs.Count && Fits(table, offset + 8, count * valueSize)
-            ? FontVerificationStatus.Passed : FontVerificationStatus.Failed;
+            ? FontVerificationStatus.Passed
+            : FontVerificationStatus.Failed;
     }
 
     private static List<int>? ReadCoverage(ReadOnlySpan<byte> table, int offset, int glyphCount)

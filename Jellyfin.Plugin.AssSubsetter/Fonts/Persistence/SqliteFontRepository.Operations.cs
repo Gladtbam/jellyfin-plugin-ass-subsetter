@@ -11,10 +11,14 @@ using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Ordinary request, generation and performance persistence.</summary>
+/// <content>Ordinary request, generation and performance persistence.</content>
 public sealed partial class SqliteFontRepository
 {
-    /// <inheritdoc/>
+    /// <summary>Creates an unpublished inventory generation.</summary>
+    /// <param name="input">The complete scan input.</param>
+    /// <param name="changeReasons">Reasons for replacing the current publication.</param>
+    /// <param name="cancellationToken">A token that cancels generation creation.</param>
+    /// <returns>The new generation identifier.</returns>
     public Task<long> BeginGenerationAsync(FontAnalysisInputSnapshot input, IReadOnlyList<string> changeReasons, CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -28,7 +32,9 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Gets the inputs associated with the current publication.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The published inputs, or null before initialization.</returns>
     public async Task<FontAnalysisInputSnapshot?> GetPublishedAnalysisInputAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -39,7 +45,11 @@ public sealed partial class SqliteFontRepository
         return json is null ? null : JsonSerializer.Deserialize<FontAnalysisInputSnapshot>(json);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Checks whether a generation has a durably completed duplicate analysis.</summary>
+    /// <param name="generationId">The staged generation to check.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns><see langword="true"/> only when a complete analysis batch exists.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="generationId"/> is zero or negative.</exception>
     public async Task<bool> HasCompleteAnalysisAsync(long generationId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(generationId);
@@ -48,7 +58,12 @@ public sealed partial class SqliteFontRepository
         return await context.Set<AnalysisBatchRow>().AnyAsync(row => row.GenerationId == generationId && row.Status == (int)AnalysisBatchStatus.Complete, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads reusable complete deep evidence for an unchanged physical file.</summary>
+    /// <param name="file">The current generation's file identity and inventory fingerprint.</param>
+    /// <param name="evidenceKey">The parser and native-environment compatibility key.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The stored payload, or <see langword="null"/> when no compatible evidence exists.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="file"/> is <see langword="null"/>.</exception>
     public async Task<string?> LoadReusableDeepEvidenceAsync(FontFileRecord file, string evidenceKey, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -66,7 +81,9 @@ public sealed partial class SqliteFontRepository
         return payload is null ? null : DecompressDeepEvidence(payload);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads filename authorizations still pending or running.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>Active immutable requests.</returns>
     public async Task<IReadOnlyList<OperationRequest>> LoadActiveRenameRequestsAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -77,7 +94,9 @@ public sealed partial class SqliteFontRepository
         return [.. rows.Select(ToOperationRequest)];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads filename requests including failures before batch allocation.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>Saved filename authorizations.</returns>
     public async Task<IReadOnlyList<OperationRequest>> LoadRenameStateRequestsAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -87,7 +106,9 @@ public sealed partial class SqliteFontRepository
         return [.. rows.Select(ToOperationRequest)];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads the distinct operation kinds with durable pending authorization.</summary>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The operation kinds that still need processing.</returns>
     public async Task<IReadOnlyList<FontOperationKind>> LoadPendingOperationKindsAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -97,7 +118,9 @@ public sealed partial class SqliteFontRepository
         return [.. kinds.Select(kind => (FontOperationKind)kind)];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads the latest successful analysis operation with its scan outcome.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The latest completed operation, if any.</returns>
     public async Task<OperationRequest?> GetLatestCompletedAnalysisOperationAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -109,7 +132,11 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : ToOperationRequest(row);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads one immutable operation request by identifier.</summary>
+    /// <param name="requestId">The persisted request identifier.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The request, or <see langword="null"/> when it does not exist.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="requestId"/> is zero or negative.</exception>
     public async Task<OperationRequest?> GetOperationRequestAsync(long requestId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestId);
@@ -119,7 +146,12 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : ToOperationRequest(row);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads the persisted operation matching a trimmed idempotency key.</summary>
+    /// <param name="idempotencyKey">The client retry key.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The matching request, or <see langword="null"/> if the key is unknown.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="idempotencyKey"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="idempotencyKey"/> is empty or consists only of whitespace.</exception>
     public async Task<OperationRequest?> GetOperationRequestByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(idempotencyKey);
@@ -130,7 +162,13 @@ public sealed partial class SqliteFontRepository
         return row is null ? null : ToOperationRequest(row);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Persists the lifecycle state of an existing operation request.</summary>
+    /// <param name="request">The persisted request with its next state.</param>
+    /// <param name="cancellationToken">A token that cancels the update.</param>
+    /// <returns>A task representing the update.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The identifier in <paramref name="request"/> is zero or negative.</exception>
+    /// <exception cref="InvalidOperationException">The specified operation request does not exist.</exception>
     public Task UpdateOperationAsync(OperationRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -158,7 +196,10 @@ public sealed partial class SqliteFontRepository
             cancellationToken);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Marks completed reports for one inventory generation stale.</summary>
+    /// <param name="generationId">The superseded inventory generation identifier.</param>
+    /// <param name="cancellationToken">A token that cancels the update.</param>
+    /// <returns>A task representing the guarded status update.</returns>
     public Task MarkAnalysisStaleAsync(long generationId, CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -171,7 +212,10 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Persists one local inventory or analysis performance sample.</summary>
+    /// <param name="sample">The measured phase sample.</param>
+    /// <param name="cancellationToken">A token that cancels persistence.</param>
+    /// <returns>A task representing the write.</returns>
     public Task SavePerformanceSampleAsync(PerformanceSample sample, CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -188,7 +232,11 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Loads the newest recorded performance samples, using sample identifiers to break timestamp ties.</summary>
+    /// <param name="maximumCount">The maximum number of samples, from 1 through 1,000.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The performance samples ordered newest first.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maximumCount"/> is outside the supported range.</exception>
     public async Task<IReadOnlyList<PerformanceSample>> LoadRecentPerformanceSamplesAsync(int maximumCount, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maximumCount, 1);

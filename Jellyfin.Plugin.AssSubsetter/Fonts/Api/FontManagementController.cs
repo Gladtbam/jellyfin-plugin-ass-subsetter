@@ -500,9 +500,11 @@ public sealed class FontManagementController : ControllerBase
         }
 
         MaintenanceBatch? batch = await _repository.GetMaintenanceBatchAsync(request.BatchId, cancellationToken).ConfigureAwait(false);
-        HashSet<long> batchFileIds = batch?.Kind != requiredSourceKind ? [] : kind == FontOperationKind.RollbackNames
-            ? [.. batch.RenameItems.Where(item => item.Status == RenameItemStatus.Renamed).Select(item => item.FileId)]
-            : [.. batch.Items.Select(item => item.FileId)];
+        HashSet<long> batchFileIds = batch?.Kind != requiredSourceKind
+            ? []
+            : kind == FontOperationKind.RollbackNames
+                ? [.. batch.RenameItems.Where(item => item.Status == RenameItemStatus.Renamed).Select(item => item.FileId)]
+                : [.. batch.Items.Select(item => item.FileId)];
 
         if (request.SelectedFileIds.Any(fileId => fileId <= 0 || !batchFileIds.Contains(fileId)))
         {
@@ -556,8 +558,8 @@ public sealed class FontManagementController : ControllerBase
             && (await _query.GetAnalysisStateAsync(batch, cancellationToken).ConfigureAwait(false)).IsCurrent
             && inventory.Count > 0
             && inventory.All(file => file.GenerationId == batch.GenerationId)
-            ? batch
-            : null;
+                ? batch
+                : null;
     }
 
     private async Task<bool> IsCurrentAnalysisAsync(AnalysisBatch batch, CancellationToken cancellationToken)
@@ -571,9 +573,12 @@ public sealed class FontManagementController : ControllerBase
 
     private static bool IsVerifiedSelection(AnalysisBatch batch, IReadOnlyList<long> selectedFileIds)
     {
-        HashSet<long> candidates = [.. batch.Groups.SelectMany(group => group.Members)
-            .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
-            .Select(member => member.FileId)];
+        HashSet<long> candidates =
+        [
+            .. batch.Groups.SelectMany(group => group.Members)
+                .Where(member => member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate)
+                .Select(member => member.FileId)
+        ];
         return selectedFileIds.All(fileId => fileId > 0 && candidates.Contains(fileId));
     }
 }

@@ -55,7 +55,9 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
     /// <summary>Releases the serialized lifecycle execution gate.</summary>
     public void Dispose() => _executionGate.Dispose();
 
-    /// <inheritdoc/>
+    /// <summary>Creates and persists a filename-normalization request for the current candidates.</summary>
+    /// <param name="cancellationToken">A token that cancels candidate discovery or request persistence.</param>
+    /// <returns>The persisted pending request, or <see langword="null"/> when no eligible candidate is available.</returns>
     public Task<OperationRequest?> CreateCurrentRequestAsync(CancellationToken cancellationToken)
         => _candidates.CreateScheduledRequestAsync(cancellationToken);
 
@@ -402,9 +404,12 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
             || !FontPathComparison.IsWithin(source, item.SourceRoot) || !FontPathComparison.IsWithin(destination, item.SourceRoot)
             || !FontPathComparison.Comparer.Equals(policy.GetOwningCustomRoot(source), item.SourceRoot)
             || !FontPathComparison.Comparer.Equals(policy.GetOwningCustomRoot(destination), item.SourceRoot)
-            ? "source-root-changed"
-            : !_fileSystem.IsPhysicalPath(source) || !_fileSystem.IsPhysicalPath(destination) ? "linked-path"
-            : (policy.GetPolicy(destination) & FontDirectoryPolicy.Protected) != 0 ? "protected-or-not-custom" : null;
+                ? "source-root-changed"
+                : !_fileSystem.IsPhysicalPath(source) || !_fileSystem.IsPhysicalPath(destination)
+                    ? "linked-path"
+                    : (policy.GetPolicy(destination) & FontDirectoryPolicy.Protected) != 0
+                        ? "protected-or-not-custom"
+                        : null;
     }
 
     private async Task<bool> MatchesAsync(RenameItemRecord item, string path)

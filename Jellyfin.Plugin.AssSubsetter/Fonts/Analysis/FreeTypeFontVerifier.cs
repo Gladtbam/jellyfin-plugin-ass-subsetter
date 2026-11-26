@@ -11,19 +11,19 @@ internal static class FreeTypeFontVerifier
     private static readonly Lazy<Bindings?> _native = new(LoadBindings);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int InitDelegate(out IntPtr library);
+    private delegate int InitDelegate(out nint library);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private unsafe delegate int NewMemoryFaceDelegate(IntPtr library, byte* data, long size, long faceIndex, out IntPtr face);
+    private unsafe delegate int NewMemoryFaceDelegate(nint library, byte* data, long size, long faceIndex, out nint face);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate uint GetCharIndexDelegate(IntPtr face, nuint charCode);
+    private delegate uint GetCharIndexDelegate(nint face, nuint charCode);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int DoneFaceDelegate(IntPtr face);
+    private delegate int DoneFaceDelegate(nint face);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-    private delegate int DoneLibraryDelegate(IntPtr library);
+    private delegate int DoneLibraryDelegate(nint library);
 
     internal static bool IsAvailable => _native.Value is not null;
 
@@ -40,7 +40,7 @@ internal static class FreeTypeFontVerifier
             return FontVerificationStatus.Failed;
         }
 
-        if (native.Init(out IntPtr library) != 0 || library == IntPtr.Zero)
+        if (native.Init(out nint library) != 0 || library == nint.Zero)
         {
             return FontVerificationStatus.Failed;
         }
@@ -49,7 +49,7 @@ internal static class FreeTypeFontVerifier
         {
             fixed (byte* pointer = data)
             {
-                if (native.NewMemoryFace(library, pointer, data.LongLength, faceIndex, out IntPtr face) != 0 || face == IntPtr.Zero)
+                if (native.NewMemoryFace(library, pointer, data.LongLength, faceIndex, out nint face) != 0 || face == nint.Zero)
                 {
                     return FontVerificationStatus.Failed;
                 }
@@ -91,16 +91,16 @@ internal static class FreeTypeFontVerifier
                 : ["/usr/lib/jellyfin-ffmpeg/lib/libfreetype.so.6", "libfreetype.so.6", "libfreetype.so"];
         foreach (string candidate in candidates)
         {
-            if (!NativeLibrary.TryLoad(candidate, out IntPtr handle))
+            if (!NativeLibrary.TryLoad(candidate, out nint handle))
             {
                 continue;
             }
 
-            if (NativeLibrary.TryGetExport(handle, "FT_Init_FreeType", out IntPtr init)
-                && NativeLibrary.TryGetExport(handle, "FT_New_Memory_Face", out IntPtr newFace)
-                && NativeLibrary.TryGetExport(handle, "FT_Get_Char_Index", out IntPtr getCharIndex)
-                && NativeLibrary.TryGetExport(handle, "FT_Done_Face", out IntPtr doneFace)
-                && NativeLibrary.TryGetExport(handle, "FT_Done_FreeType", out IntPtr doneLibrary))
+            if (NativeLibrary.TryGetExport(handle, "FT_Init_FreeType", out nint init)
+                && NativeLibrary.TryGetExport(handle, "FT_New_Memory_Face", out nint newFace)
+                && NativeLibrary.TryGetExport(handle, "FT_Get_Char_Index", out nint getCharIndex)
+                && NativeLibrary.TryGetExport(handle, "FT_Done_Face", out nint doneFace)
+                && NativeLibrary.TryGetExport(handle, "FT_Done_FreeType", out nint doneLibrary))
             {
                 return new Bindings(
                     Marshal.GetDelegateForFunctionPointer<InitDelegate>(init),

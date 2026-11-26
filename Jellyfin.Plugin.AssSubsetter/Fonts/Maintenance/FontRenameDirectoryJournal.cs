@@ -146,8 +146,11 @@ internal sealed class FontRenameDirectoryJournal
             : await _directories.TryRemoveEmptyAsync(path, sourceRoot, _policy(), CancellationToken.None).ConfigureAwait(false);
         record = record with
         {
-            Status = result.Completed ? RenameDirectoryStatus.Completed
-                : result.Error?.StartsWith("directory-remove-failed", StringComparison.Ordinal) == true ? RenameDirectoryStatus.Warning : RenameDirectoryStatus.Retained,
+            Status = result.Completed
+                ? RenameDirectoryStatus.Completed
+                : result.Error?.StartsWith("directory-remove-failed", StringComparison.Ordinal) == true
+                    ? RenameDirectoryStatus.Warning
+                    : RenameDirectoryStatus.Retained,
             Error = result.Error
         };
         manifest = Put(manifest, record);

@@ -36,25 +36,25 @@ internal static class LibassFontVerifier
             return FontVerificationStatus.Unknown;
         }
 
-        IntPtr library = IntPtr.Zero;
-        IntPtr renderer = IntPtr.Zero;
-        IntPtr track = IntPtr.Zero;
+        nint library = nint.Zero;
+        nint renderer = nint.Zero;
+        nint track = nint.Zero;
         try
         {
             library = LibassNative.AssLibraryInit();
-            if (library == IntPtr.Zero)
+            if (library == nint.Zero)
             {
                 return FontVerificationStatus.Failed;
             }
 
-            LibassNative.AssSetMessageCb(library, _silentLog, IntPtr.Zero);
+            LibassNative.AssSetMessageCb(library, _silentLog, nint.Zero);
             fixed (byte* fontData = data)
             {
                 LibassNative.AssAddFont(library, "quality-probe.ttf", fontData, data.Length);
             }
 
             renderer = LibassNative.AssRendererInit(library);
-            if (renderer == IntPtr.Zero)
+            if (renderer == nint.Zero)
             {
                 return FontVerificationStatus.Failed;
             }
@@ -67,7 +67,7 @@ internal static class LibassFontVerifier
                 track = LibassNative.AssReadMemory(library, scriptData, checked((nuint)script.Length), "UTF-8");
             }
 
-            return track != IntPtr.Zero && LibassNative.AssRenderFrame(renderer, track, 1000, out _) != IntPtr.Zero
+            return track != nint.Zero && LibassNative.AssRenderFrame(renderer, track, 1000, out _) != nint.Zero
                 ? FontVerificationStatus.Passed
                 : FontVerificationStatus.Failed;
         }
@@ -77,17 +77,17 @@ internal static class LibassFontVerifier
         }
         finally
         {
-            if (track != IntPtr.Zero)
+            if (track != nint.Zero)
             {
                 LibassNative.AssFreeTrack(track);
             }
 
-            if (renderer != IntPtr.Zero)
+            if (renderer != nint.Zero)
             {
                 LibassNative.AssRendererDone(renderer);
             }
 
-            if (library != IntPtr.Zero)
+            if (library != nint.Zero)
             {
                 LibassNative.AssLibraryDone(library);
             }
@@ -99,8 +99,8 @@ internal static class LibassFontVerifier
         try
         {
             LibassNative.RegisterResolver();
-            IntPtr library = LibassNative.AssLibraryInit();
-            if (library == IntPtr.Zero)
+            nint library = LibassNative.AssLibraryInit();
+            if (library == nint.Zero)
             {
                 return false;
             }

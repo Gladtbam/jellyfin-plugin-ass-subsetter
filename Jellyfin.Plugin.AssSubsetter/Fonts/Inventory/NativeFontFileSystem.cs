@@ -18,9 +18,10 @@ internal static class NativeFontFileSystem
             if (OperatingSystem.IsWindows())
             {
                 const uint BackupSemantics = 0x02000000;
-                using SafeFileHandle handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, IntPtr.Zero, 3, BackupSemantics, IntPtr.Zero);
+                using SafeFileHandle handle = CreateFile(path, 0, FileShare.ReadWrite | FileShare.Delete, nint.Zero, 3, BackupSemantics, nint.Zero);
                 return !handle.IsInvalid && GetFileInformationByHandle(handle, out ByHandleFileInformation information)
-                    ? $"win:{information._volumeSerialNumber:x8}" : null;
+                    ? $"win:{information._volumeSerialNumber:x8}"
+                    : null;
             }
 
             if (OperatingSystem.IsLinux())
@@ -28,7 +29,8 @@ internal static class NativeFontFileSystem
                 const uint MountIdMask = 0x00001000;
                 return Statx(AtFileDescriptorCurrentWorkingDirectory, path, 0, StatxBasicStats | MountIdMask, out StatxBuffer information) == 0
                     && (information._mask & MountIdMask) != 0
-                    ? $"unix:{information._deviceMajor:x8}:{information._deviceMinor:x8}:{information._mountId:x16}" : null;
+                        ? $"unix:{information._deviceMajor:x8}:{information._deviceMinor:x8}:{information._mountId:x16}"
+                        : null;
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DllNotFoundException or EntryPointNotFoundException)
@@ -43,7 +45,7 @@ internal static class NativeFontFileSystem
     {
         if (OperatingSystem.IsWindows())
         {
-            return CreateDirectory(path, IntPtr.Zero) ? true : Marshal.GetLastWin32Error() == 183 && Directory.Exists(path) ? false : null;
+            return CreateDirectory(path, nint.Zero) ? true : Marshal.GetLastWin32Error() == 183 && Directory.Exists(path) ? false : null;
         }
 
         if (OperatingSystem.IsLinux())
@@ -117,11 +119,11 @@ internal static class NativeFontFileSystem
     internal static extern int Statx(int directoryFileDescriptor, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags, uint mask, out StatxBuffer buffer);
 
     [DllImport("kernel32.dll", EntryPoint = "CreateFileW", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateFile(string fileName, uint access, FileShare share, IntPtr security, uint creation, uint flags, IntPtr template);
+    private static extern SafeFileHandle CreateFile(string fileName, uint access, FileShare share, nint security, uint creation, uint flags, nint template);
 
     [DllImport("kernel32.dll", EntryPoint = "CreateDirectoryW", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CreateDirectory(string path, IntPtr security);
+    private static extern bool CreateDirectory(string path, nint security);
 
     [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
     private static extern int Mkdir([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);

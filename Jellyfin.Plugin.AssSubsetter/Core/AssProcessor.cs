@@ -320,9 +320,9 @@ public partial class AssProcessor
             else if (inEvents)
             {
                 outputLine = trimmed.StartsWith("Dialogue:", StringComparison.OrdinalIgnoreCase) ||
-                             trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase)
-                    ? RewriteFnTags(line, fontNameMap)
-                    : line;
+                    trimmed.StartsWith("Comment:", StringComparison.OrdinalIgnoreCase)
+                        ? RewriteFnTags(line, fontNameMap)
+                        : line;
             }
             else
             {

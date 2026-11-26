@@ -95,19 +95,23 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// </summary>
     internal int ActiveBackgroundConversionCount => _scheduler.Count;
 
-    /// <inheritdoc />
+    /// <summary>Completes startup of the cache service after its scheduler has been initialized.</summary>
+    /// <param name="cancellationToken">The host startup token supplied by the hosted-service contract.</param>
+    /// <returns>A completed startup task.</returns>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
+    /// <summary>Stops the background subtitle conversion scheduler.</summary>
+    /// <param name="cancellationToken">A token that limits the wait for the scheduler to stop.</param>
+    /// <returns>A task representing shutdown of the background workers.</returns>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         await _scheduler.StopAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
+    /// <summary>Stops and disposes the background conversion scheduler.</summary>
     public void Dispose()
     {
         Dispose(true);

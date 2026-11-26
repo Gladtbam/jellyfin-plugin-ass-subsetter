@@ -281,11 +281,14 @@ public sealed class FontRelationshipClassifier
 
         // Only small differences are reported. One extra match proves the limit was exceeded;
         // later rules inspect the original evidence rather than this bounded list.
-        uint[] result = [.. left.CharacterFingerprints
-            .Where(pair => !right.CharacterFingerprints.TryGetValue(pair.Key, out ReadOnlyMemory<byte> value)
-                || !Equal(pair.Value, value))
-            .Select(pair => pair.Key)
-            .Take(MaxSmallGlyphDifferences + 1)];
+        uint[] result =
+        [
+            .. left.CharacterFingerprints
+                .Where(pair => !right.CharacterFingerprints.TryGetValue(pair.Key, out ReadOnlyMemory<byte> value)
+                    || !Equal(pair.Value, value))
+                .Select(pair => pair.Key)
+                .Take(MaxSmallGlyphDifferences + 1)
+        ];
         if (result.Length > MaxSmallGlyphDifferences)
         {
             return [];

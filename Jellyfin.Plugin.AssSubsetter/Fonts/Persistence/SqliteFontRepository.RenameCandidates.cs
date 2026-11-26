@@ -11,7 +11,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Stores derived rename candidates separately from execution authorization.</summary>
+/// <content>Stores derived rename candidates separately from execution authorization.</content>
 public sealed partial class SqliteFontRepository
 {
     internal const string RenameStateRowsSql = """
@@ -59,7 +59,9 @@ public sealed partial class SqliteFontRepository
         )
         """;
 
-    /// <inheritdoc/>
+    /// <summary>Returns interrupted candidate calculations to the durable pending queue during host startup.</summary>
+    /// <param name="cancellationToken">Cancels recovery.</param>
+    /// <returns>A task representing recovery.</returns>
     public Task RecoverRenameCandidateRefreshAsync(CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -99,7 +101,14 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Atomically accepts a refresh request and protects its calculation identity.</summary>
+    /// <param name="request">The proposed immutable request.</param>
+    /// <param name="rules">Exact desired naming rules.</param>
+    /// <param name="requirements">Current compatible analysis inputs.</param>
+    /// <param name="onlyIfNeeded">Avoids automatic retries of terminal contexts.</param>
+    /// <param name="cancellationToken">Cancels the transaction.</param>
+    /// <returns>The accepted request, or null when automatic refresh is unnecessary.</returns>
+    /// <exception cref="InvalidOperationException">The idempotency key belongs to another operation or the requested analysis and naming inputs are no longer current.</exception>
     public Task<OperationRequest?> CreateRenameCandidateRefreshAsync(OperationRequest request, FontNamingRules rules, FontRenameCandidateReadRequirements requirements, bool onlyIfNeeded, CancellationToken cancellationToken)
         => _database.WriteAsync<OperationRequest?>(
             async (connection, token) =>
@@ -187,7 +196,9 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Claims all currently pending requests sharing the oldest calculation root.</summary>
+    /// <param name="cancellationToken">Cancels the transaction.</param>
+    /// <returns>Original request identities in claim order.</returns>
     public Task<IReadOnlyList<OperationRequest>> ClaimRenameCandidateRefreshGroupAsync(CancellationToken cancellationToken)
         => _database.WriteAsync<IReadOnlyList<OperationRequest>>(
             async (connection, token) =>
@@ -245,7 +256,14 @@ public sealed partial class SqliteFontRepository
             && publication.Input.EvidenceFingerprint == requirements.EvidenceFingerprint && payload.RuleFingerprint == requirements.RuleFingerprint
             && payload.CalculatorVersion == requirements.CalculatorVersion;
 
-    /// <inheritdoc/>
+    /// <summary>Reads one status page, count and authorization context under the same snapshot.</summary>
+    /// <param name="status">The status category, one of <c>pending</c>, <c>skipped</c>, <c>failed</c>, <c>renamed</c>, or <c>rolledback</c>.</param>
+    /// <param name="page">The one-based page, with smaller values treated as 1.</param>
+    /// <param name="pageSize">The number of rows per page, clamped to the range 1 through 200.</param>
+    /// <param name="requirements">Current compatible inputs.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Only the requested rows and consistent metadata.</returns>
+    /// <exception cref="ArgumentException"><paramref name="status"/> is not a supported filename state.</exception>
     public async Task<FontRenameStatePage> LoadRenameStatePageAsync(string status, int page, int pageSize, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
     {
         ValidateRenameStateFilter(status);
@@ -280,7 +298,8 @@ public sealed partial class SqliteFontRepository
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             bool candidate = reader.GetInt32(1) == 0;
-            RenameItemRecord item = candidate ? CandidateStateItem(JsonSerializer.Deserialize<FontRenameCandidate>(reader.GetString(10))!)
+            RenameItemRecord item = candidate
+                ? CandidateStateItem(JsonSerializer.Deserialize<FontRenameCandidate>(reader.GetString(10))!)
                 : JsonSerializer.Deserialize<RenameItemRecord>(reader.GetString(10))!;
             long? batchId = await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetInt64(4);
             long? requestId = await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetInt64(5);
@@ -388,7 +407,10 @@ public sealed partial class SqliteFontRepository
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads lightweight publication and candidate metadata.</summary>
+    /// <param name="requirements">The current compatible inputs.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The stored context and its validity.</returns>
     public async Task<FontRenameCandidateReadContext> GetRenameCandidateContextAsync(FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
     {
         SqliteConnection connection = await _database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -398,7 +420,11 @@ public sealed partial class SqliteFontRepository
         return await ReadRenameCandidateContextAsync(connection, transaction, requirements, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Reads selected persisted candidates in one snapshot; null is a background full read.</summary>
+    /// <param name="fileIds">Exact selected IDs, or null for a background read.</param>
+    /// <param name="requirements">The current compatible inputs.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>The matching candidates and context.</returns>
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Only generated parameter names are interpolated; all IDs are bound parameters.")]
     public async Task<FontRenameCandidateSelection> LoadRenameCandidatesAsync(IReadOnlyList<long>? fileIds, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
     {
@@ -443,7 +469,12 @@ public sealed partial class SqliteFontRepository
         return new(context, [.. items.OrderBy(item => item.File.Id)]);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Updates candidate generation metadata for the current publication.</summary>
+    /// <param name="state">The desired state.</param>
+    /// <param name="requirements">The compatible inputs.</param>
+    /// <param name="cancellationToken">Cancels the transaction.</param>
+    /// <returns>The completed write.</returns>
+    /// <exception cref="InvalidOperationException">The publication or naming inputs changed, or a newer request replaced the calculation.</exception>
     public Task SetRenameCandidateStateAsync(FontRenameCandidateState state, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -464,7 +495,13 @@ public sealed partial class SqliteFontRepository
             },
             cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Atomically replaces candidates after validating publication and request identity.</summary>
+    /// <param name="preparation">The complete prepared result.</param>
+    /// <param name="requirements">The compatible inputs.</param>
+    /// <param name="expectedRequestId">The calculation request whose result may be saved, or <see langword="null"/> when no request owns the calculation.</param>
+    /// <param name="cancellationToken">Cancels and rolls back the write.</param>
+    /// <returns>The completed write.</returns>
+    /// <exception cref="InvalidOperationException">The preparation no longer matches the current publication, inventory generation, naming inputs, or calculation request.</exception>
     public Task SaveRenameCandidatesAsync(FontRenameCandidatePreparation preparation, FontRenameCandidateReadRequirements requirements, long? expectedRequestId, CancellationToken cancellationToken)
         => _database.WriteAsync(
             async (connection, token) =>
@@ -538,10 +575,15 @@ public sealed partial class SqliteFontRepository
         }
 
         bool current = compatible && state!.Status == FontRenameCandidateGenerationStatus.Ready;
-        string? reason = current ? null : publication is null ? "A complete current font analysis is required."
-            : state is null ? "Rename candidates have not been generated."
-            : state.Status == FontRenameCandidateGenerationStatus.Failed ? state.Error ?? "Rename candidate generation failed."
-            : "Rename candidates are " + state.Status.ToString().ToLowerInvariant() + ".";
+        string? reason = current
+            ? null
+            : publication is null
+                ? "A complete current font analysis is required."
+                : state is null
+                    ? "Rename candidates have not been generated."
+                    : state.Status == FontRenameCandidateGenerationStatus.Failed
+                        ? state.Error ?? "Rename candidate generation failed."
+                        : "Rename candidates are " + state.Status.ToString().ToLowerInvariant() + ".";
         return new(publication, state, current, reason);
     }
 

@@ -54,14 +54,18 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Subscribes to Jellyfin task completion and starts the durable operation dispatcher.</summary>
+    /// <param name="cancellationToken">A token that cancels startup.</param>
+    /// <returns>A task representing startup of the dispatcher.</returns>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _taskManager.TaskCompleted += OnTaskCompleted;
         return base.StartAsync(cancellationToken);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Unsubscribes from Jellyfin task completion and stops dispatching pending operations.</summary>
+    /// <param name="cancellationToken">A token that limits the wait for the dispatcher to stop.</param>
+    /// <returns>A task representing shutdown of the dispatcher.</returns>
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         _taskManager.TaskCompleted -= OnTaskCompleted;
@@ -107,7 +111,7 @@ public sealed class FontOperationRequestScheduler : BackgroundService, IFontOper
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Unsubscribes from Jellyfin task completion and disposes the dispatcher and its wake signal.</summary>
     public override void Dispose()
     {
         _taskManager.TaskCompleted -= OnTaskCompleted;

@@ -28,7 +28,8 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
         _readiness = readiness;
     }
 
-    /// <inheritdoc />
+    /// <summary>Wakes the restore worker to check for persisted requests. One pending signal covers any number of requests.</summary>
+    /// <exception cref="ObjectDisposedException">The worker has been disposed.</exception>
     public void Signal()
     {
         try
@@ -79,7 +80,7 @@ public sealed class FontRestoreRequestWorker : BackgroundService, IFontRestoreRe
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Disposes the restore background service and its wake signal.</summary>
     public override void Dispose()
     {
         base.Dispose();

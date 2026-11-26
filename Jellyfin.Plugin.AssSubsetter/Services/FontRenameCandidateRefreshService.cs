@@ -51,14 +51,18 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Subscribes to naming configuration changes and starts the candidate refresh worker.</summary>
+    /// <param name="cancellationToken">A token that cancels startup.</param>
+    /// <returns>A task representing startup of the refresh worker.</returns>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _subscription = _subscribe(Signal);
         return base.StartAsync(cancellationToken);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Removes the configuration subscription and stops the candidate refresh worker.</summary>
+    /// <param name="cancellationToken">A token that limits the wait for the worker to stop.</param>
+    /// <returns>A task representing shutdown of the refresh worker.</returns>
     public override Task StopAsync(CancellationToken cancellationToken)
     {
         _subscription?.Dispose();
@@ -66,7 +70,7 @@ public sealed class FontRenameCandidateRefreshService : BackgroundService
         return base.StopAsync(cancellationToken);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Disposes the configuration subscription, candidate refresh worker, and wake signal.</summary>
     public override void Dispose()
     {
         _subscription?.Dispose();

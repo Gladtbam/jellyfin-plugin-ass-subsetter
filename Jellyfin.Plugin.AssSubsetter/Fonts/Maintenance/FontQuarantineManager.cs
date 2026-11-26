@@ -295,8 +295,8 @@ public sealed class FontQuarantineManager
         MaintenanceBatchStatus status = manifest.Items
             .Where(item => selected.Contains(item.FileId))
             .All(item => item.Status == QuarantineItemStatus.Restored)
-            ? MaintenanceBatchStatus.Complete
-            : MaintenanceBatchStatus.Partial;
+                ? MaintenanceBatchStatus.Complete
+                : MaintenanceBatchStatus.Partial;
         batch = BatchWithManifest(batch, manifest, status, _timeProvider.GetUtcNow());
         await PersistAsync(batch with { Items = [] }, manifest, CancellationToken.None).ConfigureAwait(false);
         return batch;
@@ -757,64 +757,76 @@ public sealed class FontQuarantineManager
     {
         Dictionary<(long Left, long Right), FontRelationRecord> relations = analysis.Relations
             .ToDictionary(relation => (relation.LeftFaceId, relation.RightFaceId));
-        QuarantineManifestItem[] items = [.. selectedFileIds.Distinct().Order().Select(fileId =>
-        {
-            if (!files.TryGetValue(fileId, out FontFileRecord? file))
+        QuarantineManifestItem[] items =
+        [
+            .. selectedFileIds.Distinct().Order().Select(fileId =>
             {
-                throw new InvalidOperationException($"Selected physical Font File {fileId} is not in the published inventory.");
-            }
+                if (!files.TryGetValue(fileId, out FontFileRecord? file))
+                {
+                    throw new InvalidOperationException($"Selected physical Font File {fileId} is not in the published inventory.");
+                }
 
-            if (file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Protected)
-                || file.LinkKind != FontLinkKind.None
-                || file.Health != FontFileHealth.Healthy)
-            {
-                throw new InvalidOperationException($"Selected physical Font File {fileId} is protected or unsafe.");
-            }
+                if (file.DirectoryPolicy.HasFlag(FontDirectoryPolicy.Protected)
+                    || file.LinkKind != FontLinkKind.None
+                    || file.Health != FontFileHealth.Healthy)
+                {
+                    throw new InvalidOperationException($"Selected physical Font File {fileId} is protected or unsafe.");
+                }
 
-            DuplicateGroupRecord[] groups = [.. analysis.Groups
-                .Where(group => group.Members.Any(member => member.FileId == fileId
-                    && member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate))];
-            if (groups.Length == 0)
-            {
-                throw new InvalidOperationException($"Selected physical Font File {fileId} is not a verified quarantine candidate.");
-            }
+                DuplicateGroupRecord[] groups =
+                [
+                    .. analysis.Groups
+                        .Where(group => group.Members.Any(member => member.FileId == fileId
+                            && member.Decision == DuplicateGroupMemberDecision.QuarantineCandidate))
+                ];
+                if (groups.Length == 0)
+                {
+                    throw new InvalidOperationException($"Selected physical Font File {fileId} is not a verified quarantine candidate.");
+                }
 
-            FontFileRecord[] retainedFiles = [.. groups
-                .SelectMany(group => group.Members)
-                .Where(member => member.Decision == DuplicateGroupMemberDecision.Retained)
-                .Select(member => files[member.FileId])
-                .DistinctBy(replacement => replacement.Id)];
-            QuarantineFaceReplacementProof[] faceProofs = [.. file.Faces.Select(face => CreateFaceReplacementProof(face, retainedFiles, relations))];
-            QuarantineReplacementEvidence[] replacements = [.. faceProofs
-                .Select(proof => files[proof.ReplacementFileId])
-                .DistinctBy(replacement => replacement.Id)
-                .Select(replacement => new QuarantineReplacementEvidence(
-                    replacement.Id,
-                    replacement.Path,
-                    replacement.Size,
-                    replacement.Sha256))];
-            if (replacements.Length == 0)
-            {
-                throw new InvalidOperationException($"Selected physical Font File {fileId} has no retained replacement.");
-            }
+                FontFileRecord[] retainedFiles =
+                [
+                    .. groups
+                        .SelectMany(group => group.Members)
+                        .Where(member => member.Decision == DuplicateGroupMemberDecision.Retained)
+                        .Select(member => files[member.FileId])
+                        .DistinctBy(replacement => replacement.Id)
+                ];
+                QuarantineFaceReplacementProof[] faceProofs = [.. file.Faces.Select(face => CreateFaceReplacementProof(face, retainedFiles, relations))];
+                QuarantineReplacementEvidence[] replacements =
+                [
+                    .. faceProofs
+                        .Select(proof => files[proof.ReplacementFileId])
+                        .DistinctBy(replacement => replacement.Id)
+                        .Select(replacement => new QuarantineReplacementEvidence(
+                            replacement.Id,
+                            replacement.Path,
+                            replacement.Size,
+                            replacement.Sha256))
+                ];
+                if (replacements.Length == 0)
+                {
+                    throw new InvalidOperationException($"Selected physical Font File {fileId} has no retained replacement.");
+                }
 
-            string itemDirectory = Path.Combine(BatchDirectory(batch.Id), "items");
-            string stem = fileId.ToString("D20", CultureInfo.InvariantCulture);
-            return new QuarantineManifestItem
-            {
-                FileId = fileId,
-                SourcePath = file.Path,
-                SourcePhysicalIdentity = file.PhysicalIdentity,
-                StagingPath = Path.Combine(itemDirectory, stem + ".stage"),
-                QuarantinePath = Path.Combine(itemDirectory, stem + ".font"),
-                Size = file.Size,
-                ModifiedUtc = file.ModifiedUtc,
-                Sha256 = file.Sha256,
-                Replacements = replacements,
-                FaceReplacementProofs = faceProofs,
-                Status = QuarantineItemStatus.Pending
-            };
-        })];
+                string itemDirectory = Path.Combine(BatchDirectory(batch.Id), "items");
+                string stem = fileId.ToString("D20", CultureInfo.InvariantCulture);
+                return new QuarantineManifestItem
+                {
+                    FileId = fileId,
+                    SourcePath = file.Path,
+                    SourcePhysicalIdentity = file.PhysicalIdentity,
+                    StagingPath = Path.Combine(itemDirectory, stem + ".stage"),
+                    QuarantinePath = Path.Combine(itemDirectory, stem + ".font"),
+                    Size = file.Size,
+                    ModifiedUtc = file.ModifiedUtc,
+                    Sha256 = file.Sha256,
+                    Replacements = replacements,
+                    FaceReplacementProofs = faceProofs,
+                    Status = QuarantineItemStatus.Pending
+                };
+            })
+        ];
         return new QuarantineManifest
         {
             Version = 2,

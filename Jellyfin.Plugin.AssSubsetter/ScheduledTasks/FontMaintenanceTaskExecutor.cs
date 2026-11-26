@@ -125,7 +125,7 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         _signalPendingRequests = signalPendingRequests;
     }
 
-    /// <inheritdoc/>
+    /// <summary>Gets a value indicating whether a font operation holds the shared maintenance slot.</summary>
     public bool IsBusy
     {
         get
@@ -137,7 +137,12 @@ public sealed partial class FontMaintenanceTaskExecutor : IFontMaintenanceTaskEx
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Consumes existing durable authorization without synthesizing scheduled work.</summary>
+    /// <param name="kind">The pending operation kind.</param>
+    /// <param name="progress">Receives execution progress.</param>
+    /// <param name="cancellationToken">Cancels background execution.</param>
+    /// <returns>The consumed operation, or a deferred result while another task is active or its authorization was already claimed.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="kind"/> has no supported scheduled operation.</exception>
     public Task<FontTaskExecutionResult> ExecutePendingOperationAsync(FontOperationKind kind, IProgress<double> progress, CancellationToken cancellationToken)
         => kind switch
         {

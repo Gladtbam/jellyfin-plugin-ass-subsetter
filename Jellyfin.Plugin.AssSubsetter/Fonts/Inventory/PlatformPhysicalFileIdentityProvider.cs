@@ -27,7 +27,9 @@ public sealed class PlatformPhysicalFileIdentityProvider : IPhysicalFileIdentity
             {
                 const uint LinkCountMask = 0x00000004;
                 return Statx(AtFileDescriptorCurrentWorkingDirectory, path, 0, LinkCountMask, out StatxBuffer information) == 0
-                    && (information._mask & LinkCountMask) != 0 ? information._numberOfLinks : null;
+                    && (information._mask & LinkCountMask) != 0
+                        ? information._numberOfLinks
+                        : null;
             }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or DllNotFoundException or EntryPointNotFoundException)

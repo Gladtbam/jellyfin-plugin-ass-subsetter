@@ -9,7 +9,9 @@ namespace Jellyfin.Plugin.AssSubsetter.Middleware;
 /// </summary>
 public class SubtitleInterceptorStartupFilter : IConfigureOptions<MvcOptions>
 {
-    /// <inheritdoc />
+    /// <summary>Registers the subtitle interceptor as an MVC resource filter so it runs after authorization.</summary>
+    /// <param name="options">The MVC options that receive the subtitle filter.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
     public void Configure(MvcOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

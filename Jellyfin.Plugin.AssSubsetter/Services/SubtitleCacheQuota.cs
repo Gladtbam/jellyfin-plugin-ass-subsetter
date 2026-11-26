@@ -7,6 +7,9 @@ using Microsoft.Extensions.Logging;
 namespace Jellyfin.Plugin.AssSubsetter.Services;
 
 /// <summary>Tracks committed subtitle cache bytes and serializes publication with eviction.</summary>
+/// <param name="directory">The subtitle cache directory.</param>
+/// <param name="logger">The cache diagnostics logger.</param>
+/// <param name="timeProvider">The clock used to measure the interval between scans.</param>
 internal sealed class SubtitleCacheQuota(string directory, ILogger logger, TimeProvider timeProvider)
 {
     private static readonly TimeSpan _recheckInterval = TimeSpan.FromSeconds(30);

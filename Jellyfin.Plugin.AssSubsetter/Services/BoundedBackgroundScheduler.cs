@@ -90,7 +90,8 @@ internal sealed class BoundedBackgroundScheduler : IAsyncDisposable
         }
     }
 
-    /// <inheritdoc />
+    /// <summary>Closes the job queue, signals cancellation, and waits for the workers to exit.</summary>
+    /// <returns>A value task representing shutdown of the scheduler.</returns>
     public ValueTask DisposeAsync() => new(StopAsync());
 
     private async Task StopCoreAsync()

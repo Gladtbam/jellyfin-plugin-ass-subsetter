@@ -5,14 +5,17 @@ using Microsoft.Data.Sqlite;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Catalog space maintenance, performed outside a SQLite transaction.</summary>
+/// <content>Catalog space maintenance, performed outside a SQLite transaction.</content>
 public sealed partial class SqliteFontRepository
 {
     // VACUUM rewrites the whole catalog. Leave small amounts of free space for the next generation to reuse.
     private const long MinimumReclaimableBytes = 4L * 1024 * 1024;
     private const int MinimumFreePagePercentage = 20;
 
-    /// <inheritdoc/>
+    /// <summary>Refreshes SQLite query statistics, attempts to truncate the WAL, and compacts the catalog when enough space can be reclaimed.</summary>
+    /// <param name="cancellationToken">Cancels the maintenance operation between SQLite commands.</param>
+    /// <returns>The bytes reclaimed from the main database and a deferral reason if the database is busy or disk space is insufficient.</returns>
+    /// <remarks>Compaction requires at least 4 MiB of free pages and a free page share of at least 20 percent.</remarks>
     public Task<(long ReclaimedBytes, string? DeferredReason)> OptimizeDatabaseAsync(CancellationToken cancellationToken)
         => _database.WriteAsync<(long ReclaimedBytes, string? DeferredReason)>(OptimizeDatabaseCoreAsync, cancellationToken);
 

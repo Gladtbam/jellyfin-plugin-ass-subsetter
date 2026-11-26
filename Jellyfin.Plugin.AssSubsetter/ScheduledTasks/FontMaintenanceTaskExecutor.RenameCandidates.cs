@@ -8,7 +8,7 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
 namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
-/// <summary>Runs candidate calculation within the existing shared font task gate.</summary>
+/// <content>Runs candidate calculation within the existing shared font task gate.</content>
 public sealed partial class FontMaintenanceTaskExecutor
 {
     private async Task<FontTaskExecutionResult> RunCandidateRefreshAsync(CancellationToken cancellationToken)

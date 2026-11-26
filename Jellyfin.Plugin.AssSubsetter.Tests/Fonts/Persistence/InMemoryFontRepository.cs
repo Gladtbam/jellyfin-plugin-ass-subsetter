@@ -770,7 +770,13 @@ internal sealed class InMemoryFontRepository : IFontRepository
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>Accepts a rename candidate refresh against the current state of the in-memory catalog.</summary>
+    /// <param name="request">The proposed immutable refresh request.</param>
+    /// <param name="rules">The naming rules for the calculation.</param>
+    /// <param name="requirements">The expected publication and naming inputs.</param>
+    /// <param name="onlyIfNeeded">Whether to skip requests that do not require a new calculation.</param>
+    /// <param name="cancellationToken">Cancels request acceptance.</param>
+    /// <returns>The accepted request, or <see langword="null"/> when a new calculation is unnecessary.</returns>
     public Task<OperationRequest?> CreateRenameCandidateRefreshAsync(OperationRequest request, FontNamingRules rules, FontRenameCandidateReadRequirements requirements, bool onlyIfNeeded, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

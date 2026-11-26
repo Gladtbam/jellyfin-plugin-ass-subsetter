@@ -437,7 +437,8 @@ public sealed class FontManagementQuery
     private static FontScanOutcomeDto? ReadScanResult(OperationRequest? request)
         {
         FontScanOutcome? result = request?.ResultJson is string json
-            ? JsonSerializer.Deserialize<FontScanOutcome>(json, JsonSerializerOptions.Web) : null;
+            ? JsonSerializer.Deserialize<FontScanOutcome>(json, JsonSerializerOptions.Web)
+            : null;
         return result is null ? null : new FontScanOutcomeDto(result.GenerationId, result.AnalysisBatchId, result.Changed, result.ChangeReasons);
     }
 
@@ -610,14 +611,13 @@ public sealed class FontManagementQuery
             faceFiles.TryGetValue(relation.RightFaceId, out var right);
             string[] sharedNames = left.Face is null || right.Face is null
                 ? []
-                :
-                [
+                : [
                     .. left.Face.Names.Intersect(right.Face.Names, StringComparer.OrdinalIgnoreCase)
                         .Where(name => !string.IsNullOrWhiteSpace(name))
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .Order(StringComparer.OrdinalIgnoreCase)
                         .Take(12)
-                ];
+                  ];
             return new PairEvidenceDto(
                 relation.LeftFaceId,
                 relation.RightFaceId,

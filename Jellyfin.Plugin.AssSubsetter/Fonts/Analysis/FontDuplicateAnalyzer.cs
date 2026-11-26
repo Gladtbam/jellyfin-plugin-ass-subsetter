@@ -258,11 +258,11 @@ public sealed class FontDuplicateAnalyzer
                     or FontRelationshipKind.SameIdentityContentConflict
                     or FontRelationshipKind.PostScriptNameConflict
                     or FontRelationshipKind.CrossNameConflict
-                    ? Enum.GetValues<FontSemanticGroup>()
-                        .Where(group => !SameSemanticGroup(left, right, group))
-                        .Select(group => group.ToString())
-                        .ToArray()
-                    : []
+                        ? Enum.GetValues<FontSemanticGroup>()
+                            .Where(group => !SameSemanticGroup(left, right, group))
+                            .Select(group => group.ToString())
+                            .ToArray()
+                        : []
             },
             _jsonOptions);
         return new FontRelationRecord

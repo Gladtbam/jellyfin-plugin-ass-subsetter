@@ -16,7 +16,7 @@ public static partial class HarfBuzzSubsetNative
 
     [LibraryImport(LibName, EntryPoint = "hb_version_string")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbVersionString();
+    private static partial nint HbVersionString();
 
     /// <summary>Returns the loaded HarfBuzz native version used to invalidate deep evidence after a host upgrade.</summary>
     /// <returns>The native version string, or <see langword="null"/> when unavailable.</returns>
@@ -35,37 +35,37 @@ public static partial class HarfBuzzSubsetNative
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_blob_create")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbBlobCreate(IntPtr data, uint length, int memoryMode, IntPtr userData, IntPtr destroy);
+    private static partial nint HbBlobCreate(nint data, uint length, int memoryMode, nint userData, nint destroy);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_face_create")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbFaceCreate(IntPtr blob, uint index);
+    private static partial nint HbFaceCreate(nint blob, uint index);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_subset_input_create_or_fail")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbSubsetInputCreateOrFail();
+    private static partial nint HbSubsetInputCreateOrFail();
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_subset_input_unicode_set")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbSubsetInputUnicodeSet(IntPtr input);
+    private static partial nint HbSubsetInputUnicodeSet(nint input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_set_add")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial void HbSetAdd(IntPtr set, uint codepoint);
+    private static partial void HbSetAdd(nint set, uint codepoint);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_subset_or_fail")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbSubsetOrFail(IntPtr face, IntPtr input);
+    private static partial nint HbSubsetOrFail(nint face, nint input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_face_reference_blob")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial IntPtr HbFaceReferenceBlob(IntPtr face);
+    private static partial nint HbFaceReferenceBlob(nint face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_blob_get_data")]
@@ -75,17 +75,17 @@ public static partial class HarfBuzzSubsetNative
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_subset_input_destroy")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial void HbSubsetInputDestroy(IntPtr input);
+    private static partial void HbSubsetInputDestroy(nint input);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_face_destroy")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial void HbFaceDestroy(IntPtr face);
+    private static partial void HbFaceDestroy(nint face);
 
     // codeql[cs/unmanaged-code] Justification: Required for HarfBuzz native interop.
     [LibraryImport(LibName, EntryPoint = "hb_blob_destroy")]
     [UnmanagedCallConv(CallConvs = new[] { typeof(CallConvCdecl) })]
-    private static partial void HbBlobDestroy(IntPtr blob);
+    private static partial void HbBlobDestroy(nint blob);
 
     /// <summary>
     ///     Subsets a font in memory keeping only the specified codepoints.
@@ -109,8 +109,8 @@ public static partial class HarfBuzzSubsetNative
             var dataPtr = pin.AddrOfPinnedObject();
             // 0 = HB_MEMORY_MODE_DUPLICATE, 1 = HB_MEMORY_MODE_READONLY
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
-            var blob = HbBlobCreate(dataPtr, (uint)fontData.Length, 1, IntPtr.Zero, IntPtr.Zero);
-            if (blob == IntPtr.Zero)
+            var blob = HbBlobCreate(dataPtr, (uint)fontData.Length, 1, nint.Zero, nint.Zero);
+            if (blob == nint.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_blob_create failed.");
                 return null;
@@ -119,7 +119,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var face = HbFaceCreate(blob, faceIndex);
-            if (face == IntPtr.Zero)
+            if (face == nint.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_face_create failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
@@ -130,7 +130,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var input = HbSubsetInputCreateOrFail();
-            if (input == IntPtr.Zero)
+            if (input == nint.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_subset_input_create_or_fail failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
@@ -143,7 +143,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var unicodeSet = HbSubsetInputUnicodeSet(input);
-            if (unicodeSet == IntPtr.Zero)
+            if (unicodeSet == nint.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_subset_input_unicode_set failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
@@ -164,7 +164,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var subsetFace = HbSubsetOrFail(face, input);
-            if (subsetFace == IntPtr.Zero)
+            if (subsetFace == nint.Zero)
             {
                 logger.LogWarning("[AssSubsetter] hb_subset_or_fail failed. The font might be unsupported or empty.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
@@ -179,7 +179,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var resultBlob = HbFaceReferenceBlob(subsetFace);
-            if (resultBlob == IntPtr.Zero)
+            if (resultBlob == nint.Zero)
             {
                 logger.LogError("[AssSubsetter] hb_face_reference_blob failed.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
@@ -196,7 +196,7 @@ public static partial class HarfBuzzSubsetNative
             // codeql[cs/call-to-unmanaged-code] Justification: Native API call.
 
             var resultDataPtr = HbBlobGetData(resultBlob, out uint length);
-            if (resultDataPtr == IntPtr.Zero || length == 0)
+            if (resultDataPtr == nint.Zero || length == 0)
             {
                 logger.LogError("[AssSubsetter] hb_blob_get_data failed or returned 0 length.");
                 // codeql[cs/call-to-unmanaged-code] Justification: Native API call.

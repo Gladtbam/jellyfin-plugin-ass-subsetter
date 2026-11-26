@@ -43,7 +43,7 @@ public partial class AssToSupConverter : IDisposable
 
     private PluginConfiguration Config => _configFactory();
 
-    /// <inheritdoc />
+    /// <summary>Runs converter cleanup and suppresses finalization.</summary>
     public void Dispose()
     {
         Dispose(true);
@@ -74,8 +74,9 @@ public partial class AssToSupConverter : IDisposable
                 _logger.LogInformation("[AssSubsetter] Starting ASS to SUP conversion for {File} ({Width}x{Height})...", inputAssPath, videoWidth, videoHeight);
             }
 
-            SubsetArtifact? artifact = _assProcessor is null ? null :
-                await _assProcessor.GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+            SubsetArtifact? artifact = _assProcessor is null
+                ? null
+                : await _assProcessor.GenerateSubsetArtifactAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
             if (artifact is null || artifact.HasMissingFonts || artifact.Fonts.Any(font => font.Data.Length == 0))
             {
                 return false;
@@ -147,15 +148,15 @@ public partial class AssToSupConverter : IDisposable
         List<AssEvent> events,
         CancellationToken cancellationToken)
     {
-        IntPtr library = IntPtr.Zero;
-        IntPtr renderer = IntPtr.Zero;
-        IntPtr track = IntPtr.Zero;
+        nint library = nint.Zero;
+        nint renderer = nint.Zero;
+        nint track = nint.Zero;
 
         try
         {
             // Initialize libass
             library = LibassNative.AssLibraryInit();
-            if (library == IntPtr.Zero)
+            if (library == nint.Zero)
             {
                 _logger.LogError("[AssSubsetter] Failed to initialize libass library.");
                 return false;
@@ -172,7 +173,7 @@ public partial class AssToSupConverter : IDisposable
 
             // Initialize renderer
             renderer = LibassNative.AssRendererInit(library);
-            if (renderer == IntPtr.Zero)
+            if (renderer == nint.Zero)
             {
                 _logger.LogError("[AssSubsetter] Failed to initialize libass renderer.");
                 return false;
@@ -192,7 +193,7 @@ public partial class AssToSupConverter : IDisposable
                 track = LibassNative.AssReadMemory(library, data, (nuint)assBytes.Length, null);
             }
 
-            if (track == IntPtr.Zero)
+            if (track == nint.Zero)
             {
                 _logger.LogError("[AssSubsetter] Failed to load prepared ASS artifact.");
                 return false;
@@ -219,7 +220,7 @@ public partial class AssToSupConverter : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // Render frame at this timestamp
-                IntPtr imagePtr = LibassNative.AssRenderFrame(renderer, track, timeMs, out int changed);
+                nint imagePtr = LibassNative.AssRenderFrame(renderer, track, timeMs, out int changed);
 
                 if (changed == 0 && wasVisible)
                 {
@@ -227,7 +228,7 @@ public partial class AssToSupConverter : IDisposable
                     continue;
                 }
 
-                if (imagePtr == IntPtr.Zero)
+                if (imagePtr == nint.Zero)
                 {
                     // No subtitle at this time
                     if (wasVisible)
@@ -299,17 +300,17 @@ public partial class AssToSupConverter : IDisposable
         finally
         {
             // Cleanup native resources
-            if (track != IntPtr.Zero)
+            if (track != nint.Zero)
             {
                 LibassNative.AssFreeTrack(track);
             }
 
-            if (renderer != IntPtr.Zero)
+            if (renderer != nint.Zero)
             {
                 LibassNative.AssRendererDone(renderer);
             }
 
-            if (library != IntPtr.Zero)
+            if (library != nint.Zero)
             {
                 LibassNative.AssLibraryDone(library);
             }
@@ -320,7 +321,7 @@ public partial class AssToSupConverter : IDisposable
     ///     Composes all ASS_Image layers into an RGBA bitmap covering only the clipped subtitle region.
     /// </summary>
     private static byte[] ComposeFrame(
-        IntPtr firstImage,
+        nint firstImage,
         int width,
         int height,
         out int cropX,
@@ -329,12 +330,12 @@ public partial class AssToSupConverter : IDisposable
         out int cropH)
     {
         int minX = width, minY = height, maxX = 0, maxY = 0;
-        IntPtr current = firstImage;
-        while (current != IntPtr.Zero)
+        nint current = firstImage;
+        while (current != nint.Zero)
         {
             var img = Marshal.PtrToStructure<LibassNative.AssImage>(current);
 
-            if (img._w > 0 && img._h > 0 && img._bitmap != IntPtr.Zero)
+            if (img._w > 0 && img._h > 0 && img._bitmap != nint.Zero)
             {
                 minX = Math.Min(minX, Math.Max(img._dstX, 0));
                 minY = Math.Min(minY, Math.Max(img._dstY, 0));
@@ -359,10 +360,10 @@ public partial class AssToSupConverter : IDisposable
 
         // Translate each layer into crop coordinates while retaining libass's blend order and source stride.
         current = firstImage;
-        while (current != IntPtr.Zero)
+        while (current != nint.Zero)
         {
             var img = Marshal.PtrToStructure<LibassNative.AssImage>(current);
-            if (img._w > 0 && img._h > 0 && img._bitmap != IntPtr.Zero)
+            if (img._w > 0 && img._h > 0 && img._bitmap != nint.Zero)
             {
                 byte r = (byte)((img._color >> 24) & 0xFF);
                 byte g = (byte)((img._color >> 16) & 0xFF);

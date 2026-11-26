@@ -13,10 +13,12 @@ using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontDatabaseRows;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Database projections and bounded reads through the EF persistence model.</summary>
+/// <content>Database projections and bounded reads through the EF persistence model.</content>
 public sealed partial class SqliteFontRepository
 {
-    /// <inheritdoc/>
+    /// <summary>Counts the files and Faces in the published inventory.</summary>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The file and Face totals from one database snapshot.</returns>
     public async Task<(long FileCount, long FaceCount)> GetPublishedInventoryCountsAsync(CancellationToken cancellationToken)
     {
         FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
@@ -33,11 +35,17 @@ public sealed partial class SqliteFontRepository
         return (counts.Files, counts.Faces);
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads file and Face metadata from the currently published generation without large Unicode coverage arrays.</summary>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The published physical-file inventory.</returns>
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryAsync(CancellationToken cancellationToken)
         => LoadInventoryCoreAsync(null, false, cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Loads physical-file identity and generation evidence for the requested paths in the current publication.</summary>
+    /// <param name="paths">The inventory primary paths to match with the host's path comparison.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The evidence for matching inventory files from one published read snapshot.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="paths"/> is <see langword="null"/>.</exception>
     public async Task<IReadOnlyList<(string Path, string PhysicalIdentity, long GenerationId)>> LoadPublishedFileEvidenceByPathAsync(
         IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
     {
@@ -61,11 +69,17 @@ public sealed partial class SqliteFontRepository
         return [.. files.Where(file => requestedPaths.Contains(file.Path)).Select(file => (file.Path, file.PhysicalIdentity, file.GenerationId))];
     }
 
-    /// <inheritdoc/>
+    /// <summary>Loads complete published file and Face evidence, including Unicode coverage needed for scan reuse.</summary>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The published inventory for a new staged generation.</returns>
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryForReuseAsync(CancellationToken cancellationToken)
         => LoadInventoryCoreAsync(null, true, cancellationToken);
 
-    /// <inheritdoc/>
+    /// <summary>Loads file and Face metadata for the requested persisted generation, excluding Unicode coverage arrays.</summary>
+    /// <param name="generationId">The persisted generation identifier.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <returns>Physical files from that generation ordered by normalized path.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="generationId"/> is zero or negative.</exception>
     public Task<IReadOnlyList<FontFileRecord>> LoadInventoryAsync(long generationId, CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(generationId);
@@ -97,25 +111,31 @@ public sealed partial class SqliteFontRepository
         var metadata = await LoadFaceMetadataAsync(context, facesQuery.Select(face => face.Id), includeCoverage, cancellationToken).ConfigureAwait(false);
         ILookup<long, FontFaceRow> facesByFile = faces.ToLookup(face => face.FileId);
         ILookup<long, FontPathAliasRow> aliasesByFile = aliases.ToLookup(alias => alias.FileId);
-        return [.. files.Select(file => new FontFileRecord
-        {
-            Id = file.Id, GenerationId = file.GenerationId, Path = file.Path, NormalizedPath = file.NormalizedPath,
-            PhysicalIdentity = file.PhysicalIdentity, PathAliases = [.. aliasesByFile[file.Id].Select(alias => alias.Path)],
-            Size = file.Size, ModifiedUtc = ParseDate(file.ModifiedUtc), Sha256 = file.Sha256,
-            DirectoryPolicy = (FontDirectoryPolicy)file.DirectoryPolicy, LinkKind = (FontLinkKind)file.LinkKind,
-            Health = (FontFileHealth)file.Health, Error = file.Error,
-            Faces = [.. facesByFile[file.Id].Select(face => new FontFaceRecord
+        return
+        [
+            .. files.Select(file => new FontFileRecord
             {
-                Id = face.Id, FaceIndex = face.FaceIndex, StrictFingerprint = face.StrictFingerprint,
-                FamilyName = face.FamilyName, StyleName = face.StyleName, Weight = face.Weight, Width = face.Width,
-                Slant = face.Slant, IsItalic = face.IsItalic, IsFixedPitch = face.IsFixedPitch,
-                Technology = face.Technology, UnitsPerEm = face.UnitsPerEm, Version = face.Version,
-                RetentionScore = face.RetentionScore, IsRuntimePreferred = face.IsRuntimePreferred,
-                Names = [.. metadata.Names[face.Id].Select(name => name.Name)],
-                NameRecords = metadata.Evidence.GetValueOrDefault(face.Id) ?? [],
-                UnicodeCoverage = metadata.Coverage.GetValueOrDefault(face.Id) ?? []
-            })]
-        })];
+                Id = file.Id, GenerationId = file.GenerationId, Path = file.Path, NormalizedPath = file.NormalizedPath,
+                PhysicalIdentity = file.PhysicalIdentity, PathAliases = [.. aliasesByFile[file.Id].Select(alias => alias.Path)],
+                Size = file.Size, ModifiedUtc = ParseDate(file.ModifiedUtc), Sha256 = file.Sha256,
+                DirectoryPolicy = (FontDirectoryPolicy)file.DirectoryPolicy, LinkKind = (FontLinkKind)file.LinkKind,
+                Health = (FontFileHealth)file.Health, Error = file.Error,
+                Faces =
+                [
+                    .. facesByFile[file.Id].Select(face => new FontFaceRecord
+                    {
+                        Id = face.Id, FaceIndex = face.FaceIndex, StrictFingerprint = face.StrictFingerprint,
+                        FamilyName = face.FamilyName, StyleName = face.StyleName, Weight = face.Weight, Width = face.Width,
+                        Slant = face.Slant, IsItalic = face.IsItalic, IsFixedPitch = face.IsFixedPitch,
+                        Technology = face.Technology, UnitsPerEm = face.UnitsPerEm, Version = face.Version,
+                        RetentionScore = face.RetentionScore, IsRuntimePreferred = face.IsRuntimePreferred,
+                        Names = [.. metadata.Names[face.Id].Select(name => name.Name)],
+                        NameRecords = metadata.Evidence.GetValueOrDefault(face.Id) ?? [],
+                        UnicodeCoverage = metadata.Coverage.GetValueOrDefault(face.Id) ?? []
+                    })
+                ]
+            })
+        ];
     }
 
     private async Task<IReadOnlyList<RuntimeFontFace>> LoadRuntimeFacesCoreAsync(long? generationId, CancellationToken cancellationToken)

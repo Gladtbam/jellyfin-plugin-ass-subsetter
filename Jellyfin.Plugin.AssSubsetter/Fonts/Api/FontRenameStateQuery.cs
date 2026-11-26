@@ -38,11 +38,13 @@ public sealed class FontRenameStateQuery
         bool current = result.Context.IsCurrent && requirements == _candidates.ReadRequirements();
         var state = result.Context.State;
         var context = current && state is not null ? new FontRenameContextDto(state.GenerationId, state.AnalysisBatchId, state.Rules, state.RuleFingerprint) : null;
-        var generation = state is null ? null : new FontRenameCandidateStateDto(
-            (!current && state.Status == FontRenameCandidateGenerationStatus.Ready ? FontRenameCandidateGenerationStatus.Stale : state.Status).ToString().ToLowerInvariant(),
-            state.GeneratedUtc,
-            state.OperationRequestId,
-            state.Error);
+        var generation = state is null
+            ? null
+            : new FontRenameCandidateStateDto(
+                (!current && state.Status == FontRenameCandidateGenerationStatus.Ready ? FontRenameCandidateGenerationStatus.Stale : state.Status).ToString().ToLowerInvariant(),
+                state.GeneratedUtc,
+                state.OperationRequestId,
+                state.Error);
         var rows = result.Items.Select(row => new RenameStateItemDto(row.Key, row.MaintenanceBatchId, row.OperationRequestId, row.GenerationId, row.FileId, row.CanExecute && current, row.CanRollback, ToDto(row.Item))).ToArray();
         var publication = result.Context.Publication;
         var refreshRequirements = _candidates.ReadRequirements();
