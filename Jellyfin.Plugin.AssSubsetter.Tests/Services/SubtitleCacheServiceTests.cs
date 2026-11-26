@@ -5,7 +5,9 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
 using Jellyfin.Plugin.AssSubsetter.Core;
 using Jellyfin.Plugin.AssSubsetter.Helpers;
+using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -232,6 +234,153 @@ public sealed class SubtitleCacheServiceTests : IDisposable
         Assert.False(File.Exists(oldest));
         Assert.True(File.Exists(newest));
         Assert.True(File.Exists(unmanaged));
+    }
+
+    [Fact]
+    public async Task RestartedCacheServiceSharesOneQuotaScanAcrossConcurrentMisses()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string source = Path.Join(_tempDataPath, "cache-restart.ass");
+        await File.WriteAllTextAsync(source, "plain", token);
+        Guid originalId = Guid.NewGuid();
+        var existing = await _cacheService.GetOrGenerateSubtitleAsync(originalId, source, cancellationToken: token);
+        _cacheService.Dispose();
+        var logger = new QuotaScanLogger();
+        using var restarted = new SubtitleCacheService(() => _config, _assProcessor, null, _customCachePath, logger);
+
+        var hit = await restarted.GetOrGenerateSubtitleAsync(originalId, source, cancellationToken: token);
+        Assert.True(hit.IsReady);
+        Assert.Equal(existing.Path, hit.Path);
+        Assert.Equal(0, logger.DirectoryScans);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ =>
+            restarted.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: token)));
+        Assert.All(results, result => Assert.True(result.IsReady));
+        Assert.Equal(1, logger.DirectoryScans);
+    }
+
+    [Fact]
+    public async Task QuotaEvictionUsesPublishedSizeAndKeepsUnfinishedOutputs()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string oldest = Path.Join(_customCachePath, "older.ass");
+        string newer = Path.Join(_customCachePath, "newer.sup");
+        string unfinished = Path.Join(_customCachePath, $"cache.{Guid.NewGuid():N}.partial.mks");
+        await File.WriteAllBytesAsync(oldest, new byte[250 * 1024], token);
+        await File.WriteAllBytesAsync(newer, new byte[300 * 1024], token);
+        await File.WriteAllBytesAsync(unfinished, new byte[800 * 1024], token);
+        File.SetLastAccessTimeUtc(unfinished, DateTime.UtcNow.AddHours(-3));
+        File.SetLastAccessTimeUtc(oldest, DateTime.UtcNow.AddHours(-2));
+        File.SetLastAccessTimeUtc(newer, DateTime.UtcNow.AddHours(-1));
+        string source = Path.Join(_tempDataPath, "large-cache-output.ass");
+        await File.WriteAllTextAsync(source, "plain", token);
+        Func<PluginConfiguration> config = () => _config;
+        var processor = new Mock<AssProcessor>(config, _fontCache.Manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
+        processor.Setup(value => value.GenerateSubsetArtifactAsync(source, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SubsetArtifact(new string('a', 600 * 1024), []));
+        using var service = new SubtitleCacheService(config, processor.Object, null, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+
+        var generated = await service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: token);
+
+        Assert.True(generated.IsReady);
+        Assert.Equal(600 * 1024, new FileInfo(generated.Path).Length);
+        Assert.False(File.Exists(oldest));
+        Assert.True(File.Exists(newer));
+        Assert.True(File.Exists(unfinished));
+    }
+
+    [Fact]
+    public async Task QuotaSerializesConcurrentPublicationUsingCompletedFileSizes()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        string source = Path.Join(_tempDataPath, "concurrent-mux.ass");
+        await File.WriteAllTextAsync(source, "plain", token);
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int stagedOutputs = 0;
+        var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", async (startInfo, ct) =>
+        {
+            await File.WriteAllBytesAsync(startInfo.ArgumentList[^1], new byte[600 * 1024], ct);
+            if (Interlocked.Increment(ref stagedOutputs) == 2)
+            {
+                ready.TrySetResult();
+            }
+
+            await finish.Task.WaitAsync(ct);
+            return 0;
+        });
+        using var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        var first = service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: token);
+        var second = service.GetOrGenerateSubtitleAsync(Guid.NewGuid(), source, cancellationToken: token);
+        try
+        {
+            await ready.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+        }
+        finally
+        {
+            finish.TrySetResult();
+        }
+
+        await Task.WhenAll(first, second);
+        FileInfo published = Assert.Single(new DirectoryInfo(_customCachePath).GetFiles("*.mks"));
+        Assert.DoesNotContain(".partial.", published.Name, StringComparison.Ordinal);
+        Assert.Equal(600 * 1024, published.Length);
+    }
+
+    [Fact]
+    public async Task QuotaRefreshCountsExternalWritesAndUsesLatestAccessTimes()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string touched = Path.Join(_customCachePath, "touched.ass");
+        await File.WriteAllBytesAsync(touched, new byte[400 * 1024], token);
+        DateTime now = DateTime.UtcNow;
+        File.SetLastAccessTimeUtc(touched, now.AddHours(-3));
+        var clock = new QuotaTimeProvider();
+        var logger = new QuotaScanLogger();
+        var quota = new SubtitleCacheQuota(_customCachePath, logger, clock);
+        const long Limit = 1024 * 1024;
+        quota.EnsureCapacity(0, Limit);
+
+        string external = Path.Join(_customCachePath, "added-externally.sup");
+        await File.WriteAllBytesAsync(external, new byte[700 * 1024], token);
+        File.SetLastAccessTimeUtc(external, now.AddHours(-2));
+        File.SetLastAccessTimeUtc(touched, now);
+        clock.Timestamp = TimeSpan.FromMinutes(1).Ticks;
+
+        quota.EnsureCapacity(0, Limit);
+
+        Assert.Equal(2, logger.DirectoryScans);
+        Assert.True(File.Exists(touched));
+        Assert.False(File.Exists(external));
+    }
+
+    private sealed class QuotaTimeProvider : TimeProvider
+    {
+        internal long Timestamp { get; set; }
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Timestamp;
+    }
+
+    private sealed class QuotaScanLogger : ILogger<SubtitleCacheService>
+    {
+        private int _directoryScans;
+
+        internal int DirectoryScans => Volatile.Read(ref _directoryScans);
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).StartsWith("[AssSubsetter] Scanned subtitle cache directory", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref _directoryScans);
+            }
+        }
     }
 
     public void Dispose()

@@ -12,7 +12,8 @@ internal static class AtomicCacheFile
         string outputPath,
         Func<string, CancellationToken, Task<bool>> writer,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string, string, CancellationToken>? publish = null)
     {
         string fullOutputPath = Path.GetFullPath(outputPath);
         string outputDirectory = Path.GetDirectoryName(fullOutputPath)
@@ -34,7 +35,15 @@ internal static class AtomicCacheFile
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(partialPath, fullOutputPath, true);
+            if (publish is null)
+            {
+                File.Move(partialPath, fullOutputPath, true);
+            }
+            else
+            {
+                publish(partialPath, fullOutputPath, cancellationToken);
+            }
+
             return true;
         }
         finally

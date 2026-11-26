@@ -25,6 +25,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
 
     private readonly AsyncKeyedLocker<string> _fileLocks = new(StringComparer.Ordinal);
     private readonly ILogger<SubtitleCacheService> _logger;
+    private readonly SubtitleCacheQuota _quota;
     private readonly MksMuxer? _mksMuxer;
     private readonly BoundedBackgroundScheduler _scheduler;
     private bool _disposed;
@@ -76,9 +77,13 @@ public class SubtitleCacheService : IHostedService, IDisposable
         {
             Directory.CreateDirectory(CacheFolderPath);
         }
+
+        _quota = new SubtitleCacheQuota(CacheFolderPath, logger, TimeProvider.System);
     }
 
     private PluginConfiguration Config => _configFactory();
+
+    private long CacheCapacityBytes => (long)Config.MaxCacheSizeMB * 1024 * 1024;
 
     /// <summary>
     ///     Gets the cache folder path.
@@ -214,7 +219,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
             try
             {
                 long requiredSpace = File.Exists(originalAssPath) ? new FileInfo(originalAssPath).Length : 2 * 1024 * 1024;
-                EnforceCapacityLimit(requiredSpace);
+                _quota.EnsureCapacity(requiredSpace, CacheCapacityBytes);
             }
             catch (IOException ex)
             {
@@ -351,7 +356,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
             try
             {
                 long requiredSpace = File.Exists(originalAssPath) ? new FileInfo(originalAssPath).Length * 5 : 10 * 1024 * 1024;
-                EnforceCapacityLimit(requiredSpace);
+                _quota.EnsureCapacity(requiredSpace, CacheCapacityBytes);
             }
             catch (IOException ex)
             {
@@ -450,7 +455,7 @@ public class SubtitleCacheService : IHostedService, IDisposable
             try
             {
                 long requiredSpace = artifact.AssContent.Length + artifact.Fonts.Sum(font => (long)font.Data.Length);
-                EnforceCapacityLimit(Math.Max(requiredSpace, 1));
+                _quota.EnsureCapacity(Math.Max(requiredSpace, 1), CacheCapacityBytes);
             }
             catch (IOException ex)
             {
@@ -504,61 +509,6 @@ public class SubtitleCacheService : IHostedService, IDisposable
                 return success && (validation?.IsComplete ?? true) && StringComparer.Ordinal.Equals(outputPath, currentPath());
             },
             _logger,
-            cancellationToken);
-
-    private void EnforceCapacityLimit(long requiredSpace)
-    {
-        var dirInfo = new DirectoryInfo(CacheFolderPath);
-        long maxCacheSizeInBytes = (long)Config.MaxCacheSizeMB * 1024 * 1024;
-        var managedFiles = dirInfo.EnumerateFiles()
-            .Where(IsManagedCacheFile)
-            .ToArray();
-        long currentSize = managedFiles.Sum(f => f.Length);
-
-        if (currentSize + requiredSpace <= maxCacheSizeInBytes)
-        {
-            return;
-        }
-
-        if (_logger.IsEnabled(LogLevel.Information))
-        {
-            _logger.LogInformation("[AssSubsetter] Cache folder quota exceeded ({Current}MB / {Max}MB). Running LRU eviction...", currentSize / 1024 / 1024, Config.MaxCacheSizeMB);
-        }
-
-        var oldestFiles = managedFiles.OrderBy(f => f.LastAccessTime);
-
-        foreach (var file in oldestFiles)
-        {
-            if (currentSize + requiredSpace <= maxCacheSizeInBytes)
-            {
-                break;
-            }
-
-            try
-            {
-                long fileSize = file.Length;
-                file.Delete();
-                currentSize -= fileSize;
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    _logger.LogDebug("[AssSubsetter] LRU evicted oldest cache file: {Name}", file.Name);
-                }
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Failed to delete evicted cache file: {Name} (IO Error)", file.Name);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Failed to delete evicted cache file: {Name} (Permission Error)", file.Name);
-            }
-        }
-    }
-
-    private static bool IsManagedCacheFile(FileInfo file)
-    {
-        return file.Extension.Equals(".ass", StringComparison.OrdinalIgnoreCase) ||
-               file.Extension.Equals(".sup", StringComparison.OrdinalIgnoreCase) ||
-               file.Extension.Equals(".mks", StringComparison.OrdinalIgnoreCase);
-    }
+            cancellationToken,
+            (temporaryPath, finalPath, token) => _quota.Publish(temporaryPath, finalPath, CacheCapacityBytes, token));
 }
