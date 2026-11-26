@@ -205,7 +205,6 @@ public partial class AssToSupConverter : IDisposable
 
             ushort compositionNumber = 0;
             bool wasVisible = false;
-            byte[]? lastRgba = null;
 
             // Build sorted list of all interesting time points
             var timePoints = BuildTimePoints(events, frameIntervalMs);
@@ -222,7 +221,7 @@ public partial class AssToSupConverter : IDisposable
                 // Render frame at this timestamp
                 IntPtr imagePtr = LibassNative.AssRenderFrame(renderer, track, timeMs, out int changed);
 
-                if (changed == 0 && wasVisible && lastRgba != null)
+                if (changed == 0 && wasVisible)
                 {
                     // No change - skip this frame
                     continue;
@@ -238,14 +237,12 @@ public partial class AssToSupConverter : IDisposable
                         PgsEncoder.WriteClearSet(fileStream, pts90, videoWidth, videoHeight, compositionNumber);
                         compositionNumber++;
                         wasVisible = false;
-                        lastRgba = null;
                     }
 
                     continue;
                 }
 
-                // Compose ASS_Image linked list into RGBA bitmap
-                byte[] rgbaFrame = ComposeFrame(
+                byte[] croppedRgba = ComposeFrame(
                     imagePtr,
                     videoWidth,
                     videoHeight,
@@ -263,16 +260,11 @@ public partial class AssToSupConverter : IDisposable
                         PgsEncoder.WriteClearSet(fileStream, pts90, videoWidth, videoHeight, compositionNumber);
                         compositionNumber++;
                         wasVisible = false;
-                        lastRgba = null;
                     }
 
                     continue;
                 }
 
-                // Extract cropped region
-                byte[] croppedRgba = CropRgba(rgbaFrame, videoWidth, cropX, cropY, cropW, cropH);
-
-                // Quantize to palette
                 PgsEncoder.QuantizeToPalette(croppedRgba, cropW, cropH, out byte[] indexedBitmap, out uint[] palette);
 
                 // Write display set
@@ -292,7 +284,6 @@ public partial class AssToSupConverter : IDisposable
 
                 compositionNumber++;
                 wasVisible = true;
-                lastRgba = croppedRgba;
             }
 
             // Final clear if still visible
@@ -326,7 +317,7 @@ public partial class AssToSupConverter : IDisposable
     }
 
     /// <summary>
-    ///     Composes all ASS_Image layers into a single RGBA bitmap and calculates the tight crop rectangle.
+    ///     Composes all ASS_Image layers into an RGBA bitmap covering only the clipped subtitle region.
     /// </summary>
     private static byte[] ComposeFrame(
         IntPtr firstImage,
@@ -337,10 +328,7 @@ public partial class AssToSupConverter : IDisposable
         out int cropW,
         out int cropH)
     {
-        byte[] rgba = new byte[width * height * 4]; // Initialized to all zeros (transparent)
-
         int minX = width, minY = height, maxX = 0, maxY = 0;
-
         IntPtr current = firstImage;
         while (current != IntPtr.Zero)
         {
@@ -348,39 +336,10 @@ public partial class AssToSupConverter : IDisposable
 
             if (img._w > 0 && img._h > 0 && img._bitmap != IntPtr.Zero)
             {
-                // Extract color components from RGBA format
-                byte r = (byte)((img._color >> 24) & 0xFF);
-                byte g = (byte)((img._color >> 16) & 0xFF);
-                byte b = (byte)((img._color >> 8) & 0xFF);
-                byte a = (byte)(255 - (img._color & 0xFF)); // ASS alpha is inverted
-
-                BlendImage(rgba, width, height, img, r, g, b, a);
-
-                // Update bounding box
-                int imgMaxX = Math.Min(img._dstX + img._w, width);
-                int imgMaxY = Math.Min(img._dstY + img._h, height);
-                int imgMinX = Math.Max(img._dstX, 0);
-                int imgMinY = Math.Max(img._dstY, 0);
-
-                if (imgMinX < minX)
-                {
-                    minX = imgMinX;
-                }
-
-                if (imgMinY < minY)
-                {
-                    minY = imgMinY;
-                }
-
-                if (imgMaxX > maxX)
-                {
-                    maxX = imgMaxX;
-                }
-
-                if (imgMaxY > maxY)
-                {
-                    maxY = imgMaxY;
-                }
+                minX = Math.Min(minX, Math.Max(img._dstX, 0));
+                minY = Math.Min(minY, Math.Max(img._dstY, 0));
+                maxX = Math.Max(maxX, Math.Min(img._dstX + img._w, width));
+                maxY = Math.Max(maxY, Math.Min(img._dstY + img._h, height));
             }
 
             current = img._next;
@@ -389,13 +348,32 @@ public partial class AssToSupConverter : IDisposable
         if (maxX <= minX || maxY <= minY)
         {
             cropX = cropY = cropW = cropH = 0;
+            return [];
         }
-        else
+
+        cropX = minX;
+        cropY = minY;
+        cropW = maxX - minX;
+        cropH = maxY - minY;
+        byte[] rgba = new byte[cropW * cropH * 4];
+
+        // Translate each layer into crop coordinates while retaining libass's blend order and source stride.
+        current = firstImage;
+        while (current != IntPtr.Zero)
         {
-            cropX = minX;
-            cropY = minY;
-            cropW = maxX - minX;
-            cropH = maxY - minY;
+            var img = Marshal.PtrToStructure<LibassNative.AssImage>(current);
+            if (img._w > 0 && img._h > 0 && img._bitmap != IntPtr.Zero)
+            {
+                byte r = (byte)((img._color >> 24) & 0xFF);
+                byte g = (byte)((img._color >> 16) & 0xFF);
+                byte b = (byte)((img._color >> 8) & 0xFF);
+                byte a = (byte)(255 - (img._color & 0xFF)); // ASS alpha is inverted
+                img._dstX -= cropX;
+                img._dstY -= cropY;
+                BlendImage(rgba, cropW, cropH, img, r, g, b, a);
+            }
+
+            current = img._next;
         }
 
         return rgba;
@@ -465,23 +443,6 @@ public partial class AssToSupConverter : IDisposable
                 }
             }
         }
-    }
-
-    /// <summary>
-    ///     Extracts a cropped rectangular region from the full RGBA canvas.
-    /// </summary>
-    private static byte[] CropRgba(byte[] rgba, int canvasWidth, int cropX, int cropY, int cropW, int cropH)
-    {
-        byte[] cropped = new byte[cropW * cropH * 4];
-
-        for (int y = 0; y < cropH; y++)
-        {
-            int srcOffset = (((cropY + y) * canvasWidth) + cropX) * 4;
-            int dstOffset = y * cropW * 4;
-            Buffer.BlockCopy(rgba, srcOffset, cropped, dstOffset, cropW * 4);
-        }
-
-        return cropped;
     }
 
     /// <summary>
