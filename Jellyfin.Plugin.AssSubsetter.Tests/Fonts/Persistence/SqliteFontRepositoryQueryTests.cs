@@ -61,6 +61,60 @@ public sealed partial class SqliteFontRepositoryTests
         Assert.InRange(queries.Count, 1, 7);
     }
 
+    [Fact]
+    public async Task PublishedFileEvidenceQuery_ShouldSeekRequestedPathsInThePublishedGeneration()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string exactPath = Path.GetFullPath("exact.ttf");
+        string mixedCasePath = Path.GetFullPath("Épreuve.ttf");
+        string aliasPath = Path.GetFullPath("alias.ttf");
+        string stagedOnlyPath = Path.GetFullPath("staged-only.ttf");
+        long published = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        await fixture.Repository.WriteInventoryAsync(published,
+        [
+            FileAt(exactPath, "published") with { PathAliases = [aliasPath] },
+            FileAt(mixedCasePath, "mixed-case"),
+            FileAt(Path.GetFullPath("unrelated.ttf"), "unrelated")
+        ], token);
+        await fixture.Repository.PublishAnalysisAsync(new AnalysisBatch { GenerationId = published, Status = AnalysisBatchStatus.Complete, SummaryJson = "{\"faceScores\":[]}" }, token);
+        long staged = await fixture.Repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+        await fixture.Repository.WriteInventoryAsync(staged, [FileAt(exactPath, "staged"), FileAt(stagedOnlyPath, "staged-only")], token);
+
+        string? sql = null;
+        (string Name, object Value)[] parameters = [];
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command =>
+        {
+            sql = command.CommandText;
+            parameters = [.. command.Parameters.Cast<DbParameter>().Select(parameter => (parameter.ParameterName, parameter.Value!))];
+        });
+        var actual = await fixture.Repository.LoadPublishedFileEvidenceByPathAsync(
+            [exactPath, mixedCasePath.ToLowerInvariant(), aliasPath, stagedOnlyPath], token);
+
+        Assert.Contains((exactPath, "published", published), actual);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Equal(2, actual.Count);
+            Assert.Contains((mixedCasePath, "mixed-case", published), actual);
+        }
+        else
+        {
+            Assert.Single(actual);
+        }
+
+        Assert.Equal(1, queries.Count);
+        Assert.NotNull(sql);
+        Assert.DoesNotContain("font_face", sql, StringComparison.OrdinalIgnoreCase);
+        IReadOnlyList<string> plans = await ExplainAsync(fixture, sql, parameters, token);
+        Assert.Contains(plans, plan => plan.Contains("generation_id=? AND normalized_path=?", StringComparison.OrdinalIgnoreCase));
+
+        static FontFileRecord FileAt(string path, string identity) => CreateFile(path, identity) with
+        {
+            NormalizedPath = OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path,
+            PhysicalIdentity = identity
+        };
+    }
+
 
     [Theory]
     [InlineData(1)]
@@ -397,6 +451,58 @@ public sealed partial class SqliteFontRepositoryTests
         Assert.DoesNotContain(plans, plan => plan.Contains("CORRELATED", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(plans, plan => plan.StartsWith("SEARCH ", StringComparison.Ordinal)
             && plan.Contains("(duplicate_group_id=?)", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MaintenanceHistory_ShouldCountItemsWithoutLoadingEvidence()
+    {
+        await using var fixture = await SqliteRepositoryFixture.CreateAsync();
+        CancellationToken token = TestContext.Current.CancellationToken;
+        MaintenanceBatch quarantine = await CreateBatchAsync(FontOperationKind.Quarantine, DateTimeOffset.UnixEpoch.AddDays(2));
+        string source = Path.Join(fixture.RootPath, "source.ttf");
+        await fixture.Repository.UpdateMaintenanceBatchAsync(quarantine with
+        {
+            Items = [new QuarantineItemRecord { FileId = 1, SourcePath = source, StagingPath = source + ".staged", QuarantinePath = source + ".quarantined", Sha256 = new byte[] { 1 } }]
+        }, token);
+        MaintenanceBatch rollback = await CreateBatchAsync(FontOperationKind.RollbackNames, DateTimeOffset.UnixEpoch.AddDays(1));
+        await fixture.Repository.UpdateMaintenanceBatchAsync(rollback with
+        {
+            RenameItems =
+            [
+                new RenameItemRecord { FileId = 1, Evidence = CreateFile(source, "First"), OldPath = source, NewPath = source + ".renamed" },
+                new RenameItemRecord { FileId = 2, Evidence = CreateFile(source + "2", "Second"), OldPath = source + "2", NewPath = source + "2.renamed" }
+            ]
+        }, token);
+
+        var commands = new List<string>();
+        using var queries = new EfQueryListener(fixture.Database.DatabasePath, onCommand: command => commands.Add(command.CommandText));
+        var query = new FontManagementQuery(fixture.Repository);
+        var all = await query.GetMaintenanceBatchesAsync(1, 10, null, token);
+        var filtered = await query.GetMaintenanceBatchesAsync(1, 1, new HashSet<FontOperationKind> { FontOperationKind.RollbackNames }, token);
+        var empty = await query.GetMaintenanceBatchesAsync(1, 1, new HashSet<FontOperationKind>(), token);
+
+        Assert.Equal(2, all.TotalCount);
+        Assert.Equal([quarantine.Id, rollback.Id], all.Items.Select(batch => batch.Id));
+        Assert.Equal([1, 2], all.Items.Select(batch => batch.ItemCount));
+        Assert.Equal(1, filtered.TotalCount);
+        Assert.Equal(rollback.OperationRequestId, Assert.Single(filtered.Items).OperationRequestId);
+        Assert.Equal(0, empty.TotalCount);
+        Assert.DoesNotContain(commands, sql => sql.Contains("\"item_json\"", StringComparison.Ordinal)
+            || sql.Contains("\"summary_json\"", StringComparison.Ordinal) || sql.Contains("\"sha256\"", StringComparison.Ordinal));
+
+        async Task<MaintenanceBatch> CreateBatchAsync(FontOperationKind kind, DateTimeOffset completed)
+        {
+            var request = await fixture.Repository.CreateOperationRequestAsync(new OperationRequest
+            {
+                Kind = kind, Status = OperationRequestStatus.Complete, IdempotencyKey = kind.ToString(),
+                RequestJson = "{}", CreatedUtc = DateTimeOffset.UnixEpoch
+            }, token);
+            return await fixture.Repository.SaveMaintenanceBatchAsync(new MaintenanceBatch
+            {
+                OperationRequestId = request.Id, Kind = kind, Status = MaintenanceBatchStatus.Complete,
+                StartedUtc = DateTimeOffset.UnixEpoch, CompletedUtc = completed, SummaryJson = "{}"
+            }, token);
+        }
     }
 
     [Fact]

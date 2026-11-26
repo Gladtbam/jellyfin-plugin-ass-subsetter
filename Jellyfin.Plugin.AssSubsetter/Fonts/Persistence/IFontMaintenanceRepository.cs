@@ -16,8 +16,8 @@ public interface IFontMaintenanceRepository : IFontMaintenanceReader
     /// <returns>The persisted batch with its generated identifier.</returns>
     Task<MaintenanceBatch> SaveMaintenanceBatchAsync(MaintenanceBatch batch, CancellationToken cancellationToken);
 
-    /// <summary>Updates a durable maintenance batch and its per-file states.</summary>
-    /// <param name="batch">The persisted batch carrying its next state.</param>
+    /// <summary>Updates a durable maintenance batch and upserts the supplied per-file states.</summary>
+    /// <param name="batch">The persisted batch carrying its next state and any item rows to upsert.</param>
     /// <param name="cancellationToken">A token that cancels the write.</param>
     /// <returns>A task representing the transactional update.</returns>
     Task UpdateMaintenanceBatchAsync(MaintenanceBatch batch, CancellationToken cancellationToken);

@@ -5,6 +5,7 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance.Naming;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
@@ -13,6 +14,64 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 
 public class FontFilenameNormalizerTests
 {
+    [Fact]
+    public async Task ExecuteAsyncReplaysAnUncommittedItemBeforeResumingLaterMoves()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        await using var fixture = await RenameFixture.CreateAsync();
+        await fixture.PublishAsync([await fixture.AddAsync(1, "a.ttf"), await fixture.AddAsync(2, "b.ttf")]);
+        await fixture.SaveAnalysisAsync();
+        OperationRequest request = (await fixture.Normalizer.CreateCurrentRequestAsync(cancellationToken))!;
+        fixture.FileSystem.BeforeMove = () =>
+        {
+            if (fixture.FileSystem.MoveCount == 1)
+            {
+                throw new SimulatedCrashException();
+            }
+        };
+        await Assert.ThrowsAsync<SimulatedCrashException>(() => fixture.Normalizer.ExecuteAsync(request, cancellationToken));
+        fixture.FileSystem.BeforeMove = null;
+        RenameManifest manifest = Assert.Single(await fixture.Manifests.LoadAllAsync(cancellationToken));
+        RenameItemRecord first = manifest.Batch.RenameItems[0];
+        RenameItemRecord second = manifest.Batch.RenameItems[1];
+        Assert.Equal(RenameItemStatus.Renamed, first.Status);
+        Assert.Equal(RenameItemStatus.Moving, second.Status);
+
+        await using var database = new FontDatabase(FontStoragePaths.Create(fixture.Root));
+        var repository = new SqliteFontRepository(database);
+        await repository.InitializeAsync(cancellationToken);
+        await repository.ImportMaintenanceBatchAsync(
+            manifest.Batch with { RenameItems = [first with { Status = RenameItemStatus.Moving }, second] },
+            FontOperationRequestPayloadCodec.ParseRenameExecution(request.RequestJson).AnalysisBatchId,
+            request.IdempotencyKey,
+            request.RequestJson,
+            cancellationToken);
+        await using SqliteConnection connection = await database.OpenConnectionAsync(cancellationToken);
+        await using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = FormattableString.Invariant($"""
+            CREATE TRIGGER reject_completed_rename_update BEFORE UPDATE ON rename_item
+            WHEN NEW.file_id = {first.FileId} AND OLD.status = {(int)RenameItemStatus.Renamed}
+            BEGIN SELECT RAISE(ABORT, 'untouched rename item was rewritten'); END;
+            """);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        using var normalizer = new FontFilenameNormalizer(
+            repository,
+            fixture.Coordinator,
+            fixture.FileSystem,
+            fixture.Manifests,
+            () => new FontDirectoryPolicyResolver(fixture.Root, null, null, false),
+            new PlatformPhysicalFileIdentityProvider(),
+            fixture.Candidates,
+            fixture.Directories);
+
+        MaintenanceBatch result = await normalizer.ExecuteAsync(request, cancellationToken);
+
+        MaintenanceBatch persisted = (await repository.GetMaintenanceBatchAsync(result.Id, cancellationToken))!;
+        Assert.Equal(MaintenanceBatchStatus.Complete, persisted.Status);
+        Assert.All(persisted.RenameItems, item => Assert.Equal(RenameItemStatus.Renamed, item.Status));
+        Assert.Equal(2, fixture.FileSystem.MoveCount);
+    }
+
     [Fact]
     public async Task ExecuteAsyncReportsOccupiedAndRenamedFilesBeforeFinalization()
     {

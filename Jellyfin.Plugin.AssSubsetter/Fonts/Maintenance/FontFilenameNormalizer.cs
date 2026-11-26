@@ -142,6 +142,8 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
         RenameManifest? existing = (await _manifests.LoadAllAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(manifest => manifest.Request.Id == request.Id);
         if (existing is not null)
         {
+            // An interrupted SQLite write can leave the saved journal ahead of its database projection.
+            await _repository.UpdateMaintenanceBatchAsync(WithSummary(existing).Batch, cancellationToken).ConfigureAwait(false);
             return await RunAsync(existing, cancellationToken, progress).ConfigureAwait(false);
         }
 
@@ -181,7 +183,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
             ?? await _repository.SaveMaintenanceBatchAsync(new MaintenanceBatch { OperationRequestId = request.Id, Kind = request.Kind, Status = MaintenanceBatchStatus.Running, StartedUtc = DateTimeOffset.UtcNow, SummaryJson = "{}" }, cancellationToken).ConfigureAwait(false);
         batch = batch with { RenameItems = [.. items.Select(item => item with { TemporaryPath = Path.Combine(Path.GetDirectoryName(item.OldPath)!, ".ass-subsetter-rename-" + batch.Id.ToString(CultureInfo.InvariantCulture) + "-" + item.FileId.ToString(CultureInfo.InvariantCulture) + ".tmp") })] };
         var created = new RenameManifest(request, batch, false) { Rules = rules, RuleFingerprint = ruleFingerprint };
-        await PersistAsync(created).ConfigureAwait(false);
+        await PersistAsync(created, batch.RenameItems).ConfigureAwait(false);
         return await RunAsync(created, cancellationToken, progress).ConfigureAwait(false);
     }
 
@@ -220,7 +222,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
             if (safety is not null)
             {
                 manifest = WithItem(manifest, index, item with { Status = safety == "in-use" ? RenameItemStatus.InUse : RenameItemStatus.Skipped, Error = safety });
-                await PersistAsync(manifest).ConfigureAwait(false);
+                await PersistItemAsync(manifest, index).ConfigureAwait(false);
                 continue;
             }
 
@@ -239,7 +241,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
             catch (OperationCanceledException)
             {
                 manifest = WithItem(manifest, index, item with { Status = RenameItemStatus.InUse, Error = "lease-timeout-or-cancellation" });
-                await PersistAsync(manifest).ConfigureAwait(false);
+                await PersistItemAsync(manifest, index).ConfigureAwait(false);
                 continue;
             }
 
@@ -277,7 +279,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
                             {
                                 item = item with { Status = RenameItemStatus.Skipped, Error = probe.Error ?? "different-filesystem" };
                                 manifest = WithItem(manifest, index, item);
-                                await PersistAsync(manifest).ConfigureAwait(false);
+                                await PersistItemAsync(manifest, index).ConfigureAwait(false);
                                 continue;
                             }
 
@@ -286,7 +288,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
                             {
                                 item = item with { Status = RenameItemStatus.FailedIo, Error = directoryError };
                                 manifest = WithItem(manifest, index, item);
-                                await PersistAsync(manifest).ConfigureAwait(false);
+                                await PersistItemAsync(manifest, index).ConfigureAwait(false);
                                 continue;
                             }
 
@@ -299,7 +301,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
                             _coordinator.SetRenamePathAvailable(source, false);
                             item = item with { Status = rollback ? RenameItemStatus.RollingBack : RenameItemStatus.Moving };
                             manifest = WithItem(manifest, index, item);
-                            await PersistAsync(manifest).ConfigureAwait(false);
+                            await PersistItemAsync(manifest, index).ConfigureAwait(false);
                             if (current == source && IsCaseOnly(source, destination))
                             {
                                 if (Occupied(item.TemporaryPath))
@@ -311,7 +313,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
                                 current = item.TemporaryPath;
                                 item = item with { Status = RenameItemStatus.Temporary };
                                 manifest = WithItem(manifest with { RefreshRequired = true }, index, item);
-                                await PersistAsync(manifest).ConfigureAwait(false);
+                                await PersistItemAsync(manifest, index).ConfigureAwait(false);
                             }
 
                             if (!await MatchesAsync(item, current).ConfigureAwait(false))
@@ -345,7 +347,7 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
                     _coordinator.SetRenamePathAvailable(source, true);
                 }
 
-                await PersistAsync(manifest).ConfigureAwait(false);
+                await PersistItemAsync(manifest, index).ConfigureAwait(false);
             }
         }
 
@@ -462,11 +464,16 @@ public sealed class FontFilenameNormalizer : IFontFilenameNormalizationExecutor,
         return null;
     }
 
-    private async Task PersistAsync(RenameManifest manifest)
+    private Task PersistAsync(RenameManifest manifest) => PersistAsync(manifest, []);
+
+    private Task PersistItemAsync(RenameManifest manifest, int index)
+        => PersistAsync(manifest, [manifest.Batch.RenameItems[index]]);
+
+    private async Task PersistAsync(RenameManifest manifest, IReadOnlyList<RenameItemRecord> changedItems)
     {
         manifest = WithSummary(manifest);
         await _manifests.SaveAsync(manifest, CancellationToken.None).ConfigureAwait(false);
-        await _repository.UpdateMaintenanceBatchAsync(manifest.Batch, CancellationToken.None).ConfigureAwait(false);
+        await _repository.UpdateMaintenanceBatchAsync(manifest.Batch with { RenameItems = changedItems }, CancellationToken.None).ConfigureAwait(false);
     }
 
     private static RenameManifest WithSummary(RenameManifest manifest)

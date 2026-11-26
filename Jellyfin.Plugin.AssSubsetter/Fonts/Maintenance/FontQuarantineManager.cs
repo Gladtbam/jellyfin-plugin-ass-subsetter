@@ -142,7 +142,7 @@ public sealed class FontQuarantineManager
 
             manifest = BuildManifest(batch, analysis, request, payload.SelectedFileIds, files);
             await _fileSystem.CreateDirectoryAsync(Path.Combine(BatchDirectory(batch.Id), "items"), cancellationToken).ConfigureAwait(false);
-            await PersistAsync(batch, manifest, cancellationToken).ConfigureAwait(false);
+            await PersistAsync(BatchWithManifest(batch, manifest, batch.Status, batch.CompletedUtc), manifest, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -151,6 +151,7 @@ public sealed class FontQuarantineManager
 
             batch = await _repository.GetMaintenanceBatchAsync(manifest.BatchId, cancellationToken).ConfigureAwait(false)
                 ?? throw new InvalidOperationException("The resumable quarantine batch does not exist.");
+            await ReplayManifestAsync(batch, manifest, cancellationToken).ConfigureAwait(false);
             batch = batch with { Status = MaintenanceBatchStatus.Running, CompletedUtc = null };
         }
 
@@ -174,20 +175,20 @@ public sealed class FontQuarantineManager
                     async intermediate =>
                     {
                         manifest = ReplaceItem(manifest, currentIndex, intermediate);
-                        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                        await PersistItemAsync(batch, manifest, currentIndex).ConfigureAwait(false);
                         double stage = intermediate.Status == QuarantineItemStatus.Staged ? 0.4 : 0.8;
                         progress?.Report((currentIndex + stage) * 100d / manifest.Items.Count);
                     },
                     cancellationToken).ConfigureAwait(false);
                 manifest = ReplaceItem(manifest, index, result);
-                await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                 progress?.Report((index + 1) * 100d / manifest.Items.Count);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             batch = BatchWithManifest(batch, manifest, MaintenanceBatchStatus.Cancelled, _timeProvider.GetUtcNow());
-            await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+            await PersistAsync(batch with { Items = [] }, manifest, CancellationToken.None).ConfigureAwait(false);
             return batch;
         }
 
@@ -195,7 +196,7 @@ public sealed class FontQuarantineManager
             ? MaintenanceBatchStatus.Complete
             : MaintenanceBatchStatus.Partial;
         batch = BatchWithManifest(batch, manifest, status, _timeProvider.GetUtcNow());
-        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+        await PersistAsync(batch with { Items = [] }, manifest, CancellationToken.None).ConfigureAwait(false);
         return batch;
     }
 
@@ -218,6 +219,7 @@ public sealed class FontQuarantineManager
             throw new InvalidOperationException("The restore request contains a physical Font File outside the referenced manifest.");
         }
 
+        await ReplayManifestAsync(batch, manifest, cancellationToken).ConfigureAwait(false);
         for (int index = 0; index < manifest.Items.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -236,7 +238,7 @@ public sealed class FontQuarantineManager
             {
                 item = await ReconcileRestoreItemAsync(manifest.BatchId, item, cancellationToken).ConfigureAwait(false);
                 manifest = ReplaceItem(manifest, index, item);
-                await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                 if (item.Status != QuarantineItemStatus.Quarantined)
                 {
                     continue;
@@ -280,14 +282,14 @@ public sealed class FontQuarantineManager
                 {
                     item = item with { Status = QuarantineItemStatus.Restoring, Error = null };
                     manifest = ReplaceItem(manifest, index, item);
-                    await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                    await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                     bool restored = await RestoreFileAsync(manifest.BatchId, item, cancellationToken).ConfigureAwait(false);
                     result = restored ? Restored(item) : item with { Status = QuarantineItemStatus.EvidenceDrift, Error = "Current path safety changed during restoration." };
                 }
             }
 
             manifest = ReplaceItem(manifest, index, result);
-            await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+            await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
         }
 
         MaintenanceBatchStatus status = manifest.Items
@@ -296,7 +298,7 @@ public sealed class FontQuarantineManager
             ? MaintenanceBatchStatus.Complete
             : MaintenanceBatchStatus.Partial;
         batch = BatchWithManifest(batch, manifest, status, _timeProvider.GetUtcNow());
-        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+        await PersistAsync(batch with { Items = [] }, manifest, CancellationToken.None).ConfigureAwait(false);
         return batch;
     }
 
@@ -333,6 +335,7 @@ public sealed class FontQuarantineManager
                 continue;
             }
 
+            await ReplayManifestAsync(batch, manifest, cancellationToken).ConfigureAwait(false);
             // A failed or cancelled transition leaves this item outside the processed count.
             for (int index = 0; index < manifest.Items.Count; index++, inspected++, progress?.Report(inspected * 100d / Math.Max(1, total)))
             {
@@ -356,7 +359,7 @@ public sealed class FontQuarantineManager
                     {
                         Error = "Expiry was blocked because current directory or path safety no longer authorizes deletion."
                     });
-                    await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                    await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                     blocked["unsafe-path"] = blocked.GetValueOrDefault("unsafe-path") + 1;
                     continue;
                 }
@@ -408,7 +411,7 @@ public sealed class FontQuarantineManager
                 }
 
                 manifest = ReplaceItem(manifest, index, result);
-                await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
             }
         }
 
@@ -457,6 +460,10 @@ public sealed class FontQuarantineManager
                     manifest.OperationRequestJson,
                     cancellationToken).ConfigureAwait(false);
             }
+            else
+            {
+                await ReplayManifestAsync(batch, manifest, cancellationToken).ConfigureAwait(false);
+            }
 
             for (int index = 0; index < manifest.Items.Count; index++)
             {
@@ -489,7 +496,7 @@ public sealed class FontQuarantineManager
                     if (restored != item)
                     {
                         manifest = ReplaceItem(manifest, index, restored);
-                        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                        await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                         reconciled++;
                     }
 
@@ -505,7 +512,7 @@ public sealed class FontQuarantineManager
                     if (blocked != item)
                     {
                         manifest = ReplaceItem(manifest, index, blocked);
-                        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                        await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                         reconciled++;
                     }
 
@@ -517,7 +524,7 @@ public sealed class FontQuarantineManager
                 {
                     item = item with { Status = QuarantineItemStatus.EvidenceDrift, Error = "Current source identity, links, bytes, or policy no longer authorize recovery mutation." };
                     manifest = ReplaceItem(manifest, index, item);
-                    await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                    await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                     continue;
                 }
 
@@ -549,7 +556,7 @@ public sealed class FontQuarantineManager
                     if (blocked != item)
                     {
                         manifest = ReplaceItem(manifest, index, blocked);
-                        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                        await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                         reconciled++;
                     }
 
@@ -579,7 +586,7 @@ public sealed class FontQuarantineManager
                         {
                             item = item with { Status = QuarantineItemStatus.Promoted, Error = null };
                             manifest = ReplaceItem(manifest, index, item);
-                            await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                            await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                         }
 
                         bool sourceStillValid = await MatchesAsync(
@@ -605,7 +612,7 @@ public sealed class FontQuarantineManager
                                 {
                                     item = item with { Status = QuarantineItemStatus.EvidenceDrift, Error = "Current source safety changed before recovered source deletion." };
                                     manifest = ReplaceItem(manifest, index, item);
-                                    await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                                    await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                                     continue;
                                 }
 
@@ -654,7 +661,7 @@ public sealed class FontQuarantineManager
                     {
                         item = item with { Status = QuarantineItemStatus.Promoted, Error = null };
                         manifest = ReplaceItem(manifest, index, item);
-                        await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                        await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                         bool sourceStillValid = await MatchesAsync(
                             item.SourcePath,
                             item.Size,
@@ -684,7 +691,7 @@ public sealed class FontQuarantineManager
                             {
                                 item = item with { Status = QuarantineItemStatus.EvidenceDrift, Error = "Current source safety changed after recovered staging promotion." };
                                 manifest = ReplaceItem(manifest, index, item);
-                                await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                                await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                                 continue;
                             }
 
@@ -705,7 +712,7 @@ public sealed class FontQuarantineManager
                 if (result is not null && result != item)
                 {
                     manifest = ReplaceItem(manifest, index, result);
-                    await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                    await PersistItemAsync(batch, manifest, index).ConfigureAwait(false);
                     reconciled++;
                 }
             }
@@ -714,7 +721,7 @@ public sealed class FontQuarantineManager
                 && manifest.Items.Any(item => item.Status == QuarantineItemStatus.FailedIo))
             {
                 batch = BatchWithManifest(batch, manifest, MaintenanceBatchStatus.Partial, _timeProvider.GetUtcNow());
-                await PersistAsync(batch, manifest, CancellationToken.None).ConfigureAwait(false);
+                await PersistAsync(batch with { Items = [] }, manifest, CancellationToken.None).ConfigureAwait(false);
             }
         }
 
@@ -1324,14 +1331,41 @@ public sealed class FontQuarantineManager
         };
     }
 
+    private Task PersistItemAsync(MaintenanceBatch batch, QuarantineManifest manifest, int index)
+        => PersistAsync(
+            WithManifestSummary(batch, manifest) with { Items = [ToRecord(batch.Id, manifest.Items[index])] },
+            manifest,
+            CancellationToken.None);
+
     private async Task PersistAsync(
         MaintenanceBatch batch,
         QuarantineManifest manifest,
         CancellationToken cancellationToken)
     {
         await _manifestStore.SaveAsync(manifest, cancellationToken).ConfigureAwait(false);
-        MaintenanceBatch next = BatchWithManifest(batch, manifest, batch.Status, batch.CompletedUtc);
-        await _repository.UpdateMaintenanceBatchAsync(next, cancellationToken).ConfigureAwait(false);
+        await _repository.UpdateMaintenanceBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task ReplayManifestAsync(MaintenanceBatch batch, QuarantineManifest manifest, CancellationToken cancellationToken)
+    {
+        // The manifest can be ahead of SQLite after an interrupted write, including for terminal items.
+        Dictionary<long, QuarantineItemRecord> stored = batch.Items.ToDictionary(item => item.FileId);
+        QuarantineItemRecord[] changed =
+        [
+            .. manifest.Items.Select(item => ToRecord(batch.Id, item)).Where(item =>
+                !stored.TryGetValue(item.FileId, out QuarantineItemRecord? previous)
+                || !MatchesProjection(previous, item))
+        ];
+        MaintenanceBatch next = WithManifestSummary(batch, manifest);
+        return changed.Length == 0 && next.SummaryJson == batch.SummaryJson
+            ? Task.CompletedTask
+            : _repository.UpdateMaintenanceBatchAsync(next with { Items = changed }, cancellationToken);
+    }
+
+    private static bool MatchesProjection(QuarantineItemRecord stored, QuarantineItemRecord manifestItem)
+    {
+        QuarantineItemRecord projection = stored with { Id = manifestItem.Id, Sha256 = manifestItem.Sha256 };
+        return projection == manifestItem && stored.Sha256.Span.SequenceEqual(manifestItem.Sha256.Span);
     }
 
     private static MaintenanceBatch BatchWithManifest(
@@ -1339,10 +1373,17 @@ public sealed class FontQuarantineManager
         QuarantineManifest manifest,
         MaintenanceBatchStatus status,
         DateTimeOffset? completedUtc)
-    {
-        QuarantineItemRecord[] items = [.. manifest.Items.Select(item => new QuarantineItemRecord
+        => WithManifestSummary(batch, manifest) with
         {
-            MaintenanceBatchId = batch.Id,
+            Status = status,
+            CompletedUtc = completedUtc,
+            Items = [.. manifest.Items.Select(item => ToRecord(batch.Id, item))]
+        };
+
+    private static QuarantineItemRecord ToRecord(long batchId, QuarantineManifestItem item)
+        => new()
+        {
+            MaintenanceBatchId = batchId,
             FileId = item.FileId,
             SourcePath = item.SourcePath,
             StagingPath = item.StagingPath,
@@ -1354,16 +1395,20 @@ public sealed class FontQuarantineManager
             ExpiresUtc = item.ExpiresUtc,
             RestoredUtc = item.RestoredUtc,
             Error = item.Error
-        })];
+        };
+
+    private static MaintenanceBatch WithManifestSummary(MaintenanceBatch batch, QuarantineManifest manifest)
+    {
+        int quarantined = manifest.Items.Count(item => item.Status == QuarantineItemStatus.Quarantined);
         string summary = JsonSerializer.Serialize(
             new
             {
-                items = items.Length,
-                quarantined = items.Count(item => item.Status == QuarantineItemStatus.Quarantined),
-                failed = items.Count(item => item.Status is not QuarantineItemStatus.Quarantined)
+                items = manifest.Items.Count,
+                quarantined,
+                failed = manifest.Items.Count - quarantined
             },
             _jsonOptions);
-        return batch with { Status = status, CompletedUtc = completedUtc, SummaryJson = summary, Items = items };
+        return batch with { SummaryJson = summary };
     }
 
     private static QuarantineManifest ReplaceItem(QuarantineManifest manifest, int index, QuarantineManifestItem item)

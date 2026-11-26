@@ -405,6 +405,17 @@ internal sealed class InMemoryFontRepository : IFontRepository
         return Task.FromResult(((long)files.Count, files.Sum(file => (long)file.Faces.Count)));
     }
 
+    public Task<IReadOnlyList<(string Path, string PhysicalIdentity, long GenerationId)>> LoadPublishedFileEvidenceByPathAsync(
+        IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        cancellationToken.ThrowIfCancellationRequested();
+        var requestedPaths = paths.ToHashSet(FontPathComparison.Comparer);
+        IReadOnlyList<(string Path, string PhysicalIdentity, long GenerationId)> files =
+            [.. PublishedFiles.Where(file => requestedPaths.Contains(file.Path)).Select(file => (file.Path, file.PhysicalIdentity, file.GenerationId))];
+        return Task.FromResult(files);
+    }
+
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryForReuseAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -899,7 +910,12 @@ internal sealed class InMemoryFontRepository : IFontRepository
                 throw new InvalidOperationException("The maintenance batch does not exist.");
             }
 
-            _maintenanceBatches[index] = batch;
+            MaintenanceBatch existing = _maintenanceBatches[index];
+            _maintenanceBatches[index] = batch with
+            {
+                Items = [.. existing.Items.Concat(batch.Items).GroupBy(item => item.FileId).Select(group => group.Last())],
+                RenameItems = [.. existing.RenameItems.Concat(batch.RenameItems).GroupBy(item => item.FileId).Select(group => group.Last())]
+            };
             return Task.CompletedTask;
         }
     }
@@ -981,6 +997,15 @@ internal sealed class InMemoryFontRepository : IFontRepository
                 : ordered.Skip((int)offset).Take(pageSize).ToArray();
             return Task.FromResult(new FontRepositoryPage<MaintenanceBatch>(page, ordered.Length));
         }
+    }
+
+    public async Task<FontRepositoryPage<MaintenanceBatchSummary>> LoadMaintenanceBatchSummaryPageAsync(
+        long offset, int pageSize, IReadOnlySet<FontOperationKind>? kinds, CancellationToken cancellationToken)
+    {
+        var page = await LoadMaintenanceBatchPageAsync(offset, pageSize, kinds, cancellationToken);
+        return new(
+            [.. page.Items.Select(batch => new MaintenanceBatchSummary(batch.Id, batch.OperationRequestId, batch.Kind, batch.Status, batch.StartedUtc, batch.CompletedUtc, batch.Items.Count + batch.RenameItems.Count))],
+            page.TotalCount);
     }
 
     public Task<FontRepositoryPage<QuarantineItemRecord>> LoadQuarantineItemPageAsync(long offset, int pageSize, IReadOnlySet<QuarantineItemStatus> statuses, CancellationToken cancellationToken)

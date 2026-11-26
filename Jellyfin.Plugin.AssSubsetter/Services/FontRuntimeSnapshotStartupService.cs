@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -19,7 +20,7 @@ public sealed class FontRuntimeSnapshotStartupService : BackgroundService
     private static readonly TimeSpan _startupCheckInterval = TimeSpan.FromMilliseconds(250);
     private readonly FontCacheManager _fontCacheManager;
     private readonly ILogger<FontRuntimeSnapshotStartupService> _logger;
-    private readonly IFontRepository _repository;
+    private readonly IFontInventoryReader _repository;
     private readonly FileRenameManifestStore _renameManifests;
     private readonly IQuarantineManifestStore _quarantineManifests;
     private readonly FontMaintenanceCoordinator _coordinator;
@@ -41,7 +42,7 @@ public sealed class FontRuntimeSnapshotStartupService : BackgroundService
     public FontRuntimeSnapshotStartupService(
         FontCacheManager fontCacheManager,
         ILogger<FontRuntimeSnapshotStartupService> logger,
-        IFontRepository repository,
+        IFontInventoryReader repository,
         FileRenameManifestStore renameManifests,
         IQuarantineManifestStore quarantineManifests,
         FontMaintenanceCoordinator coordinator,
@@ -102,26 +103,40 @@ public sealed class FontRuntimeSnapshotStartupService : BackgroundService
 
     private async Task RestoreFencesAsync(CancellationToken cancellationToken)
     {
-        var renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-        var quarantineManifests = await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-        string[] paths =
-        [
-            .. renameManifests.SelectMany(manifest => manifest.Batch.RenameItems.Select(item => manifest.Request.Kind == FontOperationKind.RollbackNames ? item.NewPath : item.OldPath))
-                .Concat(quarantineManifests.SelectMany(manifest => manifest.Items.Select(item => item.SourcePath)))
-                .Distinct(FontPathComparison.Comparer)
-        ];
-        if (paths.Length == 0)
+        HashSet<string> paths = GetManifestPaths(
+            await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false),
+            await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false));
+        while (paths.Count > 0)
         {
+            IAsyncDisposable lease = await _coordinator.AcquireExclusiveAsync(paths, cancellationToken).ConfigureAwait(false);
+            await using var leaseScope = lease.ConfigureAwait(false);
+            var renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
+            var quarantineManifests = await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
+            HashSet<string> currentPaths = GetManifestPaths(renameManifests, quarantineManifests);
+            if (!paths.IsSupersetOf(currentPaths))
+            {
+                // Reacquire the full path set in the coordinator's lock order if the journals changed.
+                paths = currentPaths;
+                continue;
+            }
+
+            var published = await _repository.LoadPublishedFileEvidenceByPathAsync(currentPaths, cancellationToken).ConfigureAwait(false);
+            RestoreFences(renameManifests, quarantineManifests, published.ToLookup(file => file.Path, FontPathComparison.Comparer));
             return;
         }
+    }
 
-        var published = await _repository.LoadPublishedInventoryAsync(cancellationToken).ConfigureAwait(false);
-        var publishedByPath = published.ToLookup(file => file.Path, FontPathComparison.Comparer);
-        IAsyncDisposable lease = await _coordinator.AcquireExclusiveAsync(paths, cancellationToken).ConfigureAwait(false);
-        await using var leaseScope = lease.ConfigureAwait(false);
-        renameManifests = await _renameManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
-        quarantineManifests = await _quarantineManifests.LoadAllAsync(cancellationToken).ConfigureAwait(false);
+    private static HashSet<string> GetManifestPaths(
+        IReadOnlyList<RenameManifest> renameManifests, IReadOnlyList<QuarantineManifest> quarantineManifests)
+        => renameManifests.SelectMany(manifest => manifest.Batch.RenameItems.Select(item => manifest.Request.Kind == FontOperationKind.RollbackNames ? item.NewPath : item.OldPath))
+            .Concat(quarantineManifests.SelectMany(manifest => manifest.Items.Select(item => item.SourcePath)))
+            .ToHashSet(FontPathComparison.Comparer);
 
+    private void RestoreFences(
+        IReadOnlyList<RenameManifest> renameManifests,
+        IReadOnlyList<QuarantineManifest> quarantineManifests,
+        ILookup<string, (string Path, string PhysicalIdentity, long GenerationId)> publishedByPath)
+    {
         foreach (RenameManifest manifest in renameManifests)
         {
             bool rollback = manifest.Request.Kind == FontOperationKind.RollbackNames;

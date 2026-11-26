@@ -2,19 +2,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
+using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
+using static Jellyfin.Plugin.AssSubsetter.Fonts.Persistence.FontReportSnapshot;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Api;
 
 /// <summary>Projects persisted whole-file plans into report cards without hiding unrelated pair findings.</summary>
 internal static class FontReportReplacementProjector
 {
-    internal static (IReadOnlyList<FontReportItemDto> Rows, IReadOnlySet<FontRelationRecord> CoveredRelations) Project(
-        AnalysisBatch batch,
-        IReadOnlyList<FontFileRecord> inventory)
+    internal static (IReadOnlyList<FontReportItemDto> Rows, IReadOnlySet<FontReportRelation> CoveredRelations) Project(FontReportSnapshot batch)
     {
-        Dictionary<long, FontFileRecord> files = inventory.ToDictionary(file => file.Id);
-        var plans = new Dictionary<long, (DuplicateGroupRecord Group, FontReportFileDto[] Files)>();
-        foreach (DuplicateGroupRecord group in batch.Groups)
+        Dictionary<long, FontReportFile> files = batch.Files.ToDictionary(file => file.Id);
+        var plans = new Dictionary<long, (FontReportGroup Group, FontReportFileDto[] Files)>();
+        foreach (FontReportGroup group in batch.Groups)
         {
             if (group.Members.Any(member => !files.ContainsKey(member.FileId)))
             {
@@ -26,7 +26,7 @@ internal static class FontReportReplacementProjector
                 .. group.Members.GroupBy(member => member.FileId)
                     .Select(members =>
                     {
-                        FontFileRecord file = files[members.Key];
+                        FontReportFile file = files[members.Key];
                         HashSet<long> candidates =
                         [
                             .. members
@@ -53,9 +53,9 @@ internal static class FontReportReplacementProjector
         ILookup<long, long> groupsByFace = plans.Values
             .SelectMany(plan => plan.Group.Members.Select(member => (member.FaceId, GroupId: plan.Group.Id)))
             .ToLookup(item => item.FaceId, item => item.GroupId);
-        var relationsByGroup = plans.Keys.ToDictionary(id => id, _ => new List<FontRelationRecord>());
-        var covered = new HashSet<FontRelationRecord>();
-        foreach (FontRelationRecord relation in batch.Relations)
+        var relationsByGroup = plans.Keys.ToDictionary(id => id, _ => new List<FontReportRelation>());
+        var covered = new HashSet<FontReportRelation>();
+        foreach (FontReportRelation relation in batch.Relations)
         {
             if (relation.ReplacementDirection == FontReplacementDirection.None || !IsReplacement(relation.RelationshipKind))
             {
@@ -77,9 +77,9 @@ internal static class FontReportReplacementProjector
                 .. relationsByGroup[plan.Group.Id]
                     .Select(relation => relation.RelationshipKind).Distinct().Order()
             ];
-            FontFileRecord[] related = [.. plan.Files.Select(file => files[file.FileId])];
+            FontReportFile[] related = [.. plan.Files.Select(file => files[file.FileId])];
             rows.Add(new FontReportItemDto(
-                batch.Id,
+                batch.BatchId,
                 null,
                 kinds.Length > 0 ? kinds[0] : null,
                 false,

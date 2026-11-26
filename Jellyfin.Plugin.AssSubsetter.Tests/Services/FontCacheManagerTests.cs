@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Maintenance;
@@ -284,6 +285,68 @@ public sealed class FontCacheManagerTests
         Assert.Equal("/fonts/published.ttf", path.Value.Path);
         Assert.Equal(1, repository.InitializeCallCount);
         Assert.Equal(1, repository.RuntimeSnapshotLoadCallCount);
+    }
+
+    [Fact]
+    public async Task StartupService_ShouldRecheckManifestsWhenAPathAppearsDuringLeaseAcquisition()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string root = Path.Combine(Path.GetTempPath(), "ass-startup-" + Guid.NewGuid().ToString("N"));
+        FontFileRecord first = RuntimeFile("First", Path.Combine(root, "first.ttf"));
+        FontFileRecord second = RuntimeFile("Second", Path.Combine(root, "second.ttf"));
+        var repository = new InMemoryFontRepository();
+        await PublishAsync(repository, first, second);
+        QuarantineManifest manifest = new()
+        {
+            Version = 2,
+            EvidenceVersion = FontDuplicateAnalyzer.CurrentEvidenceVersion,
+            OperationIdempotencyKey = "startup-paths",
+            OperationRequestJson = "{}",
+            Items = [ToItem(first)]
+        };
+        QuarantineManifest updated = manifest with { Items = [ToItem(first), ToItem(second)] };
+        var newPathDiscovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manifests = new Mock<IQuarantineManifestStore>();
+        int reads = 0;
+        manifests.Setup(store => store.LoadAllAsync(It.IsAny<CancellationToken>())).Returns(() =>
+        {
+            int read = Interlocked.Increment(ref reads);
+            if (read == 2)
+            {
+                newPathDiscovered.TrySetResult();
+            }
+
+            return Task.FromResult<IReadOnlyList<QuarantineManifest>>(read == 1 ? [manifest] : [updated]);
+        });
+
+        var coordinator = new FontMaintenanceCoordinator();
+        using var managerFixture = new FontCacheManagerFixture(repository, coordinator);
+        var readiness = new FontCatalogReadiness();
+        using var startup = FontCacheManagerFixture.CreateStartupService(managerFixture.Manager, repository,
+            new FileRenameManifestStore(root), manifests.Object, coordinator, readiness);
+        await using (await coordinator.AcquireExclusiveAsync([second.Path], token))
+        {
+            await startup.StartAsync(token);
+            await newPathDiscovered.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        }
+
+        Assert.True(await readiness.WaitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token));
+        Assert.Equal(3, Volatile.Read(ref reads));
+        Assert.False(coordinator.IsPathAvailable(first.Path));
+        Assert.False(coordinator.IsPathAvailable(second.Path));
+
+        static QuarantineManifestItem ToItem(FontFileRecord file) => new()
+        {
+            FileId = file.Id,
+            SourcePath = file.Path,
+            SourcePhysicalIdentity = file.PhysicalIdentity,
+            StagingPath = file.Path + ".staged",
+            QuarantinePath = file.Path + ".quarantined",
+            Sha256 = file.Sha256,
+            Replacements = [],
+            FaceReplacementProofs = [],
+            Status = QuarantineItemStatus.Quarantined
+        };
     }
 
     [Fact]

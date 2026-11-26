@@ -7,13 +7,82 @@ using Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
 using Jellyfin.Plugin.AssSubsetter.Models;
 using Jellyfin.Plugin.AssSubsetter.Services;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Maintenance;
 
 public sealed class FontQuarantineManagerTests
 {
     private static readonly double[] _emptyBatchProgress = [0d];
+
+    [Fact]
+    public async Task PurgeReplaysAnUncommittedItemAndDoesNotRewriteItDuringTheNextTransition()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        QuarantineFixture fixture = await QuarantineFixture.CreateAsync(sameVolume: true, duplicateCount: 2);
+        MaintenanceBatch quarantined = await fixture.Manager.QuarantineAsync(fixture.Request, null, cancellationToken);
+        QuarantineItemRecord first = quarantined.Items[0];
+        fixture.TimeProvider.UtcNow = fixture.TimeProvider.UtcNow.AddDays(30);
+
+        string root = Path.Combine(Path.GetTempPath(), "quarantine-checkpoints-" + Guid.NewGuid().ToString("N"));
+        FontStoragePaths paths = FontStoragePaths.Create(root);
+        try
+        {
+            await using var database = new FontDatabase(paths);
+            var repository = new SqliteFontRepository(database);
+            await repository.InitializeAsync(cancellationToken);
+            string quarantineRoot = Path.Combine(Path.GetTempPath(), "font-quarantine");
+            var store = new FileQuarantineManifestStore(paths.ManifestPath, quarantineRoot);
+            QuarantineManifest original = Assert.Single(await fixture.ManifestStore.LoadAllAsync(cancellationToken));
+            await store.SaveAsync(original, cancellationToken);
+            var manager = new FontQuarantineManager(
+                repository,
+                new FontMaintenanceCoordinator(),
+                fixture.FileSystem,
+                store,
+                quarantineRoot,
+                fixture.TimeProvider,
+                () => new FontDirectoryPolicyResolver(Path.GetDirectoryName(fixture.SourcePath), null, null, false));
+            await manager.ReconcileAsync(cancellationToken);
+
+            await using SqliteConnection connection = await database.OpenConnectionAsync(cancellationToken);
+            await using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = FormattableString.Invariant($"""
+                CREATE TRIGGER reject_quarantine_update BEFORE UPDATE ON quarantine_item
+                WHEN NEW.file_id = {first.FileId} AND NEW.status = {(int)QuarantineItemStatus.Purged}
+                BEGIN SELECT RAISE(ABORT, 'test failure before SQLite commit'); END;
+                """);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await Assert.ThrowsAsync<SqliteException>(() => manager.PurgeExpiredAsync(cancellationToken));
+            Assert.False(fixture.FileSystem.FileExists(first.QuarantinePath));
+            Assert.Equal(QuarantineItemStatus.Purged, Assert.Single(await store.LoadAllAsync(cancellationToken)).Items[0].Status);
+            MaintenanceBatch persisted = (await repository.GetMaintenanceBatchAsync(quarantined.Id, cancellationToken))!;
+            Assert.Equal(QuarantineItemStatus.Quarantined, persisted.Items[0].Status);
+
+            command.CommandText = "DROP TRIGGER reject_quarantine_update;";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await manager.ReconcileAsync(cancellationToken);
+            persisted = (await repository.GetMaintenanceBatchAsync(quarantined.Id, cancellationToken))!;
+            Assert.Equal(QuarantineItemStatus.Purged, persisted.Items[0].Status);
+
+            command.CommandText = FormattableString.Invariant($"""
+                CREATE TRIGGER reject_quarantine_update BEFORE UPDATE ON quarantine_item
+                WHEN NEW.file_id = {first.FileId}
+                BEGIN SELECT RAISE(ABORT, 'untouched quarantine item was rewritten'); END;
+                """);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            Assert.Equal(1, await manager.PurgeExpiredAsync(cancellationToken));
+            persisted = (await repository.GetMaintenanceBatchAsync(quarantined.Id, cancellationToken))!;
+            Assert.All(persisted.Items, item => Assert.Equal(QuarantineItemStatus.Purged, item.Status));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 
     [Fact]
     public async Task PurgeDoesNotCountAnItemWhoseDeletionFails()
@@ -113,6 +182,42 @@ public sealed class FontQuarantineManagerTests
 
         Assert.False(coordinator.IsPathAvailable(fixture.SourcePath));
         Assert.NotEqual(fixture.SourcePath, (await Tests.Services.FontCacheManagerFixture.LookupAsync(manager, new FontDescriptor("Family", null, false, false)))?.Path);
+    }
+
+    [Fact]
+    public async Task Startup_ShouldLeasePathsDiscoveredDuringTheManifestReread()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        QuarantineFixture fixture = await QuarantineFixture.CreateAsync(sameVolume: true, duplicateCount: 2);
+        await fixture.Manager.QuarantineAsync(fixture.Request, null, token);
+        QuarantineManifest manifest = Assert.Single(await fixture.ManifestStore.LoadAllAsync(token));
+        QuarantineManifestItem initial = Assert.Single(manifest.Items, item => item.SourcePath == fixture.SourcePath);
+        string addedPath = fixture.SecondSourcePath!;
+        var coordinator = new FontMaintenanceCoordinator();
+        bool addedPathWasLeased = false;
+        int reads = 0;
+        var manifests = new Mock<IQuarantineManifestStore>();
+        manifests.Setup(store => store.LoadAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() =>
+        {
+            addedPathWasLeased |= coordinator.IsInUse(addedPath);
+            return (IReadOnlyList<QuarantineManifest>)[++reads == 1 ? manifest with { Items = [initial] } : manifest];
+        });
+        using var manager = new Tests.Services.FontCacheManagerFixture(fixture.Repository, coordinator);
+        var readiness = new FontCatalogReadiness();
+        using var startup = Tests.Services.FontCacheManagerFixture.CreateStartupService(
+            manager.Manager,
+            fixture.Repository,
+            new FileRenameManifestStore(Path.Combine(Path.GetTempPath(), "rename-test-" + Guid.NewGuid().ToString("N"))),
+            manifests.Object,
+            coordinator,
+            readiness);
+
+        await startup.StartAsync(token);
+        Assert.True(await readiness.WaitAsync(token).WaitAsync(TimeSpan.FromSeconds(5), token));
+
+        Assert.True(addedPathWasLeased);
+        Assert.False(coordinator.IsPathAvailable(fixture.SourcePath));
+        Assert.False(coordinator.IsPathAvailable(addedPath));
     }
 
     [Theory]

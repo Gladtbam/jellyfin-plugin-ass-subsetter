@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,15 @@ public interface IFontManagementReader : IFontInventoryReader, IFontAnalysisRead
     /// <param name="cancellationToken">Cancels the query.</param>
     /// <returns>The file and Face totals from one database snapshot.</returns>
     Task<(long FileCount, long FaceCount)> GetPublishedInventoryCountsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Reads a page of maintenance summaries with item counts.</summary>
+    /// <param name="offset">The zero-based row offset.</param>
+    /// <param name="pageSize">The bounded number of batches to load.</param>
+    /// <param name="kinds">The optional operation kinds to include.</param>
+    /// <param name="cancellationToken">Cancels the query.</param>
+    /// <returns>The page and its exact total count.</returns>
+    Task<FontRepositoryPage<MaintenanceBatchSummary>> LoadMaintenanceBatchSummaryPageAsync(
+        long offset, int pageSize, IReadOnlySet<FontOperationKind>? kinds, CancellationToken cancellationToken);
 
     /// <summary>Reads the published generation and its current analysis identity.</summary>
     /// <param name="includeInput">Whether to include the inventory's saved analysis input.</param>
@@ -50,4 +60,8 @@ public interface IFontManagementReader : IFontInventoryReader, IFontAnalysisRead
     /// <returns>The group detail, or null if the group does not belong to the report.</returns>
     Task<(DuplicateGroupSummary Group, IReadOnlyList<FontFileRecord> Files, IReadOnlyList<FontRelationRecord> Relations)?> GetDuplicateGroupDetailAsync(
         long analysisBatchId, long groupId, CancellationToken cancellationToken);
+
+    internal Task<TResult> ReadReportAsync<TResult>(
+        long? analysisBatchId, Func<FontReportSnapshot?, Task<TResult>> readPage, CancellationToken cancellationToken)
+        => FontReportSnapshot.ReadFromRepositoryAsync(this, analysisBatchId, readPage, cancellationToken);
 }

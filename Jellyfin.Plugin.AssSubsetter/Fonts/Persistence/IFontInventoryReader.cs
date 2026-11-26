@@ -20,6 +20,13 @@ public interface IFontInventoryReader
     /// <returns>The published physical-file inventory.</returns>
     Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryAsync(CancellationToken cancellationToken);
 
+    /// <summary>Loads physical-file identity and generation evidence for the requested paths in the current publication.</summary>
+    /// <param name="paths">The inventory primary paths to match with the host's path comparison.</param>
+    /// <param name="cancellationToken">A token that cancels the query.</param>
+    /// <returns>The evidence for matching inventory files from one published read snapshot.</returns>
+    Task<IReadOnlyList<(string Path, string PhysicalIdentity, long GenerationId)>> LoadPublishedFileEvidenceByPathAsync(
+        IReadOnlyCollection<string> paths, CancellationToken cancellationToken);
+
     /// <summary>Loads complete published file and Face evidence, including Unicode coverage needed for scan reuse.</summary>
     /// <param name="cancellationToken">A token that cancels the query.</param>
     /// <returns>The published inventory for a new staged generation.</returns>

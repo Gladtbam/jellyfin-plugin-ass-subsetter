@@ -48,23 +48,67 @@ public sealed partial class SqliteFontRepository
         await using var scope = context.ConfigureAwait(false);
         var transaction = await BeginReadSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         await using var transactionScope = transaction.ConfigureAwait(false);
-        int[] kindValues = kinds?.Select(kind => (int)kind).ToArray() ?? [];
-        IQueryable<MaintenanceBatchRow> query = context.Set<MaintenanceBatchRow>();
-        if (kinds is not null)
+        int[]? kindValues = kinds?.Select(kind => (int)kind).ToArray();
+        long count = await CountMaintenanceBatchesAsync(context, kindValues, cancellationToken).ConfigureAwait(false);
+        List<MaintenanceBatchRow> rows = await SelectMaintenanceBatchPage(context, offset, pageSize, kindValues).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return new FontRepositoryPage<MaintenanceBatch>(await LoadMaintenanceRecordsAsync(context, rows, cancellationToken).ConfigureAwait(false), count);
+    }
+
+    /// <inheritdoc/>
+    public async Task<FontRepositoryPage<MaintenanceBatchSummary>> LoadMaintenanceBatchSummaryPageAsync(
+        long offset, int pageSize, IReadOnlySet<FontOperationKind>? kinds, CancellationToken cancellationToken)
+    {
+        ValidatePage(offset, pageSize);
+        if (kinds is { Count: 0 })
         {
-            query = query.Where(row => kindValues.Contains(row.OperationKind));
+            return new([], 0);
         }
 
-        long count = await query.LongCountAsync(cancellationToken).ConfigureAwait(false);
-        string kindsJson = JsonSerializer.Serialize(kindValues);
-        int filter = kinds is null ? 0 : 1;
-        List<MaintenanceBatchRow> rows = await context.Set<MaintenanceBatchRow>().FromSqlInterpolated($"""
-            SELECT * FROM maintenance_batch
+        FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var scope = context.ConfigureAwait(false);
+        var transaction = await BeginReadSnapshotAsync(context, cancellationToken).ConfigureAwait(false);
+        await using var transactionScope = transaction.ConfigureAwait(false);
+        int[]? kindValues = kinds?.Select(kind => (int)kind).ToArray();
+        long count = await CountMaintenanceBatchesAsync(context, kindValues, cancellationToken).ConfigureAwait(false);
+        if (offset >= count)
+        {
+            return new([], count);
+        }
+
+        List<MaintenanceBatchSummary> items = await SelectMaintenanceBatchPage(context, offset, pageSize, kindValues)
+            .Select(batch => new MaintenanceBatchSummary(
+                batch.Id,
+                batch.OperationRequestId,
+                (FontOperationKind)batch.OperationKind,
+                (MaintenanceBatchStatus)batch.Status,
+                ParseDate(batch.StartedUtc),
+                ParseNullableDate(batch.CompletedUtc),
+                context.Set<RenameItemRow>().Count(row => row.MaintenanceBatchId == batch.Id)
+                    + context.Set<QuarantineItemRow>().Count(row => row.MaintenanceBatchId == batch.Id)))
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        return new(items, count);
+    }
+
+    private static Task<long> CountMaintenanceBatchesAsync(FontDbContext context, int[]? kindValues, CancellationToken cancellationToken)
+    {
+        IQueryable<MaintenanceBatchRow> rows = context.Set<MaintenanceBatchRow>();
+        return kindValues is null
+            ? rows.LongCountAsync(cancellationToken)
+            : rows.LongCountAsync(row => kindValues.Contains(row.OperationKind), cancellationToken);
+    }
+
+    private static IQueryable<MaintenanceBatchRow> SelectMaintenanceBatchPage(FontDbContext context, long offset, int pageSize, int[]? kindValues)
+    {
+        string kindsJson = JsonSerializer.Serialize(kindValues ?? []);
+        int filter = kindValues is null ? 0 : 1;
+        var ids = context.Database.SqlQuery<long>($"""
+            SELECT id AS Value FROM maintenance_batch
             WHERE ({filter} = 0 OR operation_kind IN (SELECT value FROM json_each({kindsJson})))
             ORDER BY COALESCE(completed_utc, started_utc) DESC, id DESC
             LIMIT {pageSize} OFFSET {offset}
-            """).ToListAsync(cancellationToken).ConfigureAwait(false);
-        return new FontRepositoryPage<MaintenanceBatch>(await LoadMaintenanceRecordsAsync(context, rows, cancellationToken).ConfigureAwait(false), count);
+            """);
+        return context.Set<MaintenanceBatchRow>().Where(batch => ids.Contains(batch.Id))
+            .OrderByDescending(batch => batch.CompletedUtc ?? batch.StartedUtc).ThenByDescending(batch => batch.Id);
     }
 
     /// <inheritdoc/>

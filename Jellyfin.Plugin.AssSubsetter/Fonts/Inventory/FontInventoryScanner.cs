@@ -361,7 +361,7 @@ public sealed class FontInventoryScanner : IDisposable
         };
     }
 
-    private static string NormalizePath(string path) => OperatingSystem.IsWindows() ? Path.GetFullPath(path).ToUpperInvariant() : Path.GetFullPath(path);
+    private static string NormalizePath(string path) => FontPathComparison.Key(Path.GetFullPath(path));
 
     private sealed record ObservedPath(
         string Path,

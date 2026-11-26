@@ -38,6 +38,30 @@ public sealed partial class SqliteFontRepository
         => LoadInventoryCoreAsync(null, false, cancellationToken);
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<(string Path, string PhysicalIdentity, long GenerationId)>> LoadPublishedFileEvidenceByPathAsync(
+        IReadOnlyCollection<string> paths, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (paths.Count == 0)
+        {
+            return [];
+        }
+
+        var requestedPaths = paths.ToHashSet(FontPathComparison.Comparer);
+        string[] pathKeys = [.. requestedPaths.Select(FontPathComparison.Key).Distinct(StringComparer.Ordinal)];
+        FontDbContext context = await _database.OpenContextAsync(cancellationToken).ConfigureAwait(false);
+        await using var contextScope = context.ConfigureAwait(false);
+        // Read the publication pointer and file evidence in one SQLite statement snapshot.
+        var files = await (from schema in context.Set<SchemaInfoRow>()
+                           join file in context.Set<FontFileRow>() on schema.PublishedGenerationId equals (long?)file.GenerationId
+                           where schema.SingletonId == 1 && EF.Parameter(pathKeys).Contains(file.NormalizedPath)
+                           select new { file.Path, file.PhysicalIdentity, file.GenerationId })
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        return [.. files.Where(file => requestedPaths.Contains(file.Path)).Select(file => (file.Path, file.PhysicalIdentity, file.GenerationId))];
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<FontFileRecord>> LoadPublishedInventoryForReuseAsync(CancellationToken cancellationToken)
         => LoadInventoryCoreAsync(null, true, cancellationToken);
 

@@ -18,7 +18,7 @@ public static class FontRenameStateIdentity
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("|", oldPath, newPath, evidence.PhysicalIdentity, Convert.ToHexString(evidence.Sha256.Span), evidence.Size, evidence.ModifiedUtc.ToUniversalTime().Ticks))));
     }
 
-    internal static string PathKey(string path) => OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+    internal static string PathKey(string path) => FontPathComparison.Key(path);
 
     /// <summary>Maps a durable item state to its list filter.</summary>
     /// <param name="status">The execution state.</param>

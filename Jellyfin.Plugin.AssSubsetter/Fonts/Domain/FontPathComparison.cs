@@ -9,6 +9,8 @@ internal static class FontPathComparison
 
     public static StringComparison Comparison { get; } = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
+    internal static string Key(string path) => OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
+
     /// <summary>Checks containment with a directory separator boundary.</summary>
     /// <param name="path">The candidate path.</param>
     /// <param name="directory">The containing directory.</param>
