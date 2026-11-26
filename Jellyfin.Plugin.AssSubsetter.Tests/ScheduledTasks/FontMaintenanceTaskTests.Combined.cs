@@ -35,8 +35,15 @@ public sealed partial class FontMaintenanceTaskTests
             RequestJson = "{}"
         }, token);
         var phases = new List<string>();
+        var progress = new List<double>();
         int releases = 0;
         repository.BeforePrune = _ => phases.Add("prune-history");
+        repository.BeforeDatabaseOptimization = () =>
+        {
+            Assert.Equal(0, releases);
+            Assert.All(progress, value => Assert.True(value < 100));
+            phases.Add("optimize-database");
+        };
         var normalizer = new RecordingFilenameNormalizer(request =>
         {
             Assert.Equal(0, releases);
@@ -75,8 +82,6 @@ public sealed partial class FontMaintenanceTaskTests
             },
             filenameNormalizer: normalizer,
             signalPendingRequests: () => releases++);
-        var progress = new List<double>();
-
         FontTaskExecutionResult result = await executor.RunScheduledMaintenanceAsync(
             FontMaintenanceStages.Analyze | FontMaintenanceStages.Quarantine | FontMaintenanceStages.Rename,
             3,
@@ -84,7 +89,7 @@ public sealed partial class FontMaintenanceTaskTests
             token);
 
         Assert.Equal("Complete", result.Outcome);
-        Assert.Equal(["analyze", "prune-history", "quarantine", "purge", "rename"], phases);
+        Assert.Equal(["analyze", "prune-history", "quarantine", "purge", "rename", "optimize-database"], phases);
         Assert.Equal(progress.Order(), progress);
         Assert.Equal(100, progress[^1]);
         Assert.Equal(1, releases);
@@ -95,7 +100,7 @@ public sealed partial class FontMaintenanceTaskTests
     public async Task ScheduledMaintenanceStopsBeforeLaterStagesWhenAnalysisFails()
     {
         CancellationToken token = TestContext.Current.CancellationToken;
-        var repository = new InMemoryFontRepository();
+        var repository = new InMemoryFontRepository { BeforeDatabaseOptimization = () => throw new InvalidOperationException("The failed run must stop before database optimization.") };
         var normalizer = new RecordingFilenameNormalizer();
         using var executor = CreateExecutor(
             repository,

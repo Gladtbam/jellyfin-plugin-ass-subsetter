@@ -11,10 +11,10 @@ public interface IFontMaintenanceTaskExecutor
     /// <summary>Gets a value indicating whether any font task holds the shared execution slot.</summary>
     bool IsBusy { get; }
 
-    /// <summary>Runs the enabled stages in order under one shared execution slot.</summary>
+    /// <summary>Runs the enabled stages and finishes with catalog optimization under one shared execution slot.</summary>
     /// <param name="stages">The stages enabled for this run.</param>
     /// <param name="retentionCount">The analysis history retention count. Zero retains all history.</param>
-    /// <param name="progress">Receives progress across all enabled stages.</param>
+    /// <param name="progress">Receives progress across the enabled stages and catalog optimization.</param>
     /// <param name="cancellationToken">Cancels the recovery wait or the active stage.</param>
     /// <returns>The last stage result or the reason the run stopped before a stage began.</returns>
     Task<FontTaskExecutionResult> RunScheduledMaintenanceAsync(FontMaintenanceStages stages, int retentionCount, IProgress<double> progress, CancellationToken cancellationToken);

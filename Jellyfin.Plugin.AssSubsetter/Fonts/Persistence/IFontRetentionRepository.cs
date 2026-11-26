@@ -1,13 +1,10 @@
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
-using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Persistence;
 
-/// <summary>Prunes obsolete inventory and analysis while preserving active work.</summary>
+/// <summary>Prunes obsolete data and maintains the catalog's on-disk storage.</summary>
 public interface IFontRetentionRepository
 {
     /// <summary>Deletes superseded inventory and abandoned staged inventory that have no retained report or rename plan.</summary>
@@ -23,4 +20,9 @@ public interface IFontRetentionRepository
     /// <param name="cancellationToken">A token that cancels pruning.</param>
     /// <returns>The number of reports deleted.</returns>
     Task<int> PruneAnalysisBatchesAsync(int retentionCount, CancellationToken cancellationToken);
+
+    /// <summary>Optimizes query statistics and reclaims unused catalog space when practical.</summary>
+    /// <param name="cancellationToken">Cancels the maintenance operation between SQLite commands.</param>
+    /// <returns>The bytes reclaimed from the main database and any reason compaction was deferred.</returns>
+    Task<(long ReclaimedBytes, string? DeferredReason)> OptimizeDatabaseAsync(CancellationToken cancellationToken);
 }

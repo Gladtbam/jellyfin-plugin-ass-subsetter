@@ -9,10 +9,10 @@ namespace Jellyfin.Plugin.AssSubsetter.ScheduledTasks;
 
 public sealed partial class FontMaintenanceTaskExecutor
 {
-    /// <summary>Runs enabled inventory, quarantine, and rename stages in order under one shared execution slot.</summary>
+    /// <summary>Runs enabled inventory, quarantine, and rename stages before optimizing catalog storage under one shared execution slot.</summary>
     /// <param name="stages">The stages selected in plugin settings when the task starts.</param>
     /// <param name="retentionCount">The number of analysis reports and generations to retain. Zero retains all history.</param>
-    /// <param name="progress">Receives progress divided among the enabled stages.</param>
+    /// <param name="progress">Receives progress across the enabled stages and catalog optimization.</param>
     /// <param name="cancellationToken">Cancels the recovery wait or stops the run before subsequent stages.</param>
     /// <returns>The last stage result or an outcome indicating why no stages ran.</returns>
     /// <exception cref="InvalidOperationException">The catalog could not be recovered.</exception>
@@ -55,12 +55,13 @@ public sealed partial class FontMaintenanceTaskExecutor
 
         try
         {
+            int totalSteps = steps.Count + 1;
             for (int index = 0; index < steps.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var (stage, execute) = steps[index];
-                double start = 100d * index / steps.Count;
-                double end = 100d * (index + 1) / steps.Count;
+                double start = 100d * index / totalSteps;
+                double end = 100d * (index + 1) / totalSteps;
                 result = await execute(new ScaledProgress(progress, start, end), cancellationToken).ConfigureAwait(false);
                 if (_logger.IsEnabled(LogLevel.Information))
                 {
@@ -80,6 +81,18 @@ public sealed partial class FontMaintenanceTaskExecutor
                 progress.Report(end);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+            var (reclaimedBytes, deferredReason) = await _repository.OptimizeDatabaseAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.LogInformation(
+                    "[AssSubsetter] Font maintenance stage OptimizeDatabase ended. ReclaimedBytes: {ReclaimedBytes}. DeferredReason: {DeferredReason}.",
+                    reclaimedBytes,
+                    deferredReason);
+            }
+
+            progress.Report(100);
             return result;
         }
         finally

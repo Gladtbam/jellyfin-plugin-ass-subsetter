@@ -30,8 +30,8 @@ public static class LocalizationHelper
         {
             "FontMaintenanceTask_Name" => isZh ? "ASS Subsetter 字体维护" : "ASS Subsetter font maintenance",
             "FontMaintenanceTask_Description" => isZh
-                ? "按插件设置执行字体库存分析及历史清理、重复字体隔离及过期清理、字体文件重命名。"
-                : "Runs the enabled stages from plugin settings: inventory analysis and history pruning, duplicate quarantine and expiry cleanup, and filename renaming.",
+                ? "按插件设置执行字体库存分析及历史清理、重复字体隔离及过期清理、字体文件重命名，最后执行“压缩数据库并优化可用空间”。"
+                : "Runs the enabled stages from plugin settings: inventory analysis and history pruning, duplicate quarantine and expiry cleanup, and filename renaming. Then compacts the database and optimizes free space.",
             _ => key
         };
     }

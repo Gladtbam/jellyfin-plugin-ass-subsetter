@@ -28,6 +28,8 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
     public Action<int>? BeforePrune { get; set; }
 
+    public Action? BeforeDatabaseOptimization { get; set; }
+
     public bool ThrowOnFullRenameReads { get; set; }
 
     public Task<FontRenameStatePage> LoadRenameStatePageAsync(string status, int page, int pageSize, FontRenameCandidateReadRequirements requirements, CancellationToken cancellationToken)
@@ -660,6 +662,13 @@ internal sealed class InMemoryFontRepository : IFontRepository
 
             return Task.CompletedTask;
         }
+    }
+
+    public Task<(long ReclaimedBytes, string? DeferredReason)> OptimizeDatabaseAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        BeforeDatabaseOptimization?.Invoke();
+        return Task.FromResult<(long ReclaimedBytes, string? DeferredReason)>((0, null));
     }
 
     public Task<int> PruneAnalysisBatchesAsync(int retentionCount, CancellationToken cancellationToken)

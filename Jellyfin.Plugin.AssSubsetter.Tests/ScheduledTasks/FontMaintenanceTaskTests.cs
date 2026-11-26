@@ -318,8 +318,9 @@ public sealed partial class FontMaintenanceTaskTests
 
         await executor.RunScheduledMaintenanceAsync(FontMaintenanceStages.Analyze, 0, new InlineProgress(values.Add), CancellationToken.None);
 
-        Assert.Contains(54, values);
-        Assert.Contains(65.25, values);
+        // Inventory and analysis progress are both within the first half of this two-stage run.
+        Assert.Contains(27, values);
+        Assert.Contains(32.625, values);
         Assert.Equal(100, values[^1]);
     }
     [Fact]
