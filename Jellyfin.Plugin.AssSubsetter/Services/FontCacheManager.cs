@@ -47,7 +47,7 @@ public sealed class FontCacheManager : IDisposable
         var selections = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var request in requests)
         {
-            RuntimeFontFace? face = snapshot.Find(request.Key, _canSelect, request.Value);
+            RuntimeFontFace? face = snapshot.Find(request.Descriptor, _canSelect, request.Characters);
             string identity = "missing";
             if (face is not null)
             {
@@ -62,7 +62,7 @@ public sealed class FontCacheManager : IDisposable
                 identity = SubtitleFontDependencies.FaceIdentity(hash, face.FaceIndex);
             }
 
-            selections[SubtitleFontDependencies.RequestKey(request.Key, request.Value)] = identity;
+            selections[request.CanonicalKey] = identity;
         }
 
         return new SubtitleFontDependencies(selections);

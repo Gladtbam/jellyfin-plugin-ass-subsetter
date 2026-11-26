@@ -26,11 +26,14 @@ internal sealed class SubtitleFontDependencies
     internal string Fingerprint { get; }
 
     internal static string RequestKey(FontDescriptor descriptor, IReadOnlyCollection<uint> characters)
+        => RequestKeyFromSortedCharacters(descriptor, characters.Order());
+
+    internal static string RequestKeyFromSortedCharacters(FontDescriptor descriptor, IEnumerable<uint> sortedCharacters)
     {
         string name = Convert.ToBase64String(Encoding.UTF8.GetBytes(descriptor.FontName.ToUpperInvariant()));
         return string.Create(
             CultureInfo.InvariantCulture,
-            $"{name}:{descriptor.RequestedWeight}:{descriptor.IsBoldRequest}:{descriptor.IsItalic}:{string.Join(",", characters.Order())}");
+            $"{name}:{descriptor.RequestedWeight}:{descriptor.IsBoldRequest}:{descriptor.IsItalic}:{string.Join(",", sortedCharacters)}");
     }
 
     internal static string FaceIdentity(string hash, int faceIndex)

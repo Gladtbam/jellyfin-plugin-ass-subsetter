@@ -240,11 +240,14 @@ public sealed class SelectiveSubtitleCacheTests
             repository.Setup(r => r.LoadPublishedRuntimeFacesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => faces);
             using var managerFixture = new FontCacheManagerFixture(repository.Object);
             var manager = managerFixture.Manager;
+            string? cachedRequestKey = null;
             async Task<string> Identity()
             {
                 await manager.LoadPublishedSnapshotAsync(null, TestContext.Current.CancellationToken);
                 var dependencies = manager.GetSubtitleDependencies(source);
-                Assert.Single(dependencies.Selections);
+                string requestKey = Assert.Single(dependencies.Selections).Key;
+                cachedRequestKey ??= requestKey;
+                Assert.Same(cachedRequestKey, requestKey);
                 return dependencies.Fingerprint;
             }
 
