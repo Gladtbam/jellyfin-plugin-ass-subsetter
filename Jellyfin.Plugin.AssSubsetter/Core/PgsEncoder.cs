@@ -21,6 +21,8 @@ internal static class PgsEncoder
     // PGS magic number "PG"
     private const ushort PgsMagic = 0x5047;
 
+    private const int MaxOverflowColorMappings = 1024;
+
     // Maximum ODS data payload (excluding header) per segment
     private const int MaxOdsPayload = 65515; // 65535 - 4 (obj header) - 7 (first fragment header) - ... simplified
 
@@ -124,6 +126,7 @@ internal static class PgsEncoder
         // Simple quantization: map unique colors to palette indices
         // Index 0 is reserved for fully transparent
         var colorToIndex = new Dictionary<uint, byte>();
+        Dictionary<uint, byte>? overflowMatches = null;
         indexedBitmap = new byte[width * height];
 
         // Reserve index 0 for fully transparent
@@ -132,26 +135,18 @@ internal static class PgsEncoder
 
         for (int i = 0; i < width * height; i++)
         {
-            int offset = i * 4;
-            byte r = rgbaData[offset];
-            byte g = rgbaData[offset + 1];
-            byte b = rgbaData[offset + 2];
-            byte a = rgbaData[offset + 3];
-
-            if (a == 0)
+            uint color = BinaryPrimitives.ReadUInt32BigEndian(rgbaData.AsSpan(i * sizeof(uint)));
+            if ((color & 0xFF) == 0)
             {
-                indexedBitmap[i] = 0; // fully transparent → index 0
+                // Fully transparent pixels keep the zero-initialized index.
                 continue;
             }
-
-            uint color = ((uint)r << 24) | ((uint)g << 16) | ((uint)b << 8) | a;
 
             if (!colorToIndex.TryGetValue(color, out byte idx))
             {
                 if (nextIndex >= 256)
                 {
-                    // Exceeded 256 colors - find closest existing color
-                    idx = FindClosestColor(color, colorToIndex);
+                    idx = FindClosestColor(color, colorToIndex, ref overflowMatches);
                 }
                 else
                 {
@@ -504,8 +499,15 @@ internal static class PgsEncoder
         cr = (byte)Math.Clamp(crVal, 16, 240);
     }
 
-    private static byte FindClosestColor(uint targetColor, Dictionary<uint, byte> colorMap)
+    private static byte FindClosestColor(uint targetColor, Dictionary<uint, byte> colorMap, ref Dictionary<uint, byte>? overflowMatches)
     {
+        // The full palette is fixed, so an overflow color always maps to the same index.
+        overflowMatches ??= [];
+        if (overflowMatches.TryGetValue(targetColor, out byte cachedIndex))
+        {
+            return cachedIndex;
+        }
+
         byte targetR = (byte)(targetColor >> 24);
         byte targetG = (byte)(targetColor >> 16);
         byte targetB = (byte)(targetColor >> 8);
@@ -528,6 +530,11 @@ internal static class PgsEncoder
                 minDistance = distance;
                 closestIdx = kvp.Value;
             }
+        }
+
+        if (overflowMatches.Count < MaxOverflowColorMappings)
+        {
+            overflowMatches.Add(targetColor, closestIdx);
         }
 
         return closestIdx;
