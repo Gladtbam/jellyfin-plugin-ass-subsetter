@@ -28,7 +28,8 @@ public static class FontInventoryInputComparer
             PathAliases = [.. file.PathAliases.OrderBy(path => path, FontPathComparison.Comparer)],
             Faces = [.. file.Faces.OrderBy(face => face.FaceIndex).Select(face => face with { Id = 0, RetentionScore = 0, IsRuntimePreferred = false })]
         });
-        return new(Hash(JsonSerializer.Serialize(stable)), Hash(JsonSerializer.Serialize(policy.ConfiguredRoots)), Hash(evidenceKey));
+        (string policyFingerprint, string evidenceFingerprint) = CaptureSettings(policy, evidenceKey);
+        return new(Hash(JsonSerializer.Serialize(stable)), policyFingerprint, evidenceFingerprint);
     }
 
     /// <summary>Explains the changed inputs.</summary>
@@ -62,6 +63,9 @@ public static class FontInventoryInputComparer
 
         return reasons;
     }
+
+    internal static (string PolicyFingerprint, string EvidenceFingerprint) CaptureSettings(FontDirectoryPolicyResolver policy, string evidenceKey) =>
+        (Hash(JsonSerializer.Serialize(policy.ConfiguredRoots)), Hash(evidenceKey));
 
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }

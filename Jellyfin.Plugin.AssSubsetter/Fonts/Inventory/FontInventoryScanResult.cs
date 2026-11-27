@@ -10,4 +10,6 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 public sealed record FontInventoryScanResult(long GenerationId, bool HasChanges, FontAnalysisInputSnapshot Input, IReadOnlyList<string> ChangeReasons)
 {
     internal long? ReusedAnalysisBatchId { get; init; }
+
+    internal FontInventoryPublicationSnapshot? PublicationSnapshot { get; init; }
 }

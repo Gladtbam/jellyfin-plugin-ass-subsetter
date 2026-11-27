@@ -18,6 +18,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 /// </summary>
 public sealed class FontInventoryScanner : IDisposable
 {
+    private const string PublicationInputsChanged = "Font files or analysis inputs changed during analysis; scan again.";
+
     private readonly IFontRepository _repository;
     private readonly Func<FontDirectoryPolicyResolver> _policyFactory;
     private readonly IPhysicalFileIdentityProvider _identityProvider;
@@ -101,8 +103,13 @@ public sealed class FontInventoryScanner : IDisposable
                 _logger.LogInformation("[AssSubsetter] Font inventory scan completed. GenerationId: {GenerationId}; Files: {FileCount}; Reused: {ReusedCount}; Unclassifiable: {UnclassifiableCount}; HasChanges: {HasChanges}; ChangeReasons: {ChangeReasons}; ElapsedMs: {ElapsedMs}.", generationId, records.Count, reusedCount, records.Count(file => file.Health == FontFileHealth.Unclassifiable), changed, string.Join(",", reasons), stopwatch.ElapsedMilliseconds);
             }
 
+            FontInventoryPublicationSnapshot snapshot = FontInventoryPublicationSnapshot.Capture(generationId, input, records);
             progress?.Report(100);
-            return new(generationId, changed, input, reasons) { ReusedAnalysisBatchId = changed ? null : published.BatchId };
+            return new(generationId, changed, input, reasons)
+            {
+                ReusedAnalysisBatchId = changed ? null : published.BatchId,
+                PublicationSnapshot = snapshot
+            };
         }
         finally
         {
@@ -118,36 +125,81 @@ public sealed class FontInventoryScanner : IDisposable
     public async Task ValidatePublicationInputsAsync(FontInventoryScanResult scan, CancellationToken cancellationToken, IProgress<double>? progress = null)
     {
         ArgumentNullException.ThrowIfNull(scan);
+        cancellationToken.ThrowIfCancellationRequested();
         FontDirectoryPolicyResolver policy = _policyFactory();
-        IReadOnlyList<FontFileRecord> files = await _repository.LoadInventoryAsync(scan.GenerationId, cancellationToken).ConfigureAwait(false);
-        (IReadOnlyList<FontFileRecord> observed, _) = await ObserveAsync(policy, files, progress, cancellationToken).ConfigureAwait(false);
-        if (FontInventoryInputComparer.Capture(observed, policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey) != scan.Input)
+        if (scan.PublicationSnapshot is { } snapshot && snapshot.GenerationId == scan.GenerationId && snapshot.Input == scan.Input)
         {
-            throw new InvalidOperationException("Font files or analysis inputs changed during analysis; scan again.");
+            await ValidateSnapshotAsync(snapshot, policy, progress, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            IReadOnlyList<FontFileRecord> files = await _repository.LoadInventoryAsync(scan.GenerationId, cancellationToken).ConfigureAwait(false);
+            (IReadOnlyList<FontFileRecord> observed, _) = await ObserveAsync(policy, files, progress, cancellationToken).ConfigureAwait(false);
+            if (FontInventoryInputComparer.Capture(observed, policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey) != scan.Input)
+            {
+                throw new InvalidOperationException(PublicationInputsChanged);
+            }
         }
 
         progress?.Report(100);
     }
 
+    private async Task ValidateSnapshotAsync(
+        FontInventoryPublicationSnapshot snapshot, FontDirectoryPolicyResolver policy, IProgress<double>? progress, CancellationToken cancellationToken)
+    {
+        (string policyFingerprint, string evidenceFingerprint) = FontInventoryInputComparer.CaptureSettings(policy, PhysicalFontAnalysisEvidenceSource.AnalysisCompatibilityKey);
+        if (policyFingerprint != snapshot.Input.PolicyFingerprint || evidenceFingerprint != snapshot.Input.EvidenceFingerprint)
+        {
+            throw new InvalidOperationException(PublicationInputsChanged);
+        }
+
+        ObservedFile[] observedFiles = DiscoverFiles(policy, snapshot.Files, static file => file.Path, progress, cancellationToken);
+        if (observedFiles.Length != snapshot.Files.Count)
+        {
+            throw new InvalidOperationException(PublicationInputsChanged);
+        }
+
+        for (int index = 0; index < observedFiles.Length; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ObservedFile observed = observedFiles[index];
+            FontInventoryPublicationSnapshot.FileEvidence expected = snapshot.Files[index];
+            if (observed.Path != expected.Path || observed.PhysicalIdentity != expected.PhysicalIdentity
+                || observed.LinkKind != expected.LinkKind || observed.Policy != expected.Policy
+                || !observed.Aliases.SequenceEqual(expected.Aliases, StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException(PublicationInputsChanged);
+            }
+
+            var info = new FileInfo(observed.Path);
+            long size = info.Length;
+            DateTime modified = info.LastWriteTimeUtc;
+            if (size != expected.Size || new DateTimeOffset(modified) != expected.ModifiedUtc)
+            {
+                throw new InvalidOperationException(PublicationInputsChanged);
+            }
+
+            using var stream = new FileStream(observed.Path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+            EnsureObservationStable(observed, info, size, modified);
+            if (!expected.Sha256.Span.SequenceEqual(hash))
+            {
+                throw new InvalidOperationException(PublicationInputsChanged);
+            }
+
+            progress?.Report(5 + (((index + 1) * 85d) / observedFiles.Length));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private async Task<(IReadOnlyList<FontFileRecord> Records, int ReusedCount)> ObserveAsync(
         FontDirectoryPolicyResolver policy, IReadOnlyList<FontFileRecord> previous, IProgress<double>? progress, CancellationToken cancellationToken)
     {
-        progress?.Report(0);
-        foreach (FontDirectoryRoot root in policy.ConfiguredRoots)
-        {
-            if (!Directory.Exists(root.Path) && ((root.Policy & FontDirectoryPolicy.Custom) != 0 || previous.Any(file => FontPathComparison.IsWithin(file.Path, root.Path))))
-            {
-                throw new DirectoryNotFoundException("Configured font directory is unavailable: " + root.Path);
-            }
-        }
-
-        string[] paths = [.. EnumerateFiles(policy, cancellationToken).Distinct(FontPathComparison.Comparer).OrderBy(path => path, FontPathComparison.Comparer)];
-        progress?.Report(2);
+        ObservedFile[] observedFiles = DiscoverFiles(policy, previous, static file => file.Path, progress, cancellationToken);
         Dictionary<string, FontFileRecord> reusable = previous.GroupBy(file => file.PhysicalIdentity, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        ObservedFile[] observedFiles = GroupPhysicalFiles(paths, policy);
         var records = new List<FontFileRecord>(observedFiles.Length);
         int reusedCount = 0;
-        progress?.Report(5);
         foreach (ObservedFile observed in observedFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -157,11 +209,7 @@ public sealed class FontInventoryScanner : IDisposable
             byte[] data = await File.ReadAllBytesAsync(observed.Path, cancellationToken).ConfigureAwait(false);
             byte[] hash = SHA256.HashData(data);
 
-            info.Refresh();
-            if (!info.Exists || info.Length != size || info.LastWriteTimeUtc != modified || _identityProvider.GetIdentity(observed.Path) != observed.PhysicalIdentity)
-            {
-                throw new IOException("Font changed while being scanned: " + observed.Path);
-            }
+            EnsureObservationStable(observed, info, size, modified);
 
             FontFileRecord record;
             if (reusable.TryGetValue(observed.PhysicalIdentity, out FontFileRecord? existing)
@@ -182,7 +230,7 @@ public sealed class FontInventoryScanner : IDisposable
                 }
             }
 
-            records.Add(record with { Sha256 = hash, PathAliases = observed.Aliases, DirectoryPolicy = observed.Policy });
+            records.Add(record with { Size = size, ModifiedUtc = modified, Sha256 = hash, PathAliases = observed.Aliases, DirectoryPolicy = observed.Policy });
             progress?.Report(5 + ((records.Count * 85d) / Math.Max(1, observedFiles.Length)));
         }
 
@@ -192,6 +240,34 @@ public sealed class FontInventoryScanner : IDisposable
 
     /// <summary>Releases the scanner serialization gate.</summary>
     public void Dispose() => _scanGate.Dispose();
+
+    private ObservedFile[] DiscoverFiles<TFile>(
+        FontDirectoryPolicyResolver policy, IReadOnlyList<TFile> previous, Func<TFile, string> getPath, IProgress<double>? progress, CancellationToken cancellationToken)
+    {
+        progress?.Report(0);
+        foreach (FontDirectoryRoot root in policy.ConfiguredRoots)
+        {
+            if (!Directory.Exists(root.Path) && ((root.Policy & FontDirectoryPolicy.Custom) != 0 || previous.Any(file => FontPathComparison.IsWithin(getPath(file), root.Path))))
+            {
+                throw new DirectoryNotFoundException("Configured font directory is unavailable: " + root.Path);
+            }
+        }
+
+        string[] paths = [.. EnumerateFiles(policy, cancellationToken).Distinct(FontPathComparison.Comparer).OrderBy(path => path, FontPathComparison.Comparer)];
+        progress?.Report(2);
+        ObservedFile[] files = GroupPhysicalFiles(paths, policy);
+        progress?.Report(5);
+        return files;
+    }
+
+    private void EnsureObservationStable(ObservedFile observed, FileInfo info, long size, DateTime modified)
+    {
+        info.Refresh();
+        if (!info.Exists || info.Length != size || info.LastWriteTimeUtc != modified || _identityProvider.GetIdentity(observed.Path) != observed.PhysicalIdentity)
+        {
+            throw new IOException("Font changed while being scanned: " + observed.Path);
+        }
+    }
 
     private static IEnumerable<string> EnumerateFiles(FontDirectoryPolicyResolver policy, CancellationToken cancellationToken)
     {

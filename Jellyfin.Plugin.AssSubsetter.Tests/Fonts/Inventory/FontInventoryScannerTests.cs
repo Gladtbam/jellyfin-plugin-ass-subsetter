@@ -10,6 +10,33 @@ public sealed class FontInventoryScannerTests : IDisposable
 {
     private readonly string _root = Path.Join(Path.GetTempPath(), "FontScannerTests_" + Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ValidatePublicationInputsAsync_ShouldUseScanEvidenceWithoutReloadingInventory(bool reusePublishedInventory)
+    {
+        Directory.CreateDirectory(_root);
+        using SKStreamAsset stream = SKTypeface.Default.OpenStream();
+        using SKData data = SKData.Create(stream);
+        await File.WriteAllBytesAsync(Path.Join(_root, "stable.ttf"), data.ToArray(), TestContext.Current.CancellationToken);
+        var repository = new InMemoryFontRepository();
+        using FontInventoryScanner scanner = CreateScanner(repository);
+        if (reusePublishedInventory)
+        {
+            await StageAndPublishAsync(scanner, repository);
+        }
+
+        FontInventoryScanResult scan = await scanner.StageAsync(cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(!reusePublishedInventory, scan.HasChanges);
+        int loadsBeforeValidation = repository.InventoryLoadCallCount;
+        var progress = new List<double>();
+        await scanner.ValidatePublicationInputsAsync(scan, TestContext.Current.CancellationToken, new InlineProgress<double>(progress.Add));
+
+        Assert.Equal(loadsBeforeValidation, repository.InventoryLoadCallCount);
+        Assert.Equal(0d, progress[0]);
+        Assert.Equal(100d, progress[^1]);
+    }
+
     [Fact]
     public async Task ValidatePublicationInputsAsync_ShouldRejectContentOrPolicyDrift()
     {
@@ -30,6 +57,34 @@ public sealed class FontInventoryScannerTests : IDisposable
         File.SetLastWriteTimeUtc(path, modified);
         await Assert.ThrowsAsync<InvalidOperationException>(() => scanner.ValidatePublicationInputsAsync(scan, CancellationToken.None));
         Assert.Empty(repository.PublishedFiles);
+    }
+
+    [Fact]
+    public async Task ValidatePublicationInputsAsync_ShouldRejectAliasDriftWhenPhysicalFileCountMatches()
+    {
+        Directory.CreateDirectory(_root);
+        await File.WriteAllBytesAsync(Path.Join(_root, "primary.ttf"), [1, 2, 3, 4], TestContext.Current.CancellationToken);
+        var repository = new InMemoryFontRepository();
+        using var scanner = new FontInventoryScanner(repository,
+            () => new FontDirectoryPolicyResolver(_root, null, null, false),
+            new ConstantIdentityProvider(), NullLogger<FontInventoryScanner>.Instance);
+        FontInventoryScanResult scan = await scanner.StageAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        await File.WriteAllBytesAsync(Path.Join(_root, "secondary.ttf"), [1, 2, 3, 4], TestContext.Current.CancellationToken);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scanner.ValidatePublicationInputsAsync(scan, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ValidatePublicationInputsAsync_ShouldRejectModifiedScanInput()
+    {
+        Directory.CreateDirectory(_root);
+        var repository = new InMemoryFontRepository();
+        using FontInventoryScanner scanner = CreateScanner(repository);
+        FontInventoryScanResult scan = await scanner.StageAsync(cancellationToken: TestContext.Current.CancellationToken);
+        FontInventoryScanResult modified = scan with { Input = scan.Input with { InventoryFingerprint = "different" } };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => scanner.ValidatePublicationInputsAsync(modified, TestContext.Current.CancellationToken));
     }
 
     [Fact]
