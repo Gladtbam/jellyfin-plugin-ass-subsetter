@@ -193,6 +193,83 @@ public sealed class SubtitleCacheServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOrGenerateSubtitleAsync_ShouldReplaceEmptyMks()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        string source = Path.Join(_tempDataPath, "empty-cache-source.ass");
+        await File.WriteAllTextAsync(source, "plain", token);
+        Guid itemId = Guid.NewGuid();
+        string fingerprint = SubtitleCacheFingerprint.Create(source, _config.SubtitleMode);
+        string output = Path.Join(_customCachePath, $"{itemId:N}_{fingerprint}.mks");
+        await File.WriteAllBytesAsync(output, [], token);
+        var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", async (startInfo, ct) =>
+        {
+            await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "mks-data", ct);
+            return 0;
+        });
+        using var service = new SubtitleCacheService(() => _config, _assProcessor, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+
+        var result = await service.GetOrGenerateSubtitleAsync(itemId, source, cancellationToken: token);
+
+        Assert.True(result.IsReady);
+        Assert.Equal(output, result.Path);
+        Assert.Equal("mks-data", await File.ReadAllTextAsync(output, token));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConcurrentMksRequestsShareGenerationAndRecheckBeforePreparing(bool editSource)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        _config.SubtitleMode = SubtitleProcessingMode.GenerateMks;
+        string source = Path.Join(_tempDataPath, "shared-mks.ass");
+        await File.WriteAllTextAsync(source, "plain", token);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var proceed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<PluginConfiguration> config = () => _config;
+        var processor = new Mock<AssProcessor>(config, _fontCache.Manager, new AssDocumentParser(), NullLogger<AssProcessor>.Instance);
+        processor.Setup(value => value.GenerateSubsetArtifactAsync(source, It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                started.TrySetResult();
+                await proceed.Task.WaitAsync(ct);
+                return new SubsetArtifact("plain", []);
+            });
+        var muxer = new MksMuxer(NullLogger<MksMuxer>.Instance, () => "ffmpeg", async (startInfo, ct) =>
+        {
+            await File.WriteAllTextAsync(startInfo.ArgumentList[^1], "mks-data", ct);
+            return 0;
+        });
+        using var service = new SubtitleCacheService(config, processor.Object, null, muxer, _customCachePath, NullLogger<SubtitleCacheService>.Instance);
+        Guid itemId = Guid.NewGuid();
+        var first = service.GetOrGenerateSubtitleAsync(itemId, source, cancellationToken: token);
+        Task<SubtitleResult> second;
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+            second = service.GetOrGenerateSubtitleAsync(itemId, source, cancellationToken: token);
+            Assert.False(second.IsCompleted);
+            if (editSource)
+            {
+                await File.AppendAllTextAsync(source, " changed", token);
+            }
+        }
+        finally
+        {
+            proceed.TrySetResult();
+        }
+
+        var results = await Task.WhenAll(first, second);
+
+        processor.Verify(value => value.GenerateSubsetArtifactAsync(source, It.IsAny<CancellationToken>()), Times.Once);
+        Assert.All(results, result => Assert.Equal(!editSource, result.IsReady));
+        Assert.Equal(results[0].Path, results[1].Path);
+        Assert.Equal(editSource ? 0 : 1, Directory.GetFiles(_customCachePath, "*.mks").Length);
+    }
+
+    [Fact]
     public async Task GetOrGenerateSubtitleAsync_ShouldEvictOldMks_WhenQuotaExceeded()
     {
         _config.MaxCacheSizeMB = 1;

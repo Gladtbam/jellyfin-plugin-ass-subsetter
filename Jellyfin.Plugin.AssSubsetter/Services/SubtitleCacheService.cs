@@ -146,7 +146,6 @@ public class SubtitleCacheService : IHostedService, IDisposable
     /// <param name="videoHeight">The video frame height.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The result containing path and content type.</returns>
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are guided by sanitized database-derived item IDs and hardcoded directories.")]
     public virtual async Task<SubtitleResult> GetOrGenerateSubtitleAsync(Guid itemId, string originalAssPath, int videoWidth = 0, int videoHeight = 0, CancellationToken cancellationToken = default)
     {
         try
@@ -156,243 +155,195 @@ public class SubtitleCacheService : IHostedService, IDisposable
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             _logger.LogWarning(exception, "Unable to read subtitle cache dependencies for item {ItemId}.", itemId);
-            return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
+            return CreateFallback(originalAssPath);
         }
     }
 
     private async Task<SubtitleResult> GetOrGenerateSubtitleCoreAsync(Guid itemId, string originalAssPath, int videoWidth, int videoHeight, CancellationToken cancellationToken)
     {
-        videoWidth = videoWidth > 0 ? videoWidth : 1920;
-        videoHeight = videoHeight > 0 ? videoHeight : 1080;
-
-        if (Config.SubtitleMode == SubtitleProcessingMode.GenerateMks)
+        SubtitleProcessingMode mode = Config.SubtitleMode switch
         {
-            return await GetOrGenerateMksAsync(itemId, originalAssPath, cancellationToken).ConfigureAwait(false);
+            SubtitleProcessingMode.ConvertToSup => SubtitleProcessingMode.ConvertToSup,
+            SubtitleProcessingMode.GenerateMks => SubtitleProcessingMode.GenerateMks,
+            _ => SubtitleProcessingMode.Subsetting
+        };
+        var request = new CacheRequest(itemId, originalAssPath, mode, videoWidth > 0 ? videoWidth : 1920, videoHeight > 0 ? videoHeight : 1080);
+        string cachePath = CaptureCacheIdentity(request).Path;
+        if (TryUseCachedFile(request, cachePath))
+        {
+            return new SubtitleResult(cachePath, request.Format.ContentType, true);
         }
 
-        if (Config.SubtitleMode == SubtitleProcessingMode.ConvertToSup)
+        if (mode == SubtitleProcessingMode.ConvertToSup)
         {
-            string supCachePath = GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight);
-
-            if (File.Exists(supCachePath))
-            {
-                if (_logger.IsEnabled(LogLevel.Information))
-                {
-                    _logger.LogInformation("[AssSubsetter] SUP cache hit for item {ItemId}. Serving cached SUP.", itemId);
-                }
-
-                TouchFile(supCachePath);
-                return new SubtitleResult(supCachePath, "application/octet-stream", true);
-            }
-
-            // Cache miss — trigger a conversion owned by this hosted service rather than the HTTP request.
-            TriggerBackgroundSupConversion(supCachePath, itemId, originalAssPath, videoWidth, videoHeight);
-
-            // Return original ASS as fallback
+            _scheduler.TryEnqueue(
+                cachePath,
+                async token => { await GetOrGenerateSupAsync(itemId, originalAssPath, request.Width, request.Height, token).ConfigureAwait(false); });
             return new SubtitleResult(originalAssPath, "text/x-ssa", false);
         }
 
-        string cacheFilePath = GetSubsetCachePath(itemId, originalAssPath);
-
-        if (File.Exists(cacheFilePath))
-        {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("[AssSubsetter] Cache hit: Returning existing subsetted subtitle for item {ItemId}", itemId);
-            }
-
-            TouchFile(cacheFilePath);
-
-            return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
-        }
-
-        using (await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false))
-        {
-            if (File.Exists(cacheFilePath))
-            {
-                if (_logger.IsEnabled(LogLevel.Information))
-                {
-                    _logger.LogInformation("[AssSubsetter] Cache hit (after lock): Returning existing subsetted subtitle for item {ItemId}", itemId);
-                }
-
-                TouchFile(cacheFilePath);
-
-                return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
-            }
-
-            try
-            {
-                long requiredSpace = File.Exists(originalAssPath) ? new FileInfo(originalAssPath).Length : 2 * 1024 * 1024;
-                _quota.EnsureCapacity(requiredSpace, CacheCapacityBytes);
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] IO Error occurred during LRU cache eviction.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Permission Error occurred during LRU cache eviction.");
-            }
-
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("[AssSubsetter] Cache miss for item {ItemId}. Triggering on-demand JIT subsetting...", itemId);
-            }
-
-            using var validation = BeginValidation(originalAssPath);
-            bool success = await WriteValidatedAsync(
-                cacheFilePath,
-                () => GetSubsetCachePath(itemId, originalAssPath),
-                validation,
-                (path, token) => _assProcessor.GenerateSubsetFontAsync(originalAssPath, path, token),
-                cancellationToken).ConfigureAwait(false);
-
-            if (success && File.Exists(cacheFilePath))
-            {
-                TouchFile(cacheFilePath);
-
-                return new SubtitleResult(cacheFilePath, "text/x-ssa", true);
-            }
-
-            _logger.LogWarning("[AssSubsetter] JIT subsetting failed for item {ItemId}. Falling back.", itemId);
-            return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
-        }
+        string? generatedPath = await GenerateMissingCacheFileAsync(request, cachePath, cancellationToken).ConfigureAwait(false);
+        return generatedPath is null ? CreateFallback(originalAssPath) : new SubtitleResult(generatedPath, request.Format.ContentType, true);
     }
 
-    /// <summary>
-    ///     Gets the expected SUP cache file path for a given item, without triggering conversion.
-    /// </summary>
+    /// <summary>Gets a cached SUP file or generates it from the source subtitle.</summary>
     /// <param name="itemId">The media item identifier.</param>
-    /// <param name="originalAssPath">The physical path of the original ASS file.</param>
+    /// <param name="originalAssPath">The source subtitle path.</param>
     /// <param name="videoWidth">The SUP rendering width.</param>
     /// <param name="videoHeight">The SUP rendering height.</param>
-    /// <returns>The expected cache file path for the SUP file.</returns>
-    private string GetSupCachePath(Guid itemId, string originalAssPath, int videoWidth, int videoHeight)
-    {
-        string fingerprint = SubtitleCacheFingerprint.Create(
-            originalAssPath,
-            SubtitleProcessingMode.ConvertToSup,
-            videoWidth,
-            videoHeight,
-            Math.Clamp(Config.AssToSupFrameRate, 10, 60),
-            _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.sup");
-    }
-
-    private string GetMksCachePath(Guid itemId, string originalAssPath)
-    {
-        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.GenerateMks, fontDependencies: _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.mks");
-    }
-
-    /// <summary>
-    ///     Gets the expected ASS subset cache file path for a given item.
-    /// </summary>
-    /// <param name="itemId">The media item identifier.</param>
-    /// <param name="originalAssPath">The physical path of the original ASS file.</param>
-    /// <returns>The expected cache file path for the subsetted ASS file.</returns>
-    private string GetSubsetCachePath(Guid itemId, string originalAssPath)
-    {
-        string fingerprint = SubtitleCacheFingerprint.Create(originalAssPath, SubtitleProcessingMode.Subsetting, fontDependencies: _fontCacheManager?.GetSubtitleDependencies(originalAssPath).Fingerprint ?? string.Empty);
-        return Path.Join(CacheFolderPath, $"{itemId:N}_{fingerprint}.ass");
-    }
-
-    /// <summary>
-    ///     Triggers a background ASS to SUP conversion if one is not already in progress for the given item.
-    ///     This is a fire-and-forget operation; the conversion runs on a background thread.
-    /// </summary>
-    /// <param name="conversionKey">The versioned cache output path used for deduplication.</param>
-    /// <param name="itemId">The media item identifier.</param>
-    /// <param name="originalAssPath">The physical path of the original ASS file.</param>
-    /// <param name="videoWidth">Video frame width.</param>
-    /// <param name="videoHeight">Video frame height.</param>
-    private void TriggerBackgroundSupConversion(string conversionKey, Guid itemId, string originalAssPath, int videoWidth, int videoHeight)
-    {
-        _scheduler.TryEnqueue(
-            conversionKey,
-            async token => { await GetOrGenerateSupAsync(itemId, originalAssPath, videoWidth, videoHeight, token).ConfigureAwait(false); });
-    }
-
-    /// <summary>
-    ///     Gets an existing SUP subtitle file or generates one on-demand via ASS to SUP conversion.
-    /// </summary>
-    /// <param name="itemId">The media item identifier.</param>
-    /// <param name="originalAssPath">The physical path of the original ASS file.</param>
-    /// <param name="videoWidth">Video frame width.</param>
-    /// <param name="videoHeight">Video frame height.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The path to the cached SUP file, or empty string on failure.</returns>
-    [SuppressMessage("Security", "CA3003:Review code for file path injection vulnerabilities", Justification = "Paths are guided by sanitized database-derived item IDs and hardcoded directories.")]
+    /// <param name="cancellationToken">Cancels the conversion or its wait for the cache file.</param>
+    /// <returns>The cached SUP path, the configured fallback on conversion failure, or an empty path when the converter is unavailable.</returns>
     protected virtual async Task<string> GetOrGenerateSupAsync(Guid itemId, string originalAssPath, int videoWidth, int videoHeight, CancellationToken cancellationToken = default)
     {
-        string cacheFilePath = GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight);
-
-        if (File.Exists(cacheFilePath))
+        var request = new CacheRequest(itemId, originalAssPath, SubtitleProcessingMode.ConvertToSup, videoWidth, videoHeight);
+        string cachePath = CaptureCacheIdentity(request).Path;
+        if (TryUseCachedFile(request, cachePath))
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("[AssSubsetter] SUP cache hit: Returning existing converted subtitle for item {ItemId}", itemId);
-            }
-
-            TouchFile(cacheFilePath);
-            return cacheFilePath;
+            return cachePath;
         }
 
-        if (_assToSupConverter == null)
+        if (_assToSupConverter is null)
         {
             _logger.LogWarning("[AssSubsetter] AssToSupConverter is not available. Cannot convert ASS to SUP.");
             return string.Empty;
         }
 
-        using (await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false))
+        string? generatedPath = await GenerateMissingCacheFileAsync(request, cachePath, cancellationToken).ConfigureAwait(false);
+        return generatedPath ?? GetFallbackPath(originalAssPath);
+    }
+
+    private (string Path, SubtitleFontDependencies? Dependencies) CaptureCacheIdentity(CacheRequest request)
+    {
+        int frameRate = request.Mode == SubtitleProcessingMode.ConvertToSup ? Math.Clamp(Config.AssToSupFrameRate, 10, 60) : 0;
+        var dependencies = _fontCacheManager?.GetSubtitleDependencies(request.SourcePath);
+        string fingerprint = SubtitleCacheFingerprint.Create(
+            request.SourcePath,
+            request.Mode,
+            request.Width,
+            request.Height,
+            frameRate,
+            dependencies?.Fingerprint ?? string.Empty);
+        return (Path.Join(CacheFolderPath, $"{request.ItemId:N}_{fingerprint}{request.Format.Extension}"), dependencies);
+    }
+
+    private async Task<string?> GenerateMissingCacheFileAsync(CacheRequest request, string cachePath, CancellationToken cancellationToken)
+    {
+        IDisposable fileLock;
+        try
         {
-            if (File.Exists(cacheFilePath))
-            {
-                if (_logger.IsEnabled(LogLevel.Information))
-                {
-                    _logger.LogInformation("[AssSubsetter] SUP cache hit (after lock): Returning existing converted subtitle for item {ItemId}", itemId);
-                }
-
-                TouchFile(cacheFilePath);
-                return cacheFilePath;
-            }
-
-            try
-            {
-                long requiredSpace = File.Exists(originalAssPath) ? new FileInfo(originalAssPath).Length * 5 : 10 * 1024 * 1024;
-                _quota.EnsureCapacity(requiredSpace, CacheCapacityBytes);
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] IO Error occurred during LRU cache eviction.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Permission Error occurred during LRU cache eviction.");
-            }
-
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("[AssSubsetter] SUP cache miss for item {ItemId}. Triggering ASS to SUP conversion...", itemId);
-            }
-
-            using var validation = BeginValidation(originalAssPath);
-            bool success = await WriteValidatedAsync(
-                cacheFilePath,
-                () => GetSupCachePath(itemId, originalAssPath, videoWidth, videoHeight),
-                validation,
-                (path, token) => _assToSupConverter.ConvertAsync(originalAssPath, path, videoWidth, videoHeight, token),
-                cancellationToken).ConfigureAwait(false);
-
-            if (success && File.Exists(cacheFilePath))
-            {
-                TouchFile(cacheFilePath);
-                return cacheFilePath;
-            }
-
-            _logger.LogWarning("[AssSubsetter] ASS to SUP conversion failed for item {ItemId}. Falling back.", itemId);
-            return Config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
+            fileLock = await _fileLocks.LockAsync(cachePath, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (request.Mode == SubtitleProcessingMode.GenerateMks)
+        {
+            return null;
+        }
+
+        using (fileLock)
+        {
+            if (TryUseCachedFile(request, cachePath))
+            {
+                return cachePath;
+            }
+
+            if (request.Mode == SubtitleProcessingMode.GenerateMks && _mksMuxer is null)
+            {
+                _logger.LogWarning("[AssSubsetter] MKS muxer is not available for item {ItemId}.", request.ItemId);
+                return null;
+            }
+
+            var (currentPath, dependencies) = CaptureCacheIdentity(request);
+            if (!StringComparer.Ordinal.Equals(cachePath, currentPath))
+            {
+                return null;
+            }
+
+            using var validation = dependencies is null ? null : _fontCacheManager?.BeginDependencyValidation(dependencies);
+            bool success = await AtomicCacheFile.WriteAsync(
+                cachePath,
+                async (temporaryPath, token) =>
+                {
+                    bool generated = await GenerateCacheArtifactAsync(request, temporaryPath, token).ConfigureAwait(false);
+                    return generated && (validation?.IsComplete ?? true)
+                        && (request.Mode != SubtitleProcessingMode.GenerateMks || IsReadyFile(request, temporaryPath))
+                        && StringComparer.Ordinal.Equals(cachePath, CaptureCacheIdentity(request).Path);
+                },
+                _logger,
+                cancellationToken,
+                (temporaryPath, finalPath, token) => _quota.Publish(temporaryPath, finalPath, CacheCapacityBytes, token)).ConfigureAwait(false);
+
+            if (success && IsReadyFile(request, cachePath))
+            {
+                TouchFile(cachePath);
+                return cachePath;
+            }
+
+            _logger.LogWarning("[AssSubsetter] Subtitle cache generation failed in {Mode} for item {ItemId}.", request.Mode, request.ItemId);
+            return null;
+        }
+    }
+
+    private async Task<bool> GenerateCacheArtifactAsync(CacheRequest request, string outputPath, CancellationToken cancellationToken)
+    {
+        if (request.Mode == SubtitleProcessingMode.GenerateMks)
+        {
+            var artifact = await _assProcessor.GenerateSubsetArtifactAsync(request.SourcePath, cancellationToken).ConfigureAwait(false);
+            if (artifact is null)
+            {
+                return false;
+            }
+
+            EnsureCapacity(() => Math.Max(artifact.AssContent.Length + artifact.Fonts.Sum(font => (long)font.Data.Length), 1));
+            return await _mksMuxer!.MuxAsync(artifact, outputPath, cancellationToken).ConfigureAwait(false);
+        }
+
+        EnsureCapacity(() =>
+        {
+            var source = new FileInfo(request.SourcePath);
+            long sourceBytes = source.Exists ? source.Length : 2 * 1024 * 1024;
+            return request.Mode == SubtitleProcessingMode.ConvertToSup ? sourceBytes * 5 : sourceBytes;
+        });
+        return request.Mode == SubtitleProcessingMode.ConvertToSup
+            ? await _assToSupConverter!.ConvertAsync(request.SourcePath, outputPath, request.Width, request.Height, cancellationToken).ConfigureAwait(false)
+            : await _assProcessor.GenerateSubsetFontAsync(request.SourcePath, outputPath, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void EnsureCapacity(Func<long> estimateBytes)
+    {
+        try
+        {
+            _quota.EnsureCapacity(estimateBytes(), CacheCapacityBytes);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogError(exception, "[AssSubsetter] Could not check subtitle cache capacity.");
+        }
+    }
+
+    private bool TryUseCachedFile(CacheRequest request, string path)
+    {
+        if (!IsReadyFile(request, path))
+        {
+            return false;
+        }
+
+        if (_logger.IsEnabled(LogLevel.Information))
+        {
+            _logger.LogInformation("[AssSubsetter] Subtitle cache hit in {Mode} for item {ItemId}.", request.Mode, request.ItemId);
+        }
+
+        TouchFile(path);
+        return true;
+    }
+
+    private static bool IsReadyFile(CacheRequest request, string path)
+    {
+        if (request.Mode != SubtitleProcessingMode.GenerateMks)
+        {
+            return File.Exists(path);
+        }
+
+        var file = new FileInfo(path);
+        return file.Exists && file.Length > 0;
     }
 
     private static void TouchFile(string path)
@@ -411,108 +362,17 @@ public class SubtitleCacheService : IHostedService, IDisposable
         }
     }
 
-    private async Task<SubtitleResult> GetOrGenerateMksAsync(Guid itemId, string originalAssPath, CancellationToken cancellationToken)
+    private SubtitleResult CreateFallback(string originalAssPath) => new(GetFallbackPath(originalAssPath), "text/x-ssa", false);
+
+    private string GetFallbackPath(string originalAssPath) => Config.FallbackToOriginalOnError ? originalAssPath : string.Empty;
+
+    private readonly record struct CacheRequest(Guid ItemId, string SourcePath, SubtitleProcessingMode Mode, int Width, int Height)
     {
-        string cacheFilePath = GetMksCachePath(itemId, originalAssPath);
-        if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
+        internal (string Extension, string ContentType) Format => Mode switch
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-            {
-                _logger.LogInformation("[AssSubsetter] MKS cache hit for item {ItemId}.", itemId);
-            }
-
-            TouchFile(cacheFilePath);
-            return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
-        }
-
-        IDisposable fileLock;
-        try
-        {
-            fileLock = await _fileLocks.LockAsync(cacheFilePath, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return CreateMksFallback(originalAssPath);
-        }
-
-        using (fileLock)
-        {
-            if (File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
-            {
-                TouchFile(cacheFilePath);
-                return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
-            }
-
-            if (_mksMuxer == null)
-            {
-                _logger.LogWarning("[AssSubsetter] MKS muxer is not available for item {ItemId}.", itemId);
-                return CreateMksFallback(originalAssPath);
-            }
-
-            using var validation = BeginValidation(originalAssPath);
-            var artifact = await _assProcessor.GenerateSubsetArtifactAsync(originalAssPath, cancellationToken).ConfigureAwait(false);
-            if (artifact == null)
-            {
-                return CreateMksFallback(originalAssPath);
-            }
-
-            try
-            {
-                long requiredSpace = artifact.AssContent.Length + artifact.Fonts.Sum(font => (long)font.Data.Length);
-                _quota.EnsureCapacity(Math.Max(requiredSpace, 1), CacheCapacityBytes);
-            }
-            catch (IOException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] IO error during MKS cache eviction.");
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                _logger.LogError(ex, "[AssSubsetter] Permission error during MKS cache eviction.");
-            }
-
-            bool success = await WriteValidatedAsync(
-                cacheFilePath,
-                () => GetMksCachePath(itemId, originalAssPath),
-                validation,
-                (path, token) => _mksMuxer.MuxAsync(artifact, path, token),
-                cancellationToken).ConfigureAwait(false);
-            if (success && File.Exists(cacheFilePath) && new FileInfo(cacheFilePath).Length > 0)
-            {
-                TouchFile(cacheFilePath);
-                return new SubtitleResult(cacheFilePath, "video/x-matroska", true);
-            }
-
-            return CreateMksFallback(originalAssPath);
-        }
+            SubtitleProcessingMode.ConvertToSup => (".sup", "application/octet-stream"),
+            SubtitleProcessingMode.GenerateMks => (".mks", "video/x-matroska"),
+            _ => (".ass", "text/x-ssa")
+        };
     }
-
-    private SubtitleResult CreateMksFallback(string originalAssPath)
-    {
-        return new SubtitleResult(Config.FallbackToOriginalOnError ? originalAssPath : string.Empty, "text/x-ssa", false);
-    }
-
-    private SubtitleFontDependencyValidation? BeginValidation(string sourcePath)
-        => _fontCacheManager?.BeginDependencyValidation(_fontCacheManager.GetSubtitleDependencies(sourcePath));
-
-    private Task<bool> WriteValidatedAsync(
-        string outputPath,
-        Func<string> currentPath,
-        SubtitleFontDependencyValidation? validation,
-        Func<string, CancellationToken, Task<bool>> generate,
-        CancellationToken cancellationToken)
-        => AtomicCacheFile.WriteAsync(
-            outputPath,
-            async (temporaryPath, token) =>
-            {
-                if (!StringComparer.Ordinal.Equals(outputPath, currentPath()))
-                {
-                    return false;
-                }
-
-                bool success = await generate(temporaryPath, token).ConfigureAwait(false);
-                return success && (validation?.IsComplete ?? true) && StringComparer.Ordinal.Equals(outputPath, currentPath());
-            },
-            _logger,
-            cancellationToken,
-            (temporaryPath, finalPath, token) => _quota.Publish(temporaryPath, finalPath, CacheCapacityBytes, token));
 }
