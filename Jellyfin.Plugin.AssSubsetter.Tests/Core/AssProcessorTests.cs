@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AssSubsetter.Configuration;
@@ -111,12 +112,16 @@ public sealed class AssProcessorTests : IDisposable
         Assert.Contains("Style: Default,MissingFont,20", result.AssContent, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task GenerateSubsetArtifactAsync_ShouldPassSubtitleCharactersToFontLookup()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GenerateSubsetArtifactAsync_ShouldPassSubtitleCharactersToFontLookup(bool utf16)
     {
         string inputAss = Path.Join(_tempDataPath, "coverage.ass");
-        const string Content = "[V4+ Styles]\nFormat: Name, Fontname, Fontsize\nStyle: Default,ExampleFont,20\n[Events]\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,AB";
-        await File.WriteAllTextAsync(inputAss, Content, TestContext.Current.CancellationToken);
+        const string Content = "[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize\nStyle: Default,ExampleFont,20\r"
+            + "[Events]\r\nFormat: Layer, Start, End, Style, Text\nDialogue: 0,0:00:00.00,0:00:01.00,Default,Aé字😀";
+        Encoding encoding = utf16 ? Encoding.Unicode : Encoding.UTF8;
+        await File.WriteAllTextAsync(inputAss, Content, encoding, TestContext.Current.CancellationToken);
         string? requestedName = null;
         IReadOnlyCollection<uint>? requestedCharacters = null;
         var processor = new AssProcessor(
@@ -136,7 +141,8 @@ public sealed class AssProcessorTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal("ExampleFont", requestedName);
         Assert.NotNull(requestedCharacters);
-        Assert.Equal([65u, 66u], [.. requestedCharacters.OrderBy(character => character)]);
+        Assert.Equal<uint>(['A', 'é', '字', 0x1F600u], requestedCharacters.Order());
+        Assert.Equal(Content, result.AssContent);
         Assert.Empty(result.Fonts);
     }
 

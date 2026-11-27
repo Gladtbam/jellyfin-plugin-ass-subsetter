@@ -141,8 +141,9 @@ public partial class AssProcessor
                 _logger.LogInformation("[AssSubsetter] Starting font subsetting for {File}...", inputAssPath);
             }
 
-            var usedChars = _assParser.ExtractUsedCharacters(inputAssPath);
             string originalContent = await File.ReadAllTextAsync(inputAssPath, cancellationToken).ConfigureAwait(false);
+            using var reader = new StringReader(originalContent);
+            var usedChars = _assParser.ExtractUsedCharacters(reader, cancellationToken);
             if (usedChars.Count == 0)
             {
                 if (_logger.IsEnabled(LogLevel.Information))

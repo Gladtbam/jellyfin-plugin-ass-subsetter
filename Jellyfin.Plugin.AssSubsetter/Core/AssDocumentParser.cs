@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Jellyfin.Plugin.AssSubsetter.Models;
 
 namespace Jellyfin.Plugin.AssSubsetter.Core;
@@ -17,8 +18,18 @@ public class AssDocumentParser
     /// </summary>
     /// <param name="filePath">The ASS file path.</param>
     /// <returns>A dictionary mapping FontName to a HashSet of used Unicode codepoints.</returns>
-    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves the instance API used by consumers that receive this parser through dependency injection.")]
     public Dictionary<FontDescriptor, HashSet<uint>> ExtractUsedCharacters(string filePath)
+    {
+        using var reader = File.OpenText(filePath);
+        return ExtractUsedCharacters(reader, CancellationToken.None);
+    }
+
+    /// <summary>Extracts the Unicode codepoints used per font from decoded ASS text.</summary>
+    /// <param name="reader">The caller-owned reader positioned at the start of the ASS text.</param>
+    /// <param name="cancellationToken">Cancels parsing between lines.</param>
+    /// <returns>The codepoints used by each font.</returns>
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Preserves the instance API used by consumers that receive this parser through dependency injection.")]
+    internal Dictionary<FontDescriptor, HashSet<uint>> ExtractUsedCharacters(TextReader reader, CancellationToken cancellationToken)
     {
         var usedChars = new Dictionary<FontDescriptor, HashSet<uint>>();
         var styles = new Dictionary<string, FontDescriptor>(StringComparer.OrdinalIgnoreCase);
@@ -34,9 +45,9 @@ public class AssDocumentParser
         int eventStyleIndex = 3;
         int eventTextIndex = 9;
 
-        // codeql[cs/linq/missed-select] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
-        foreach (var line in File.ReadLines(filePath))
+        while (reader.ReadLine() is { } line)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var trimmedLine = line.Trim();
             if (string.IsNullOrEmpty(trimmedLine))
             {
@@ -150,6 +161,7 @@ public class AssDocumentParser
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new Dictionary<FontDescriptor, HashSet<uint>>();
         // codeql[cs/linq/missed-where] Justification: Traditional foreach avoids LINQ delegate allocation overhead in hot paths.
         foreach (var kvp in usedChars)
