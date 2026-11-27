@@ -162,6 +162,44 @@ public sealed class FontInventoryScannerTests : IDisposable
     }
 
     [Fact]
+    public async Task Scan_ShouldRejectContentDriftBetweenStreamedHashAndInspection()
+    {
+        Directory.CreateDirectory(_root);
+        string path = Path.Join(_root, "changed-twice.ttf");
+        using SKStreamAsset stream = SKTypeface.Default.OpenStream();
+        using SKData data = SKData.Create(stream);
+        byte[] bytes = data.ToArray();
+        await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
+        var repository = new InMemoryFontRepository();
+        var identity = new ConstantIdentityProvider();
+        using var scanner = new FontInventoryScanner(repository,
+            () => new FontDirectoryPolicyResolver(_root, null, null, false),
+            identity, NullLogger<FontInventoryScanner>.Instance);
+        await StageAndPublishAsync(scanner, repository);
+        FontFileRecord published = Assert.Single(repository.PublishedFiles);
+        Assert.Equal(FontFileHealth.Healthy, published.Health);
+
+        DateTime modified = File.GetLastWriteTimeUtc(path);
+        bytes[^1] ^= 1;
+        await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
+        File.SetLastWriteTimeUtc(path, modified);
+        int identityReads = 0;
+        identity.BeforeRead = () =>
+        {
+            if (++identityReads == 2)
+            {
+                bytes[^1] ^= 2;
+                File.WriteAllBytes(path, bytes);
+                File.SetLastWriteTimeUtc(path, modified);
+            }
+        };
+
+        await Assert.ThrowsAsync<IOException>(() => scanner.StageAsync(cancellationToken: TestContext.Current.CancellationToken));
+
+        Assert.Equal(published.GenerationId, Assert.Single(repository.PublishedFiles).GenerationId);
+    }
+
+    [Fact]
     public async Task UnavailablePreviouslyScannedRoot_ShouldFailWithoutReplacingPublication()
     {
         Directory.CreateDirectory(_root);
@@ -347,6 +385,12 @@ public sealed class FontInventoryScannerTests : IDisposable
 
     private sealed class ConstantIdentityProvider : IPhysicalFileIdentityProvider
     {
-        public string GetIdentity(string path) => "same-physical-file";
+        public Action? BeforeRead { get; set; }
+
+        public string GetIdentity(string path)
+        {
+            BeforeRead?.Invoke();
+            return "same-physical-file";
+        }
     }
 }

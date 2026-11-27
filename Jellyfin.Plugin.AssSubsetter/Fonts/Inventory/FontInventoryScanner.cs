@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,6 +20,7 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 public sealed class FontInventoryScanner : IDisposable
 {
     private const string PublicationInputsChanged = "Font files or analysis inputs changed during analysis; scan again.";
+    private const int MaximumFileHashBufferSize = 512 * 1024;
 
     private readonly IFontRepository _repository;
     private readonly Func<FontDirectoryPolicyResolver> _policyFactory;
@@ -179,9 +181,7 @@ public sealed class FontInventoryScanner : IDisposable
                 throw new InvalidOperationException(PublicationInputsChanged);
             }
 
-            using var stream = new FileStream(observed.Path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            byte[] hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-            EnsureObservationStable(observed, info, size, modified);
+            byte[] hash = await ReadStableHashAsync(observed, info, size, modified, cancellationToken).ConfigureAwait(false);
             if (!expected.Sha256.Span.SequenceEqual(hash))
             {
                 throw new InvalidOperationException(PublicationInputsChanged);
@@ -203,34 +203,14 @@ public sealed class FontInventoryScanner : IDisposable
         foreach (ObservedFile observed in observedFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var info = new FileInfo(observed.Path);
-            long size = info.Length;
-            DateTime modified = info.LastWriteTimeUtc;
-            byte[] data = await File.ReadAllBytesAsync(observed.Path, cancellationToken).ConfigureAwait(false);
-            byte[] hash = SHA256.HashData(data);
-
-            EnsureObservationStable(observed, info, size, modified);
-
-            FontFileRecord record;
-            if (reusable.TryGetValue(observed.PhysicalIdentity, out FontFileRecord? existing)
-                && existing.Health == FontFileHealth.Healthy && existing.Faces.Count > 0
-                && existing.Faces.All(face => face.NameRecords.Count > 0 && face.UnicodeCoverage.Count > 0)
-                && existing.Size == size && existing.ModifiedUtc == new DateTimeOffset(modified)
-                && existing.Sha256.Span.SequenceEqual(hash))
+            reusable.TryGetValue(observed.PhysicalIdentity, out FontFileRecord? existing);
+            (FontFileRecord record, bool reused) = await ObserveFileAsync(observed, existing, policy, cancellationToken).ConfigureAwait(false);
+            if (reused)
             {
-                record = CloneForGeneration(existing, observed, 0);
                 reusedCount++;
             }
-            else
-            {
-                record = await InspectFileAsync(observed.Path, observed.PhysicalIdentity, observed.LinkKind, 0, policy, data, cancellationToken).ConfigureAwait(false);
-                if (record.Health == FontFileHealth.Healthy && !record.Sha256.Span.SequenceEqual(hash))
-                {
-                    throw new IOException("Font changed while being inspected: " + observed.Path);
-                }
-            }
 
-            records.Add(record with { Size = size, ModifiedUtc = modified, Sha256 = hash, PathAliases = observed.Aliases, DirectoryPolicy = observed.Policy });
+            records.Add(record);
             progress?.Report(5 + ((records.Count * 85d) / Math.Max(1, observedFiles.Length)));
         }
 
@@ -240,6 +220,65 @@ public sealed class FontInventoryScanner : IDisposable
 
     /// <summary>Releases the scanner serialization gate.</summary>
     public void Dispose() => _scanGate.Dispose();
+
+    private async Task<(FontFileRecord Record, bool Reused)> ObserveFileAsync(
+        ObservedFile observed, FontFileRecord? existing, FontDirectoryPolicyResolver policy, CancellationToken cancellationToken)
+    {
+        var info = new FileInfo(observed.Path);
+        long size = info.Length;
+        DateTime modified = info.LastWriteTimeUtc;
+        byte[]? streamedHash = null;
+        if (existing is { Health: FontFileHealth.Healthy, Faces.Count: > 0 }
+            && existing.Size == size && existing.ModifiedUtc == new DateTimeOffset(modified)
+            && existing.Faces.All(face => face.NameRecords.Count > 0 && face.UnicodeCoverage.Count > 0))
+        {
+            streamedHash = await ReadStableHashAsync(observed, info, size, modified, cancellationToken).ConfigureAwait(false);
+            if (existing.Sha256.Span.SequenceEqual(streamedHash))
+            {
+                FontFileRecord reused = CloneForGeneration(existing, observed, 0) with { ModifiedUtc = modified, Sha256 = streamedHash };
+                return (reused, true);
+            }
+        }
+
+        byte[] data = await File.ReadAllBytesAsync(observed.Path, cancellationToken).ConfigureAwait(false);
+        byte[] hash = SHA256.HashData(data);
+        EnsureObservationStable(observed, info, size, modified);
+        if (data.LongLength != size || (streamedHash is not null && !streamedHash.AsSpan().SequenceEqual(hash)))
+        {
+            throw new IOException("Font changed while being scanned: " + observed.Path);
+        }
+
+        FontFileRecord record = await InspectFileAsync(observed.Path, observed.PhysicalIdentity, observed.LinkKind, 0, policy, data, cancellationToken).ConfigureAwait(false);
+        if (record.Health == FontFileHealth.Healthy && !record.Sha256.Span.SequenceEqual(hash))
+        {
+            throw new IOException("Font changed while being inspected: " + observed.Path);
+        }
+
+        return (record with { Size = size, ModifiedUtc = modified, Sha256 = hash, PathAliases = observed.Aliases, DirectoryPolicy = observed.Policy }, false);
+    }
+
+    private async Task<byte[]> ReadStableHashAsync(ObservedFile observed, FileInfo info, long size, DateTime modified, CancellationToken cancellationToken)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        int bufferSize = (int)Math.Clamp(size, 16 * 1024, MaximumFileHashBufferSize);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
+        try
+        {
+            using var stream = new FileStream(observed.Path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+            int read;
+            while ((read = await stream.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken).ConfigureAwait(false)) != 0)
+            {
+                hash.AppendData(buffer.AsSpan(0, read));
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        EnsureObservationStable(observed, info, size, modified);
+        return hash.GetHashAndReset();
+    }
 
     private ObservedFile[] DiscoverFiles<TFile>(
         FontDirectoryPolicyResolver policy, IReadOnlyList<TFile> previous, Func<TFile, string> getPath, IProgress<double>? progress, CancellationToken cancellationToken)
