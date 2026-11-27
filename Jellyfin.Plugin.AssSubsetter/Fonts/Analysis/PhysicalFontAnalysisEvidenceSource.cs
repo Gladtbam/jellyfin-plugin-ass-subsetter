@@ -376,6 +376,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         float emSize = inspected.UnitsPerEm > 0 ? inspected.UnitsPerEm : 1000;
         using var font = new SKFont(typeface, emSize);
         using var paint = new SKPaint();
+        using var glyphHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var glyphCache = new Dictionary<ushort, ReadOnlyMemory<byte>>();
         var characters = new Dictionary<uint, ReadOnlyMemory<byte>>();
         foreach (UnicodeRange range in inspected.UnicodeCoverage)
@@ -392,7 +393,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
                 if (!glyphCache.TryGetValue(glyph, out ReadOnlyMemory<byte> fingerprint))
                 {
-                    fingerprint = FingerprintGlyph(font, paint, glyph);
+                    fingerprint = FingerprintGlyph(font, paint, glyph, glyphHash);
                     glyphCache.Add(glyph, fingerprint);
                 }
 
@@ -416,7 +417,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
             if (!glyphCache.TryGetValue(glyph, out ReadOnlyMemory<byte> fingerprint))
             {
-                fingerprint = FingerprintGlyph(font, paint, glyph);
+                fingerprint = FingerprintGlyph(font, paint, glyph, glyphHash);
                 glyphCache.Add(glyph, fingerprint);
             }
 
@@ -426,7 +427,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         return characters;
     }
 
-    private static ReadOnlyMemory<byte> FingerprintGlyph(SKFont font, SKPaint paint, ushort glyph)
+    private static ReadOnlyMemory<byte> FingerprintGlyph(SKFont font, SKPaint paint, ushort glyph, IncrementalHash hash)
     {
         Span<ushort> glyphs = [glyph];
         Span<float> widths = stackalloc float[1];
@@ -438,7 +439,6 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(8, 4), BitConverter.SingleToInt32Bits(bounds[0].Top));
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(12, 4), BitConverter.SingleToInt32Bits(bounds[0].Right));
         BinaryPrimitives.WriteInt32LittleEndian(metrics.Slice(16, 4), BitConverter.SingleToInt32Bits(bounds[0].Bottom));
-        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         hash.AppendData(metrics);
         using SKPath? glyphPath = font.GetGlyphPath(glyph);
         if (glyphPath is not null)
