@@ -299,6 +299,26 @@ public sealed class FontRetentionSelectorTests
     }
 
     [Fact]
+    public void Select_ShouldChooseEarliestPathsWhenDirectProofCombinationsTie()
+    {
+        DirectoryPolicySnapshot snapshot = Snapshot(
+            File(1, "target.ttc", 150, Face(1), Face(2)),
+            File(2, "z-first.ttf", 40, Face(3), FontDirectoryPolicy.Protected),
+            File(3, "c-second.ttf", 50, Face(4), FontDirectoryPolicy.Protected),
+            File(4, "b-first.ttf", 100, Face(5), FontDirectoryPolicy.Protected),
+            File(5, "a-second.ttf", 120, Face(6), FontDirectoryPolicy.Protected));
+
+        RetentionPlan plan = _selector.Select(
+            [Replaces(3, 1), Replaces(4, 2), Replaces(5, 1), Replaces(6, 2)],
+            snapshot);
+
+        Assert.Equal(1, Assert.Single(plan.QuarantineFiles).FileId);
+        Assert.Equal([5L, 4L], Assert.Single(plan.Groups).RetainedFileIds);
+        Assert.Equal(4, plan.RetainedFiles.Count);
+        Assert.Equal(150, plan.ReclaimableBytes);
+    }
+
+    [Fact]
     public void Select_ShouldReconsiderLocalCombinationWhenOneFileDirectlyReplacesBothTargetsAndParts()
     {
         DirectoryPolicySnapshot snapshot = Snapshot(

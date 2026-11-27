@@ -455,6 +455,30 @@ public sealed class FontRetentionSelector
                 .Select(pair => (FileId: pair.Key, Size: retained.Contains(pair.Key) ? 0 : filesById[pair.Key].Size, Path: filesById[pair.Key].NormalizedPath, Coverage: pair.Value))
                 .OrderBy(option => option.Path, StringComparer.Ordinal)
         ];
+        // Stable sorting keeps path order for equal costs. Each candidate bit uses this sorted position.
+        int[] optionOrder = [.. Enumerable.Range(0, options.Length).OrderBy(index => options[index].Size)];
+        var optionsByFace = new (ulong FaceMask, uint CandidateMask)[target.Faces.Count];
+        for (int faceIndex = 0; faceIndex < optionsByFace.Length; faceIndex++)
+        {
+            ulong faceMask = 1UL << faceIndex;
+            uint candidateMask = 0;
+            for (int rank = 0; rank < optionOrder.Length; rank++)
+            {
+                if ((options[optionOrder[rank]].Coverage & faceMask) != 0)
+                {
+                    candidateMask |= 1U << rank;
+                }
+            }
+
+            optionsByFace[faceIndex] = (faceMask, candidateMask);
+        }
+
+        Array.Sort(optionsByFace, static (left, right) =>
+        {
+            int comparison = BitOperations.PopCount(left.CandidateMask).CompareTo(BitOperations.PopCount(right.CandidateMask));
+            return comparison == 0 ? left.FaceMask.CompareTo(right.FaceMask) : comparison;
+        });
+
         ulong allFaces = (1UL << target.Faces.Count) - 1;
         long bestBytes = target.Size;
         int[]? best = null;
@@ -484,29 +508,17 @@ public sealed class FontRetentionSelector
                 return;
             }
 
-            ulong uncovered = allFaces & ~covered;
-            int face = -1;
-            int fewest = int.MaxValue;
-            for (int index = 0; index < target.Faces.Count; index++)
+            int face = 0;
+            while ((covered & optionsByFace[face].FaceMask) != 0)
             {
-                if ((uncovered & (1UL << index)) == 0)
-                {
-                    continue;
-                }
-
-                int count = options.Count(option => (option.Coverage & (1UL << index)) != 0);
-                if (count < fewest)
-                {
-                    fewest = count;
-                    face = index;
-                }
+                face++;
             }
 
-            foreach (int index in Enumerable.Range(0, options.Length)
-                .Where(index => (options[index].Coverage & (1UL << face)) != 0)
-                .OrderBy(index => options[index].Size)
-                .ThenBy(index => options[index].Path, StringComparer.Ordinal))
+            uint remainingCandidates = optionsByFace[face].CandidateMask;
+            while (remainingCandidates != 0)
             {
+                int index = optionOrder[BitOperations.TrailingZeroCount(remainingCandidates)];
+                remainingCandidates &= remainingCandidates - 1;
                 if (options[index].Size > bestBytes - bytes)
                 {
                     continue;
