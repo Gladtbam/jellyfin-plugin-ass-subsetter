@@ -16,6 +16,87 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
 {
     private static readonly string[] _nativeLoaderNames = ["skia", "harfbuzz", "freetype", "libass"];
 
+    [Fact]
+    public async Task LoadFiles_ShouldBoundParallelInspectionAndPersistInFileOrder()
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string root = Path.Join(Path.GetTempPath(), "ass-parallel-evidence-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var releaseReaders = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            byte[] bytes = GeneratedAnalysisFont.Create();
+            FontFileRecord first = await WriteDataAsync(root, "left.ttf", bytes);
+            FontFileRecord second = await WriteDataAsync(root, "right.ttf", [.. bytes, 1]);
+            FontFileRecord third = await WriteDataAsync(root, "third.ttf", [.. bytes, 2]);
+            FontFileRecord[] files =
+            [
+                first with { GenerationId = 1 },
+                second with { GenerationId = 1 },
+                third with { Id = 3, GenerationId = 1, Faces = [third.Faces[0] with { Id = 3 }] }
+            ];
+            var repository = new Mock<IFontAnalysisEvidenceRepository>();
+            repository.Setup(value => value.LoadInventoryAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(files);
+            repository.Setup(value => value.LoadReusableDeepEvidenceAsync(It.IsAny<FontFileRecord>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string?)null);
+            var saved = new List<long>();
+            repository.Setup(value => value.SaveDeepEvidenceAsync(It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .Callback<long, string, string, CancellationToken>((id, _, _, _) => saved.Add(id))
+                .Returns(Task.CompletedTask);
+
+            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            int activeReaders = 0;
+            int capacityExceeded = 0;
+            var activeLimitReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var source = new PhysicalFontAnalysisEvidenceSource(repository.Object,
+                async (path, cancellation) =>
+                {
+                    int active = Interlocked.Increment(ref activeReaders);
+                    if (active == concurrency)
+                    {
+                        activeLimitReached.TrySetResult();
+                    }
+                    else if (active > concurrency)
+                    {
+                        Interlocked.Increment(ref capacityExceeded);
+                    }
+
+                    try
+                    {
+                        await releaseReaders.Task.WaitAsync(cancellation);
+                        return await File.ReadAllBytesAsync(path, cancellation);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref activeReaders);
+                    }
+                },
+                (_, _, _) => FontVerificationStatus.Passed,
+                (_, _) => FontVerificationStatus.Passed);
+            Task<FontDeepAnalysisEvidence> load = source.LoadFilesAsync(1, [3, 1, 2], token);
+            try
+            {
+                await activeLimitReached.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+                Assert.Empty(saved);
+            }
+            finally
+            {
+                releaseReaders.TrySetResult();
+                await load;
+            }
+
+            FontDeepAnalysisEvidence result = await load;
+            Assert.Equal(0, capacityExceeded);
+            Assert.Equal([1L, 2L, 3L], saved);
+            Assert.Equal([1L, 2L, 3L], result.Faces.Select(face => face.FileId));
+            Assert.All(result.Faces, face => Assert.True(face.IsDeepEvidenceComplete, face.ClassificationError));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

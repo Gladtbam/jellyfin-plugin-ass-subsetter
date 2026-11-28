@@ -20,6 +20,8 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Loads lightweight catalog evidence and reuses versioned deep glyph evidence for unchanged candidate files.</summary>
 public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSource, IFontDeepAnalysisEvidenceSource
 {
+    private const int MaximumConcurrentInspections = 2;
+
     internal static readonly string DeepEvidenceKey = string.Join('|', "deep-v7", Environment.Version, RuntimeInformation.OSDescription, RuntimeInformation.ProcessArchitecture, typeof(SKTypeface).Assembly.GetName().Version, HarfBuzzSubsetNative.GetNativeVersion(), FreeTypeFontVerifier.IsAvailable, LibassFontVerifier.IsAvailable);
     internal static readonly string AnalysisCompatibilityKey = FontDuplicateAnalyzer.CurrentEvidenceVersion + "|" + DeepEvidenceKey;
 
@@ -133,22 +135,71 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             throw new InvalidOperationException("One or more candidate physical files are absent from the requested inventory.");
         }
 
-        var faces = new List<FontFaceEvidence>(selected.Sum(file => file.Faces.Count));
-        var retentionFiles = new List<FontRetentionFile>(selected.Length);
-        var inspectedByContent = new Dictionary<(long Size, string Digest), FileEvidence>();
-        foreach (FontFileRecord file in selected)
+        var evidenceByIndex = new (FileEvidence? Evidence, bool Save)[selected.Length];
+        var uncached = new List<int>();
+        for (int index = 0; index < selected.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FileEvidence evidence = await LoadOrInspectFileAsync(file, inspectedByContent, cancellationToken).ConfigureAwait(false);
+            FileEvidence? cached = await LoadCachedEvidenceAsync(selected[index], cancellationToken).ConfigureAwait(false);
+            evidenceByIndex[index] = (cached, false);
+            if (cached is null)
+            {
+                uncached.Add(index);
+            }
+        }
+
+        var contentGroups = uncached.GroupBy(index => (selected[index].Size, Convert.ToHexString(selected[index].Sha256.Span))).ToArray();
+        int concurrency = Math.Min(MaximumConcurrentInspections, Environment.ProcessorCount);
+        if (contentGroups.Length > 1 && concurrency > 1)
+        {
+            var options = new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancellationToken };
+            await Parallel.ForEachAsync(contentGroups, options, InspectGroupAsync).ConfigureAwait(false);
+        }
+        else
+        {
+            foreach (var group in contentGroups)
+            {
+                await InspectGroupAsync(group, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        var faces = new List<FontFaceEvidence>(selected.Sum(file => file.Faces.Count));
+        var retentionFiles = new List<FontRetentionFile>(selected.Length);
+        foreach (var resolved in evidenceByIndex)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FileEvidence evidence = resolved.Evidence ?? throw new InvalidOperationException("A requested physical file has no deep analysis result.");
+            if (resolved.Save)
+            {
+                string payload = FontDeepEvidenceJson.Serialize(new FontDeepAnalysisEvidence(evidence.Faces, [evidence.RetentionFile]));
+                await _repository.SaveDeepEvidenceAsync(evidence.RetentionFile.FileId, DeepEvidenceKey, payload, cancellationToken).ConfigureAwait(false);
+            }
+
             faces.AddRange(evidence.Faces);
             retentionFiles.Add(evidence.RetentionFile);
         }
 
         return new FontDeepAnalysisEvidence(faces, retentionFiles);
+
+        async ValueTask InspectGroupAsync(IEnumerable<int> group, CancellationToken token)
+        {
+            FileEvidence? shared = null;
+            foreach (int index in group)
+            {
+                token.ThrowIfCancellationRequested();
+                FileEvidence evidence = await InspectFileAsync(selected[index], shared, token).ConfigureAwait(false);
+                bool complete = evidence.Faces.Count > 0 && evidence.Faces.All(face => face.IsDeepEvidenceComplete);
+                if (complete)
+                {
+                    shared ??= evidence;
+                }
+
+                evidenceByIndex[index] = (evidence, complete);
+            }
+        }
     }
 
-    private async Task<FileEvidence> LoadOrInspectFileAsync(
-        FontFileRecord file, Dictionary<(long Size, string Digest), FileEvidence> inspectedByContent, CancellationToken cancellationToken)
+    private async Task<FileEvidence?> LoadCachedEvidenceAsync(FontFileRecord file, CancellationToken cancellationToken)
     {
         var info = new FileInfo(file.Path);
         if (info.Exists && info.Length == file.Size && new DateTimeOffset(info.LastWriteTimeUtc) == file.ModifiedUtc)
@@ -171,17 +222,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             }
         }
 
-        var contentKey = (file.Size, Convert.ToHexString(file.Sha256.Span));
-        inspectedByContent.TryGetValue(contentKey, out FileEvidence? shared);
-        FileEvidence inspected = await InspectFileAsync(file, shared, cancellationToken).ConfigureAwait(false);
-        if (inspected.Faces.Count > 0 && inspected.Faces.All(face => face.IsDeepEvidenceComplete))
-        {
-            string payload = FontDeepEvidenceJson.Serialize(new FontDeepAnalysisEvidence(inspected.Faces, [inspected.RetentionFile]));
-            await _repository.SaveDeepEvidenceAsync(file.Id, DeepEvidenceKey, payload, cancellationToken).ConfigureAwait(false);
-            inspectedByContent.TryAdd(contentKey, inspected);
-        }
-
-        return inspected;
+        return null;
     }
 
     private static FileEvidence? RebindCachedEvidence(FontFileRecord file, FontDeepAnalysisEvidence cached)
@@ -246,9 +287,14 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                 return Unclassifiable(file, "Physical file evidence changed after inventory publication.");
             }
 
-            if (shared is not null && RebindEvidence(file, shared, requireSamePhysicalFile: false) is { } rebound)
+            if (shared is not null)
             {
-                return rebound;
+                bool samePhysicalFile = shared.Faces[0].PhysicalFileId == file.PhysicalIdentity
+                    && shared.RetentionFile.ModifiedUtc == file.ModifiedUtc;
+                if (RebindEvidence(file, shared, requireSamePhysicalFile: samePhysicalFile) is { } rebound)
+                {
+                    return rebound;
+                }
             }
 
             OpenTypeContainer container = OpenTypeFontReader.Read(data);
