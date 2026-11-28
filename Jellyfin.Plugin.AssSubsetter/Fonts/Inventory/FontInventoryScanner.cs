@@ -21,6 +21,7 @@ public sealed class FontInventoryScanner : IDisposable
 {
     private const string PublicationInputsChanged = "Font files or analysis inputs changed during analysis; scan again.";
     private const int MaximumFileHashBufferSize = 512 * 1024;
+    private const int MaximumFileConcurrency = 4;
 
     private readonly IFontRepository _repository;
     private readonly Func<FontDirectoryPolicyResolver> _policyFactory;
@@ -161,9 +162,11 @@ public sealed class FontInventoryScanner : IDisposable
             throw new InvalidOperationException(PublicationInputsChanged);
         }
 
-        for (int index = 0; index < observedFiles.Length; index++)
+        await ForEachObservedFileAsync(observedFiles.Length, ValidateFileAsync, progress, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        async ValueTask ValidateFileAsync(int index, CancellationToken token)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             ObservedFile observed = observedFiles[index];
             FontInventoryPublicationSnapshot.FileEvidence expected = snapshot.Files[index];
             if (observed.Path != expected.Path || observed.PhysicalIdentity != expected.PhysicalIdentity
@@ -181,16 +184,12 @@ public sealed class FontInventoryScanner : IDisposable
                 throw new InvalidOperationException(PublicationInputsChanged);
             }
 
-            byte[] hash = await ReadStableHashAsync(observed, info, size, modified, cancellationToken).ConfigureAwait(false);
+            byte[] hash = await ReadStableHashAsync(observed, info, size, modified, token).ConfigureAwait(false);
             if (!expected.Sha256.Span.SequenceEqual(hash))
             {
                 throw new InvalidOperationException(PublicationInputsChanged);
             }
-
-            progress?.Report(5 + (((index + 1) * 85d) / observedFiles.Length));
         }
-
-        cancellationToken.ThrowIfCancellationRequested();
     }
 
     private async Task<(IReadOnlyList<FontFileRecord> Records, int ReusedCount)> ObserveAsync(
@@ -198,28 +197,53 @@ public sealed class FontInventoryScanner : IDisposable
     {
         ObservedFile[] observedFiles = DiscoverFiles(policy, previous, static file => file.Path, progress, cancellationToken);
         Dictionary<string, FontFileRecord> reusable = previous.GroupBy(file => file.PhysicalIdentity, StringComparer.Ordinal).ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
-        var records = new List<FontFileRecord>(observedFiles.Length);
+        var records = new FontFileRecord[observedFiles.Length];
         int reusedCount = 0;
-        foreach (ObservedFile observed in observedFiles)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            reusable.TryGetValue(observed.PhysicalIdentity, out FontFileRecord? existing);
-            (FontFileRecord record, bool reused) = await ObserveFileAsync(observed, existing, policy, cancellationToken).ConfigureAwait(false);
-            if (reused)
-            {
-                reusedCount++;
-            }
-
-            records.Add(record);
-            progress?.Report(5 + ((records.Count * 85d) / Math.Max(1, observedFiles.Length)));
-        }
-
+        await ForEachObservedFileAsync(observedFiles.Length, ObserveAtIndexAsync, progress, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         return (records, reusedCount);
+
+        async ValueTask ObserveAtIndexAsync(int index, CancellationToken token)
+        {
+            ObservedFile observed = observedFiles[index];
+            reusable.TryGetValue(observed.PhysicalIdentity, out FontFileRecord? existing);
+            (FontFileRecord record, bool reused) = await ObserveFileAsync(observed, existing, policy, token).ConfigureAwait(false);
+            records[index] = record;
+            if (reused)
+            {
+                Interlocked.Increment(ref reusedCount);
+            }
+        }
     }
 
     /// <summary>Releases the scanner serialization gate.</summary>
     public void Dispose() => _scanGate.Dispose();
+
+    private static Task ForEachObservedFileAsync(
+        int fileCount, Func<int, CancellationToken, ValueTask> process, IProgress<double>? progress, CancellationToken cancellationToken)
+    {
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Min(MaximumFileConcurrency, Environment.ProcessorCount),
+            CancellationToken = cancellationToken
+        };
+        int completed = 0;
+        object progressGate = new();
+        return Parallel.ForEachAsync(Enumerable.Range(0, fileCount), options, ProcessFileAsync);
+
+        async ValueTask ProcessFileAsync(int index, CancellationToken token)
+        {
+            await process(index, token).ConfigureAwait(false);
+            if (progress is not null)
+            {
+                lock (progressGate)
+                {
+                    completed++;
+                    progress.Report(5 + ((completed * 85d) / fileCount));
+                }
+            }
+        }
+    }
 
     private async Task<(FontFileRecord Record, bool Reused)> ObserveFileAsync(
         ObservedFile observed, FontFileRecord? existing, FontDirectoryPolicyResolver policy, CancellationToken cancellationToken)

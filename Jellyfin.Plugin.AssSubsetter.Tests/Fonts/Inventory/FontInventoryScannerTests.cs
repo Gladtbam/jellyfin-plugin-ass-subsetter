@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Domain;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 using Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Persistence;
@@ -9,6 +10,59 @@ namespace Jellyfin.Plugin.AssSubsetter.Tests.Fonts.Inventory;
 public sealed class FontInventoryScannerTests : IDisposable
 {
     private readonly string _root = Path.Join(Path.GetTempPath(), "FontScannerTests_" + Guid.NewGuid().ToString("N"));
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InventoryPass_ShouldBoundConcurrentChecksAndPreserveOrder(bool validate)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        Directory.CreateDirectory(_root);
+        string[] paths = [.. Enumerable.Range(0, 8).Select(index => Path.Join(_root, $"font-{index}.ttf"))];
+        foreach (string path in paths.Reverse())
+        {
+            await File.WriteAllBytesAsync(path, [1, 2, 3, 4], token);
+        }
+
+        var repository = new InMemoryFontRepository();
+        int expectedConcurrency = Math.Min(4, Environment.ProcessorCount);
+        var identity = new ConcurrentIdentityProbe(expectedConcurrency);
+        using var scanner = new FontInventoryScanner(
+            repository,
+            () => new FontDirectoryPolicyResolver(_root, null, null, false),
+            identity,
+            NullLogger<FontInventoryScanner>.Instance);
+        FontInventoryScanResult? staged = validate ? await scanner.StageAsync(cancellationToken: token) : null;
+        identity.Enabled = true;
+        var values = new List<double>();
+        var progress = new InlineProgress<double>(values.Add);
+        Task<FontInventoryScanResult> operation = Task.Run(async () =>
+        {
+            if (staged is not null)
+            {
+                await scanner.ValidatePublicationInputsAsync(staged, token, progress);
+                return staged;
+            }
+
+            return await scanner.StageAsync(progress, cancellationToken: token);
+        }, token);
+
+        try
+        {
+            await identity.ConcurrencyReached.Task.WaitAsync(TimeSpan.FromSeconds(10), token);
+        }
+        finally
+        {
+            identity.AllowChecksToFinish.TrySetResult();
+            await operation;
+        }
+
+        FontInventoryScanResult scan = await operation;
+        Assert.Equal(0, identity.ExcessChecks);
+        Assert.Equal(paths, scan.PublicationSnapshot!.Files.Select(file => file.Path));
+        Assert.Equal(values.Order(), values);
+        Assert.Equal(100d, values[^1]);
+    }
 
     [Theory]
     [InlineData(false)]
@@ -43,6 +97,7 @@ public sealed class FontInventoryScannerTests : IDisposable
         Directory.CreateDirectory(_root);
         string path = Path.Join(_root, "drift.ttf");
         await File.WriteAllBytesAsync(path, [1, 2, 3, 4], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(Path.Join(_root, "stable.ttf"), [1, 2, 3, 4], TestContext.Current.CancellationToken);
         var repository = new InMemoryFontRepository();
         string? protectedRoot = null;
         using var scanner = new FontInventoryScanner(repository,
@@ -319,6 +374,7 @@ public sealed class FontInventoryScannerTests : IDisposable
         Directory.CreateDirectory(_root);
         string path = Path.Join(_root, "broken.ttf");
         await File.WriteAllBytesAsync(path, [1, 2, 3, 4], TestContext.Current.CancellationToken);
+        await File.WriteAllBytesAsync(Path.Join(_root, "another.ttf"), [1, 2, 3, 4], TestContext.Current.CancellationToken);
         var repository = new InMemoryFontRepository();
         long initialGeneration = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], TestContext.Current.CancellationToken);
         await repository.WriteInventoryAsync(initialGeneration, [ExistingRecord(initialGeneration)], TestContext.Current.CancellationToken);
@@ -327,7 +383,7 @@ public sealed class FontInventoryScannerTests : IDisposable
         using var cancellation = new CancellationTokenSource();
         var progress = new InlineProgress<double>(value =>
         {
-            if (value >= 90)
+            if (value > 5)
             {
                 cancellation.Cancel();
             }
@@ -391,6 +447,50 @@ public sealed class FontInventoryScannerTests : IDisposable
         {
             BeforeRead?.Invoke();
             return "same-physical-file";
+        }
+    }
+
+    private sealed class ConcurrentIdentityProbe(int expectedConcurrency) : IPhysicalFileIdentityProvider
+    {
+        private readonly ConcurrentDictionary<string, int> _visits = new();
+        private int _active;
+        private int _excessChecks;
+
+        public bool Enabled { get; set; }
+
+        public int ExcessChecks => Volatile.Read(ref _excessChecks);
+
+        public TaskCompletionSource ConcurrencyReached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowChecksToFinish { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string GetIdentity(string path)
+        {
+            if (!Enabled || _visits.AddOrUpdate(path, 1, static (_, count) => count + 1) != 2)
+            {
+                return path;
+            }
+
+            int active = Interlocked.Increment(ref _active);
+            if (active == expectedConcurrency)
+            {
+                ConcurrencyReached.TrySetResult();
+            }
+            else if (active > expectedConcurrency)
+            {
+                Interlocked.Increment(ref _excessChecks);
+            }
+
+            try
+            {
+                AllowChecksToFinish.Task.GetAwaiter().GetResult();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _active);
+            }
+
+            return path;
         }
     }
 }

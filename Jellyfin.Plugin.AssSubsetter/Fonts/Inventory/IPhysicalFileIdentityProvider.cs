@@ -11,6 +11,7 @@ public interface IPhysicalFileIdentityProvider
     uint? GetLinkCount(string path) => null;
 
     /// <summary>Returns an identity shared by paths to the same physical file.</summary>
+    /// <remarks>Inventory scans may request identities for different paths concurrently.</remarks>
     /// <param name="path">An existing physical font path.</param>
     /// <returns>A stable identity within the current scan.</returns>
     string GetIdentity(string path);
