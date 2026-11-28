@@ -9,7 +9,15 @@
         "imageUrl": "https://gladtbam.github.io/jellyfin-plugin-ass-subsetter/poster.png",
         "versions": [
             {
-                "version": "4.1.0",
+                "version": "4.2.0.0",
+                "changelog": "feat: 支持配置库存扫描并发\n\nperf: 并行执行库存扫描和发布校验\n\nperf: 按需计算字体字形指纹\n\nperf: 库存扫描只计算严格指纹\n\nfeat: 支持配置字体深度分析并发\n\nperf: 有界并行分析不同内容的字体\n\nperf: 在计划任务中复用相同字体的深度证据\n\nperf: 流式校验可复用的字体库存\n\nperf: 预计算字体保留方案搜索候选\n\nperf: 复用字体面内的字形哈希器\n\nperf: 复用已读取的 ASS 正文提取字体字符\n\nperf: 减少 SUP 调色板的重复近色搜索\n\nperf: 避免字体发布校验重复解析\n\nrefactor: 统一字幕缓存生成与发布流程\n\nperf: 复用字幕缓存的字体请求键\n\nperf: 增量维护字幕缓存配额统计\n\nperf: 缩小 SUP 字幕合成缓冲区\n\nperf: 减少无变更字体分析的数据库读取\n\nfeat: 为字体维护定时任务增加数据库整理\n\nperf: 增量写入维护状态并按需读取字体数据\n\nperf: 优化字体管理查询和库存写入\n\nperf: 按需查询字体分析摘要\n\nperf: 减少字体管理页面的数据库读取\n\nperf: 优化字体分析报告的数据库读写",
+                "targetAbi": "12.0.0.0",
+                "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v4.2.0.0/Jellyfin.Plugin.AssSubsetter_4.2.0.0.zip",
+                "checksum": "53166f536fab6895a2b47baa8e334e25",
+                "timestamp": "2026-11-28T08:33:41Z"
+            },
+            {
+                "version": "4.1.0.0",
                 "changelog": "fix: 延后字体数据库和索引加载\n\nfeat: 合并字体维护计划任务并添加阶段开关",
                 "targetAbi": "12.0.0.0",
                 "sourceUrl": "https://github.com/Gladtbam/jellyfin-plugin-ass-subsetter/releases/download/v4.1.0.0/Jellyfin.Plugin.AssSubsetter_4.1.0.0.zip",
