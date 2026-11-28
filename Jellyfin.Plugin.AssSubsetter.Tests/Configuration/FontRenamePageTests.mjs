@@ -456,39 +456,45 @@ test('saves naming rules only after server validation and writes all three setti
     assert.deepEqual(good.posts.map(post => post.path), ['rename/templates/validate']);
 });
 
-test('scheduled font maintenance checkboxes default to analysis only for older settings', async () => {
+test('scheduled font maintenance settings load defaults for older configurations', async () => {
     const p = page();
     await p.document.querySelector('#AssSubsetterConfigPage').fire('pageshow');
 
     assert.equal(p.document.querySelector('#EnableScheduledFontAnalysis').checked, true);
     assert.equal(p.document.querySelector('#EnableScheduledFontQuarantine').checked, false);
     assert.equal(p.document.querySelector('#EnableScheduledFontRenaming').checked, false);
+    assert.equal(p.document.querySelector('#FontDeepAnalysisConcurrency').value, 2);
 });
 
-test('scheduled font maintenance checkbox changes persist when settings are saved', async () => {
+test('scheduled font maintenance settings persist when saved', async () => {
     const p = page({ config: {
         FontFileNameTemplate: '{fullName}',
         EnableScheduledFontAnalysis: false,
         EnableScheduledFontQuarantine: true,
-        EnableScheduledFontRenaming: true
+        EnableScheduledFontRenaming: true,
+        FontDeepAnalysisConcurrency: 8
     } });
     await p.document.querySelector('#AssSubsetterConfigPage').fire('pageshow');
 
     const analysis = p.document.querySelector('#EnableScheduledFontAnalysis');
     const quarantine = p.document.querySelector('#EnableScheduledFontQuarantine');
     const renaming = p.document.querySelector('#EnableScheduledFontRenaming');
+    const concurrency = p.document.querySelector('#FontDeepAnalysisConcurrency');
     assert.equal(analysis.checked, false);
     assert.equal(quarantine.checked, true);
     assert.equal(renaming.checked, true);
+    assert.equal(concurrency.value, 8);
 
     analysis.checked = true;
     quarantine.checked = false;
     renaming.checked = false;
+    concurrency.value = '1';
     await p.document.querySelector('#AssSubsetterConfigForm').fire('submit');
 
     assert.equal(p.updates[0].EnableScheduledFontAnalysis, true);
     assert.equal(p.updates[0].EnableScheduledFontQuarantine, false);
     assert.equal(p.updates[0].EnableScheduledFontRenaming, false);
+    assert.equal(p.updates[0].FontDeepAnalysisConcurrency, 1);
 });
 
 test('reset copies the canonical versioned default without rewriting configured templates on load', async () => {

@@ -196,6 +196,11 @@
 
                 <div role="group" aria-labelledby="ScheduledFontMaintenanceLabel">
                     <h2 id="ScheduledFontMaintenanceLabel" data-i18n="scheduledFontMaintenance">Scheduled Font Maintenance</h2>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="FontDeepAnalysisConcurrency" data-i18n="fontDeepAnalysisConcurrency">Font deep analysis concurrency</label>
+                        <input id="FontDeepAnalysisConcurrency" name="FontDeepAnalysisConcurrency" type="number" is="emby-input" min="1" max="2147483647" step="1" aria-describedby="FontDeepAnalysisConcurrencyHelp" required/>
+                        <div id="FontDeepAnalysisConcurrencyHelp" class="fieldDescription" data-i18n="descFontDeepAnalysisConcurrency">The default is 2. Set to 1 to analyze fonts serially. Actual concurrency is capped at the server's logical processor count.</div>
+                    </div>
                     <div class="checkboxContainer">
                         <label class="emby-checkbox-label">
                             <input id="EnableScheduledFontAnalysis" name="EnableScheduledFontAnalysis" type="checkbox" is="emby-checkbox" checked/>

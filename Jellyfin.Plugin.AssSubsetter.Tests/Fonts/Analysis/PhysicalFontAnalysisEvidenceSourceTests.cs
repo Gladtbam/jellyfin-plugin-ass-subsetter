@@ -16,8 +16,12 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
 {
     private static readonly string[] _nativeLoaderNames = ["skia", "harfbuzz", "freetype", "libass"];
 
-    [Fact]
-    public async Task LoadFiles_ShouldBoundParallelInspectionAndPersistInFileOrder()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public async Task LoadFiles_ShouldBoundParallelInspectionAndPersistInFileOrder(int configuredConcurrency)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         string root = Path.Join(Path.GetTempPath(), "ass-parallel-evidence-" + Guid.NewGuid().ToString("N"));
@@ -44,7 +48,7 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
                 .Callback<long, string, string, CancellationToken>((id, _, _, _) => saved.Add(id))
                 .Returns(Task.CompletedTask);
 
-            int concurrency = Math.Min(2, Environment.ProcessorCount);
+            int concurrency = Math.Min(files.Length, Math.Clamp(configuredConcurrency, 1, Environment.ProcessorCount));
             int activeReaders = 0;
             int capacityExceeded = 0;
             var activeLimitReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -72,7 +76,8 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
                     }
                 },
                 (_, _, _) => FontVerificationStatus.Passed,
-                (_, _) => FontVerificationStatus.Passed);
+                (_, _) => FontVerificationStatus.Passed,
+                inspectionConcurrency: () => configuredConcurrency);
             Task<FontDeepAnalysisEvidence> load = source.LoadFilesAsync(1, [3, 1, 2], token);
             try
             {

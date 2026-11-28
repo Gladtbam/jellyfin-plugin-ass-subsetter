@@ -34,6 +34,7 @@ public class PluginConfiguration : BasePluginConfiguration
         PrefetchTriggerPercent = 85;
         MaxCacheSizeMB = 1024;
         FontHistoryRetentionCount = 3;
+        FontDeepAnalysisConcurrency = 2;
         EnableScheduledFontAnalysis = true;
         CustomFontDirectories = string.Empty;
         ProtectedFontDirectories = string.Empty;
@@ -75,6 +76,12 @@ public class PluginConfiguration : BasePluginConfiguration
     ///     Gets or sets how many recent analysis reports and published inventory generations to retain. Zero retains all.
     /// </summary>
     public int FontHistoryRetentionCount { get; set; }
+
+    /// <summary>
+    ///     Gets or sets the maximum concurrent inspections of distinct font contents during deep analysis.
+    ///     The effective limit is between one and the server's logical processor count.
+    /// </summary>
+    public int FontDeepAnalysisConcurrency { get; set; }
 
     /// <summary>Gets or sets a value indicating whether scheduled maintenance updates the inventory, analyzes duplicates, and prunes history.</summary>
     public bool EnableScheduledFontAnalysis { get; set; }

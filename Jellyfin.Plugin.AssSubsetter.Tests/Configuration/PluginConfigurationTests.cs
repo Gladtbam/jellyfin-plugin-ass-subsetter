@@ -17,6 +17,7 @@ public class PluginConfigurationTests
         Assert.Equal(SubtitleProcessingMode.Subsetting, config.SubtitleMode);
         Assert.Equal(1024, config.MaxCacheSizeMB);
         Assert.Equal(3, config.FontHistoryRetentionCount);
+        Assert.Equal(2, config.FontDeepAnalysisConcurrency);
         Assert.Equal(string.Empty, config.CustomFontDirectories);
         Assert.Equal(string.Empty, config.ProtectedFontDirectories);
         Assert.Equal(string.Empty, config.PreferredFontDirectories);
@@ -34,6 +35,20 @@ public class PluginConfigurationTests
         Assert.True(config.EnableScheduledFontAnalysis);
         Assert.False(config.EnableScheduledFontQuarantine);
         Assert.False(config.EnableScheduledFontRenaming);
+        Assert.Equal(2, config.FontDeepAnalysisConcurrency);
+    }
+
+    [Fact]
+    public void SerializeSettings_ShouldPreserveConfiguredAnalysisConcurrency()
+    {
+        var serializer = new XmlSerializer(typeof(PluginConfiguration));
+        using var writer = new StringWriter();
+        serializer.Serialize(writer, new PluginConfiguration { FontDeepAnalysisConcurrency = 8 });
+        using var reader = new StringReader(writer.ToString());
+
+        var config = Assert.IsType<PluginConfiguration>(serializer.Deserialize(reader));
+
+        Assert.Equal(8, config.FontDeepAnalysisConcurrency);
     }
 
     [Fact]

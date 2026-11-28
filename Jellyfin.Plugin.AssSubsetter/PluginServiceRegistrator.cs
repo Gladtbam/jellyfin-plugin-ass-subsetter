@@ -77,7 +77,14 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
             });
         });
         serviceCollection.AddSingleton<FontInventoryScanner>();
-        serviceCollection.AddSingleton<IFontAnalysisEvidenceSource, PhysicalFontAnalysisEvidenceSource>();
+        serviceCollection.AddSingleton<IFontAnalysisEvidenceSource>(provider =>
+        {
+            var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
+            return new PhysicalFontAnalysisEvidenceSource(
+                provider.GetRequiredService<IFontAnalysisEvidenceRepository>(),
+                File.ReadAllBytesAsync,
+                inspectionConcurrency: () => configFactory().FontDeepAnalysisConcurrency);
+        });
         serviceCollection.AddSingleton<FontRelationshipClassifier>();
         serviceCollection.AddSingleton<FontRetentionSelector>();
         serviceCollection.AddSingleton<FontDuplicateAnalyzer>();

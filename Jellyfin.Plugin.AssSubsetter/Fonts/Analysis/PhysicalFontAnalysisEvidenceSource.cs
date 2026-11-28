@@ -20,8 +20,6 @@ namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
 /// <summary>Loads lightweight catalog evidence and reuses versioned deep glyph evidence for unchanged candidate files.</summary>
 public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSource, IFontDeepAnalysisEvidenceSource
 {
-    private const int MaximumConcurrentInspections = 2;
-
     internal static readonly string DeepEvidenceKey = string.Join('|', "deep-v7", Environment.Version, RuntimeInformation.OSDescription, RuntimeInformation.ProcessArchitecture, typeof(SKTypeface).Assembly.GetName().Version, HarfBuzzSubsetNative.GetNativeVersion(), FreeTypeFontVerifier.IsAvailable, LibassFontVerifier.IsAvailable);
     internal static readonly string AnalysisCompatibilityKey = FontDuplicateAnalyzer.CurrentEvidenceVersion + "|" + DeepEvidenceKey;
 
@@ -29,6 +27,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
     private readonly Func<string, CancellationToken, Task<byte[]>> _readFile;
     private readonly Func<byte[], int, InspectedFontFace, FontVerificationStatus> _verifyFreeType;
     private readonly Func<byte[], InspectedFontFace, FontVerificationStatus> _verifyLibass;
+    private readonly Func<int> _inspectionConcurrency;
     private InventorySnapshot? _inventorySnapshot;
 
     /// <summary>Initializes a new instance of the <see cref="PhysicalFontAnalysisEvidenceSource"/> class.</summary>
@@ -42,12 +41,14 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         IFontAnalysisEvidenceRepository repository,
         Func<string, CancellationToken, Task<byte[]>> readFile,
         Func<byte[], int, InspectedFontFace, FontVerificationStatus>? verifyFreeType = null,
-        Func<byte[], InspectedFontFace, FontVerificationStatus>? verifyLibass = null)
+        Func<byte[], InspectedFontFace, FontVerificationStatus>? verifyLibass = null,
+        Func<int>? inspectionConcurrency = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _readFile = readFile ?? throw new ArgumentNullException(nameof(readFile));
         _verifyFreeType = verifyFreeType ?? FreeTypeFontVerifier.Verify;
         _verifyLibass = verifyLibass ?? LibassFontVerifier.Verify;
+        _inspectionConcurrency = inspectionConcurrency ?? (static () => 2);
     }
 
     /// <summary>Loads lightweight candidate-bucketing evidence belonging exclusively to the requested generation.</summary>
@@ -149,7 +150,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         }
 
         var contentGroups = uncached.GroupBy(index => (selected[index].Size, Convert.ToHexString(selected[index].Sha256.Span))).ToArray();
-        int concurrency = Math.Min(MaximumConcurrentInspections, Environment.ProcessorCount);
+        int concurrency = Math.Clamp(_inspectionConcurrency(), 1, Environment.ProcessorCount);
         if (contentGroups.Length > 1 && concurrency > 1)
         {
             var options = new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancellationToken };
