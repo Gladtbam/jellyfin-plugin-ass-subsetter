@@ -34,6 +34,7 @@ public class PluginConfiguration : BasePluginConfiguration
         PrefetchTriggerPercent = 85;
         MaxCacheSizeMB = 1024;
         FontHistoryRetentionCount = 3;
+        FontInventoryScanConcurrency = 4;
         FontDeepAnalysisConcurrency = 2;
         EnableScheduledFontAnalysis = true;
         CustomFontDirectories = string.Empty;
@@ -78,8 +79,14 @@ public class PluginConfiguration : BasePluginConfiguration
     public int FontHistoryRetentionCount { get; set; }
 
     /// <summary>
+    ///     Gets or sets the concurrency limit for font inventory scanning and validation before publication.
+    ///     The effective limit is between one and the number of logical processors available to the Jellyfin process.
+    /// </summary>
+    public int FontInventoryScanConcurrency { get; set; }
+
+    /// <summary>
     ///     Gets or sets the maximum concurrent inspections of distinct font contents during deep analysis.
-    ///     The effective limit is between one and the server's logical processor count.
+    ///     The effective limit is between one and the number of logical processors available to the Jellyfin process.
     /// </summary>
     public int FontDeepAnalysisConcurrency { get; set; }
 

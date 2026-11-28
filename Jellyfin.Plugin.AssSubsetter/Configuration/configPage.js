@@ -11,6 +11,7 @@ var i18nStrings = {
         scanFrameRate: '扫描帧率',
         maxCacheSize: '最大缓存容量限制 (MB)',
         fontHistoryRetention: '分析报告及发布代次保留数量',
+        fontInventoryScanConcurrency: '库存扫描并发数',
         fontDeepAnalysisConcurrency: '字体深度分析并发数',
         scheduledFontMaintenance: '计划字体维护任务',
         enableScheduledFontAnalysis: '更新字体库存、分析重复项及清理历史',
@@ -31,7 +32,8 @@ var i18nStrings = {
         descScanFrameRate: 'ASS 转 SUP 时的渲染采样帧率。值越高动画越流畅但文件越大（推荐值: 24）。视频分辨率从元数据自动获取。',
         descMaxCacheSize: '处理后的临时字幕缓存文件的最大总体积。达到上限后将自动清理最旧的缓存（推荐值: 1024）。',
         descFontHistoryRetention: '仅保留最近 N 批分析报告及对应发布代次；填 0 表示全部保留。当前库存、进行中操作及有效重命名计划所需数据会受到保护。',
-        descFontDeepAnalysisConcurrency: '默认值为 2，设为 1 时串行分析。实际并发数最多为服务器的逻辑处理器数。',
+        descFontInventoryScanConcurrency: '同时用于库存扫描和发布前校验。默认值为 4，设为 1 时串行。实际并发数不超过 Jellyfin 进程可用的逻辑处理器数。',
+        descFontDeepAnalysisConcurrency: '默认值为 2，设为 1 时串行。实际并发数不超过 Jellyfin 进程可用的逻辑处理器数。',
         descAutoScan: '开启后，媒体库添加入库新视频时将自动在后台预处理字幕缓存。',
         descPrefetch: '开启后，当检测到用户播放进度接近当前剧集结尾时，自动在后台提前处理下一集的所有 ASS 字幕。',
         descPrefetchTrigger: '当播放进度达到此百分比时触发下一集的提前处理（推荐值: 85）。',
@@ -293,6 +295,7 @@ var i18nStrings = {
         scanFrameRate: 'Scan Frame Rate',
         maxCacheSize: 'Max Cache Size (MB)',
         fontHistoryRetention: 'Analysis reports and inventory generations to retain',
+        fontInventoryScanConcurrency: 'Font inventory scan concurrency',
         fontDeepAnalysisConcurrency: 'Font deep analysis concurrency',
         scheduledFontMaintenance: 'Scheduled Font Maintenance',
         enableScheduledFontAnalysis: 'Update font inventory, analyze duplicates, and prune history',
@@ -313,7 +316,8 @@ var i18nStrings = {
         descScanFrameRate: 'Rendering sampling frame rate during ASS to SUP conversion. Higher values result in smoother animations but larger files (Recommended: 24). Video resolution is automatically fetched from metadata.',
         descMaxCacheSize: 'The maximum total volume of processed temporary subtitle cache files. Once the limit is reached, the oldest cache will be automatically cleared (Recommended: 1024).',
         descFontHistoryRetention: 'Keep the latest N analysis reports and their published inventory generations. Set to 0 to retain all. The current inventory and data needed by active operations or plans remain protected.',
-        descFontDeepAnalysisConcurrency: "The default is 2. Set to 1 to analyze fonts serially. Actual concurrency is capped at the server's logical processor count.",
+        descFontInventoryScanConcurrency: 'Applies to inventory scans and validation before publication. The default is 4. Set to 1 for serial processing. Actual concurrency is limited to the number of logical processors available to the Jellyfin process.',
+        descFontDeepAnalysisConcurrency: 'The default is 2. Set to 1 for serial processing. Actual concurrency is limited to the number of logical processors available to the Jellyfin process.',
         descAutoScan: 'When enabled, new videos added to the media library will automatically have their subtitles pre-processed in the background.',
         descPrefetch: 'When enabled, the plugin will automatically pre-process all ASS subtitles for the next episode in the background when the user\'s playback progress nears the end of the current episode.',
         descPrefetchTrigger: 'Triggers the pre-processing of the next episode when playback progress reaches this percentage (Recommended: 85).',
@@ -2773,6 +2777,7 @@ document.querySelector('#AssSubsetterConfigPage').addEventListener('pageshow', f
         document.querySelector('#PreferredFontDirectories').value = config.PreferredFontDirectories || "";
         document.querySelector('#MaxCacheSizeMB').value = config.MaxCacheSizeMB || 1024;
         document.querySelector('#FontHistoryRetentionCount').value = config.FontHistoryRetentionCount ?? 3;
+        document.querySelector('#FontInventoryScanConcurrency').value = Math.max(1, config.FontInventoryScanConcurrency ?? 4);
         document.querySelector('#FontDeepAnalysisConcurrency').value = Math.max(1, config.FontDeepAnalysisConcurrency ?? 2);
         document.querySelector('#EnableScheduledFontAnalysis').checked = config.EnableScheduledFontAnalysis !== false;
         document.querySelector('#EnableScheduledFontQuarantine').checked = config.EnableScheduledFontQuarantine === true;
@@ -2806,6 +2811,7 @@ document.querySelector('#AssSubsetterConfigForm').addEventListener('submit', fun
             config.PreferredFontDirectories = document.querySelector('#PreferredFontDirectories').value;
             config.MaxCacheSizeMB = parseInt(document.querySelector('#MaxCacheSizeMB').value || "1024", 10);
             config.FontHistoryRetentionCount = parseInt(document.querySelector('#FontHistoryRetentionCount').value || "1", 10);
+            config.FontInventoryScanConcurrency = Number(document.querySelector('#FontInventoryScanConcurrency').value || "4");
             config.FontDeepAnalysisConcurrency = Number(document.querySelector('#FontDeepAnalysisConcurrency').value || "2");
             config.EnableScheduledFontAnalysis = document.querySelector('#EnableScheduledFontAnalysis').checked;
             config.EnableScheduledFontQuarantine = document.querySelector('#EnableScheduledFontQuarantine').checked;

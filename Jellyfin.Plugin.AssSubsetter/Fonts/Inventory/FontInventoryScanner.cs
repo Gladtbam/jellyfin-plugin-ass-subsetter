@@ -21,12 +21,12 @@ public sealed class FontInventoryScanner : IDisposable
 {
     private const string PublicationInputsChanged = "Font files or analysis inputs changed during analysis; scan again.";
     private const int MaximumFileHashBufferSize = 512 * 1024;
-    private const int MaximumFileConcurrency = 4;
 
     private readonly IFontRepository _repository;
     private readonly Func<FontDirectoryPolicyResolver> _policyFactory;
     private readonly IPhysicalFileIdentityProvider _identityProvider;
     private readonly ILogger<FontInventoryScanner> _logger;
+    private readonly Func<int> _fileConcurrency;
     private readonly SemaphoreSlim _scanGate = new(1, 1);
 
     /// <summary>Initializes a new instance of the <see cref="FontInventoryScanner"/> class.</summary>
@@ -39,11 +39,22 @@ public sealed class FontInventoryScanner : IDisposable
         Func<FontDirectoryPolicyResolver> policyFactory,
         IPhysicalFileIdentityProvider identityProvider,
         ILogger<FontInventoryScanner> logger)
+        : this(repository, policyFactory, identityProvider, logger, null)
+    {
+    }
+
+    internal FontInventoryScanner(
+        IFontRepository repository,
+        Func<FontDirectoryPolicyResolver> policyFactory,
+        IPhysicalFileIdentityProvider identityProvider,
+        ILogger<FontInventoryScanner> logger,
+        Func<int>? fileConcurrency)
     {
         _repository = repository;
         _policyFactory = policyFactory;
         _identityProvider = identityProvider;
         _logger = logger;
+        _fileConcurrency = fileConcurrency ?? (static () => 4);
     }
 
     /// <summary>Scans every configured root into an unpublished generation for analysis.</summary>
@@ -219,12 +230,12 @@ public sealed class FontInventoryScanner : IDisposable
     /// <summary>Releases the scanner serialization gate.</summary>
     public void Dispose() => _scanGate.Dispose();
 
-    private static Task ForEachObservedFileAsync(
+    private Task ForEachObservedFileAsync(
         int fileCount, Func<int, CancellationToken, ValueTask> process, IProgress<double>? progress, CancellationToken cancellationToken)
     {
         var options = new ParallelOptions
         {
-            MaxDegreeOfParallelism = Math.Min(MaximumFileConcurrency, Environment.ProcessorCount),
+            MaxDegreeOfParallelism = Math.Clamp(_fileConcurrency(), 1, Environment.ProcessorCount),
             CancellationToken = cancellationToken
         };
         int completed = 0;

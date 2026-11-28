@@ -197,9 +197,14 @@
                 <div role="group" aria-labelledby="ScheduledFontMaintenanceLabel">
                     <h2 id="ScheduledFontMaintenanceLabel" data-i18n="scheduledFontMaintenance">Scheduled Font Maintenance</h2>
                     <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="FontInventoryScanConcurrency" data-i18n="fontInventoryScanConcurrency">Font inventory scan concurrency</label>
+                        <input id="FontInventoryScanConcurrency" name="FontInventoryScanConcurrency" type="number" is="emby-input" min="1" max="2147483647" step="1" aria-describedby="FontInventoryScanConcurrencyHelp" required/>
+                        <div id="FontInventoryScanConcurrencyHelp" class="fieldDescription" data-i18n="descFontInventoryScanConcurrency">Applies to inventory scans and validation before publication. The default is 4. Set to 1 for serial processing. Actual concurrency is limited to the number of logical processors available to the Jellyfin process.</div>
+                    </div>
+                    <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="FontDeepAnalysisConcurrency" data-i18n="fontDeepAnalysisConcurrency">Font deep analysis concurrency</label>
                         <input id="FontDeepAnalysisConcurrency" name="FontDeepAnalysisConcurrency" type="number" is="emby-input" min="1" max="2147483647" step="1" aria-describedby="FontDeepAnalysisConcurrencyHelp" required/>
-                        <div id="FontDeepAnalysisConcurrencyHelp" class="fieldDescription" data-i18n="descFontDeepAnalysisConcurrency">The default is 2. Set to 1 to analyze fonts serially. Actual concurrency is capped at the server's logical processor count.</div>
+                        <div id="FontDeepAnalysisConcurrencyHelp" class="fieldDescription" data-i18n="descFontDeepAnalysisConcurrency">The default is 2. Set to 1 for serial processing. Actual concurrency is limited to the number of logical processors available to the Jellyfin process.</div>
                     </div>
                     <div class="checkboxContainer">
                         <label class="emby-checkbox-label">

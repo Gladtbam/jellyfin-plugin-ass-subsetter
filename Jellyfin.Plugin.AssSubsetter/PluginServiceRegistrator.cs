@@ -76,7 +76,16 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
                     config.PreferredFontDirectories);
             });
         });
-        serviceCollection.AddSingleton<FontInventoryScanner>();
+        serviceCollection.AddSingleton(provider =>
+        {
+            var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();
+            return new FontInventoryScanner(
+                provider.GetRequiredService<IFontRepository>(),
+                provider.GetRequiredService<Func<FontDirectoryPolicyResolver>>(),
+                provider.GetRequiredService<IPhysicalFileIdentityProvider>(),
+                provider.GetRequiredService<ILogger<FontInventoryScanner>>(),
+                fileConcurrency: () => configFactory().FontInventoryScanConcurrency);
+        });
         serviceCollection.AddSingleton<IFontAnalysisEvidenceSource>(provider =>
         {
             var configFactory = provider.GetRequiredService<Func<PluginConfiguration>>();

@@ -93,6 +93,7 @@ public class ConfigPageTests
             "PreferredFontDirectories",
             "MaxCacheSizeMB",
             "FontHistoryRetentionCount",
+            "FontInventoryScanConcurrency",
             "FontDeepAnalysisConcurrency",
             "EnableScheduledFontAnalysis",
             "EnableScheduledFontQuarantine",

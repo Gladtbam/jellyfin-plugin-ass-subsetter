@@ -463,6 +463,7 @@ test('scheduled font maintenance settings load defaults for older configurations
     assert.equal(p.document.querySelector('#EnableScheduledFontAnalysis').checked, true);
     assert.equal(p.document.querySelector('#EnableScheduledFontQuarantine').checked, false);
     assert.equal(p.document.querySelector('#EnableScheduledFontRenaming').checked, false);
+    assert.equal(p.document.querySelector('#FontInventoryScanConcurrency').value, 4);
     assert.equal(p.document.querySelector('#FontDeepAnalysisConcurrency').value, 2);
 });
 
@@ -472,6 +473,7 @@ test('scheduled font maintenance settings persist when saved', async () => {
         EnableScheduledFontAnalysis: false,
         EnableScheduledFontQuarantine: true,
         EnableScheduledFontRenaming: true,
+        FontInventoryScanConcurrency: 6,
         FontDeepAnalysisConcurrency: 8
     } });
     await p.document.querySelector('#AssSubsetterConfigPage').fire('pageshow');
@@ -479,21 +481,25 @@ test('scheduled font maintenance settings persist when saved', async () => {
     const analysis = p.document.querySelector('#EnableScheduledFontAnalysis');
     const quarantine = p.document.querySelector('#EnableScheduledFontQuarantine');
     const renaming = p.document.querySelector('#EnableScheduledFontRenaming');
+    const scanConcurrency = p.document.querySelector('#FontInventoryScanConcurrency');
     const concurrency = p.document.querySelector('#FontDeepAnalysisConcurrency');
     assert.equal(analysis.checked, false);
     assert.equal(quarantine.checked, true);
     assert.equal(renaming.checked, true);
+    assert.equal(scanConcurrency.value, 6);
     assert.equal(concurrency.value, 8);
 
     analysis.checked = true;
     quarantine.checked = false;
     renaming.checked = false;
+    scanConcurrency.value = '3';
     concurrency.value = '1';
     await p.document.querySelector('#AssSubsetterConfigForm').fire('submit');
 
     assert.equal(p.updates[0].EnableScheduledFontAnalysis, true);
     assert.equal(p.updates[0].EnableScheduledFontQuarantine, false);
     assert.equal(p.updates[0].EnableScheduledFontRenaming, false);
+    assert.equal(p.updates[0].FontInventoryScanConcurrency, 3);
     assert.equal(p.updates[0].FontDeepAnalysisConcurrency, 1);
 });
 

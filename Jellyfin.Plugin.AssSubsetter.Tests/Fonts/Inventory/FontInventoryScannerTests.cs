@@ -12,9 +12,13 @@ public sealed class FontInventoryScannerTests : IDisposable
     private readonly string _root = Path.Join(Path.GetTempPath(), "FontScannerTests_" + Guid.NewGuid().ToString("N"));
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task InventoryPass_ShouldBoundConcurrentChecksAndPreserveOrder(bool validate)
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    [InlineData(false, 6)]
+    [InlineData(true, 6)]
+    public async Task InventoryPass_ShouldBoundConcurrentChecksAndPreserveOrder(bool validate, int? configuredConcurrency)
     {
         CancellationToken token = TestContext.Current.CancellationToken;
         Directory.CreateDirectory(_root);
@@ -25,13 +29,14 @@ public sealed class FontInventoryScannerTests : IDisposable
         }
 
         var repository = new InMemoryFontRepository();
-        int expectedConcurrency = Math.Min(4, Environment.ProcessorCount);
+        int expectedConcurrency = Math.Clamp(configuredConcurrency ?? 4, 1, Environment.ProcessorCount);
         var identity = new ConcurrentIdentityProbe(expectedConcurrency);
         using var scanner = new FontInventoryScanner(
             repository,
             () => new FontDirectoryPolicyResolver(_root, null, null, false),
             identity,
-            NullLogger<FontInventoryScanner>.Instance);
+            NullLogger<FontInventoryScanner>.Instance,
+            fileConcurrency: configuredConcurrency is int setting ? () => setting : null);
         FontInventoryScanResult? staged = validate ? await scanner.StageAsync(cancellationToken: token) : null;
         identity.Enabled = true;
         var values = new List<double>();
