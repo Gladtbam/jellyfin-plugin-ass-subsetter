@@ -18,9 +18,7 @@ public static class FontFingerprintBuilder
     /// <returns>The canonical Face fingerprints.</returns>
     public static FontFaceFingerprints BuildFace(OpenTypeFace face)
     {
-        ArgumentNullException.ThrowIfNull(face);
-        OpenTypeTable[] orderedTables = [.. face.Tables.Values.OrderBy(table => table.Tag)];
-        ReadOnlyMemory<byte> strict = HashTables(orderedTables);
+        ReadOnlyMemory<byte> strict = BuildStrictFingerprint(face);
         var semantic = new Dictionary<FontSemanticGroup, ReadOnlyMemory<byte>>();
         IReadOnlyList<KeyValuePair<FontSemanticGroup, OpenTypeTable>> semanticTables = FontSemanticCanonicalizer.Build(face, out bool complete);
         foreach (IGrouping<FontSemanticGroup, KeyValuePair<FontSemanticGroup, OpenTypeTable>> group in semanticTables.GroupBy(table => table.Key))
@@ -29,6 +27,15 @@ public static class FontFingerprintBuilder
         }
 
         return new FontFaceFingerprints(strict, semantic) { IsSemanticEvidenceComplete = complete };
+    }
+
+    /// <summary>Builds the strict digest for one validated Face.</summary>
+    /// <param name="face">The validated Face table directory.</param>
+    /// <returns>The canonical strict Face fingerprint.</returns>
+    internal static ReadOnlyMemory<byte> BuildStrictFingerprint(OpenTypeFace face)
+    {
+        ArgumentNullException.ThrowIfNull(face);
+        return HashTables(face.Tables.Values.OrderBy(table => table.Tag));
     }
 
     private static ReadOnlyMemory<byte> HashTables(IEnumerable<OpenTypeTable> tables)

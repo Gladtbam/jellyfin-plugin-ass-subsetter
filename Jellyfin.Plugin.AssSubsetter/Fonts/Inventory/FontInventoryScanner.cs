@@ -347,11 +347,10 @@ public sealed class FontInventoryScanner : IDisposable
                     return Task.FromResult(CreateUnclassifiable(path, physicalIdentity, generationId, info, policy, linkKind, inspected.Error ?? "Font Face could not be classified."));
                 }
 
-                FontFaceFingerprints fingerprints = FontFingerprintBuilder.BuildFace(face);
                 faces.Add(new FontFaceRecord
                 {
                     FaceIndex = face.FaceIndex,
-                    StrictFingerprint = fingerprints.StrictFingerprint,
+                    StrictFingerprint = FontFingerprintBuilder.BuildStrictFingerprint(face),
                     FamilyName = inspected.FamilyName,
                     StyleName = inspected.StyleName,
                     Names = inspected.Names,

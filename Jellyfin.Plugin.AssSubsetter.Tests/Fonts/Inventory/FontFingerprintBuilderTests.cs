@@ -140,5 +140,11 @@ public sealed class FontFingerprintBuilderTests
         Assert.Equal(
             standaloneFingerprint.StrictFingerprint.ToArray(),
             collectedFingerprint.StrictFingerprint.ToArray());
+        Assert.Equal(
+            standaloneFingerprint.StrictFingerprint.ToArray(),
+            FontFingerprintBuilder.BuildStrictFingerprint(standalone).ToArray());
+        Assert.Equal(
+            collectedFingerprint.StrictFingerprint.ToArray(),
+            FontFingerprintBuilder.BuildStrictFingerprint(collected).ToArray());
     }
 }
