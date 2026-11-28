@@ -135,10 +135,11 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
         var faces = new List<FontFaceEvidence>(selected.Sum(file => file.Faces.Count));
         var retentionFiles = new List<FontRetentionFile>(selected.Length);
+        var inspectedByContent = new Dictionary<(long Size, string Digest), FileEvidence>();
         foreach (FontFileRecord file in selected)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FileEvidence evidence = await LoadOrInspectFileAsync(file, cancellationToken).ConfigureAwait(false);
+            FileEvidence evidence = await LoadOrInspectFileAsync(file, inspectedByContent, cancellationToken).ConfigureAwait(false);
             faces.AddRange(evidence.Faces);
             retentionFiles.Add(evidence.RetentionFile);
         }
@@ -146,7 +147,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         return new FontDeepAnalysisEvidence(faces, retentionFiles);
     }
 
-    private async Task<FileEvidence> LoadOrInspectFileAsync(FontFileRecord file, CancellationToken cancellationToken)
+    private async Task<FileEvidence> LoadOrInspectFileAsync(
+        FontFileRecord file, Dictionary<(long Size, string Digest), FileEvidence> inspectedByContent, CancellationToken cancellationToken)
     {
         var info = new FileInfo(file.Path);
         if (info.Exists && info.Length == file.Size && new DateTimeOffset(info.LastWriteTimeUtc) == file.ModifiedUtc)
@@ -169,41 +171,47 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             }
         }
 
-        FileEvidence inspected = await InspectFileAsync(file, cancellationToken).ConfigureAwait(false);
+        var contentKey = (file.Size, Convert.ToHexString(file.Sha256.Span));
+        inspectedByContent.TryGetValue(contentKey, out FileEvidence? shared);
+        FileEvidence inspected = await InspectFileAsync(file, shared, cancellationToken).ConfigureAwait(false);
         if (inspected.Faces.Count > 0 && inspected.Faces.All(face => face.IsDeepEvidenceComplete))
         {
             string payload = FontDeepEvidenceJson.Serialize(new FontDeepAnalysisEvidence(inspected.Faces, [inspected.RetentionFile]));
             await _repository.SaveDeepEvidenceAsync(file.Id, DeepEvidenceKey, payload, cancellationToken).ConfigureAwait(false);
+            inspectedByContent.TryAdd(contentKey, inspected);
         }
 
         return inspected;
     }
 
     private static FileEvidence? RebindCachedEvidence(FontFileRecord file, FontDeepAnalysisEvidence cached)
+        => cached.Files.Count == 1 ? RebindEvidence(file, new FileEvidence(cached.Faces, cached.Files[0]), requireSamePhysicalFile: true) : null;
+
+    private static FileEvidence? RebindEvidence(FontFileRecord file, FileEvidence evidence, bool requireSamePhysicalFile)
     {
-        if (cached.Files.Count != 1 || cached.Faces.Count != file.Faces.Count || cached.Files[0].Faces.Count != file.Faces.Count)
+        if (evidence.Faces.Count != file.Faces.Count || evidence.RetentionFile.Faces.Count != file.Faces.Count)
         {
             return null;
         }
 
-        FontFaceEvidence[] cachedFaces = [.. cached.Faces.OrderBy(face => face.FaceIndex)];
-        FontFaceRecord[] currentFaces = [.. file.Faces.OrderBy(face => face.FaceIndex)];
-        FontRetentionFace[] cachedRetention = [.. cached.Files[0].Faces.OrderBy(face => face.FaceId)];
+        IReadOnlyList<FontFaceEvidence> cachedFaces = requireSamePhysicalFile ? [.. evidence.Faces.OrderBy(face => face.FaceIndex)] : evidence.Faces;
+        IReadOnlyList<FontFaceRecord> currentFaces = requireSamePhysicalFile ? [.. file.Faces.OrderBy(face => face.FaceIndex)] : file.Faces;
+        IReadOnlyList<FontRetentionFace> cachedRetention = evidence.RetentionFile.Faces;
         if (cachedFaces.Select(face => face.FaceId).Order().SequenceEqual(cachedRetention.Select(face => face.FaceId).Order()) is false)
         {
             return null;
         }
 
-        var reboundFaces = new FontFaceEvidence[currentFaces.Length];
-        var reboundRetention = new FontRetentionFace[currentFaces.Length];
-        for (int index = 0; index < currentFaces.Length; index++)
+        var reboundFaces = new FontFaceEvidence[currentFaces.Count];
+        var reboundRetention = new FontRetentionFace[currentFaces.Count];
+        for (int index = 0; index < currentFaces.Count; index++)
         {
             FontFaceRecord current = currentFaces[index];
             FontFaceEvidence previous = cachedFaces[index];
             FontRetentionFace? quality = cachedRetention.FirstOrDefault(face => face.FaceId == previous.FaceId);
             if (quality is null || !previous.IsDeepEvidenceComplete || !previous.IsClassifiable
                 || previous.FaceIndex != current.FaceIndex
-                || previous.PhysicalFileId != file.PhysicalIdentity
+                || (requireSamePhysicalFile && previous.PhysicalFileId != file.PhysicalIdentity)
                 || !previous.FileHash.Span.SequenceEqual(file.Sha256.Span)
                 || !previous.StrictFingerprint.Span.SequenceEqual(current.StrictFingerprint.Span))
             {
@@ -219,7 +227,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                 IsDeepEvidenceComplete = classifiable,
                 ClassificationError = verificationError,
                 FileId = file.Id,
-                Identity = FontIdentityResolver.WithNameRoles(previous.Identity, current.NameRecords)
+                PhysicalFileId = file.PhysicalIdentity,
+                Identity = requireSamePhysicalFile ? FontIdentityResolver.WithNameRoles(previous.Identity, current.NameRecords) : previous.Identity
             };
             reboundRetention[index] = quality with { FaceId = current.Id, IsClassifiable = classifiable };
         }
@@ -227,7 +236,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         return new FileEvidence(reboundFaces, RetentionFile(file, reboundRetention));
     }
 
-    private async Task<FileEvidence> InspectFileAsync(FontFileRecord file, CancellationToken cancellationToken)
+    private async Task<FileEvidence> InspectFileAsync(FontFileRecord file, FileEvidence? shared, CancellationToken cancellationToken)
     {
         try
         {
@@ -235,6 +244,11 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             if (data.LongLength != file.Size || !SHA256.HashData(data).AsSpan().SequenceEqual(file.Sha256.Span))
             {
                 return Unclassifiable(file, "Physical file evidence changed after inventory publication.");
+            }
+
+            if (shared is not null && RebindEvidence(file, shared, requireSamePhysicalFile: false) is { } rebound)
+            {
+                return rebound;
             }
 
             OpenTypeContainer container = OpenTypeFontReader.Read(data);

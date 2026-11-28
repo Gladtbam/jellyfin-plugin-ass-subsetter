@@ -16,6 +16,73 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
 {
     private static readonly string[] _nativeLoaderNames = ["skia", "harfbuzz", "freetype", "libass"];
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadFiles_ShouldShareDeepEvidenceOnlyForVerifiedIdenticalCopies(bool changeSecondCopy)
+    {
+        CancellationToken token = TestContext.Current.CancellationToken;
+        string root = Path.Join(Path.GetTempPath(), "ass-identical-copies-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            byte[] bytes = GeneratedAnalysisFont.Create(Cmap(true, 3));
+            FontFileRecord left = await WriteDataAsync(root, "left.ttf", bytes);
+            FontFileRecord right = (await WriteDataAsync(root, "right.ttf", bytes)) with { DirectoryPolicy = FontDirectoryPolicy.Protected };
+            var repository = new InMemoryFontRepository();
+            long generation = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+            await repository.WriteInventoryAsync(generation, [left with { GenerationId = generation }, right with { GenerationId = generation }], token);
+
+            if (changeSecondCopy)
+            {
+                bytes[^1] ^= 1;
+                await File.WriteAllBytesAsync(right.Path, bytes, token);
+                File.SetLastWriteTimeUtc(right.Path, right.ModifiedUtc.UtcDateTime);
+            }
+
+            int nativeChecks = 0;
+            var reads = new List<string>();
+            var source = new PhysicalFontAnalysisEvidenceSource(repository,
+                (path, cancellation) =>
+                {
+                    reads.Add(path);
+                    return File.ReadAllBytesAsync(path, cancellation);
+                },
+                (_, _, _) =>
+                {
+                    nativeChecks++;
+                    return FontVerificationStatus.Passed;
+                },
+                (_, _) => FontVerificationStatus.Passed);
+
+            FontDeepAnalysisEvidence result = await source.LoadFilesAsync(generation, [left.Id, right.Id], token);
+
+            Assert.Equal([left.Path, right.Path], reads);
+            Assert.Equal(1, nativeChecks);
+            Assert.True(result.Faces[0].IsDeepEvidenceComplete, result.Faces[0].ClassificationError);
+            Assert.Equal(right.Id, result.Faces[1].FileId);
+            Assert.Equal(right.Faces[0].Id, result.Faces[1].FaceId);
+            Assert.Equal(right.PhysicalIdentity, result.Faces[1].PhysicalFileId);
+            Assert.Equal(right.Path, result.Files[1].Path);
+            Assert.Equal(FontDirectoryPolicy.Protected, result.Files[1].DirectoryPolicy);
+            if (changeSecondCopy)
+            {
+                Assert.False(result.Faces[1].IsDeepEvidenceComplete);
+                Assert.Contains("changed after inventory", result.Faces[1].ClassificationError, StringComparison.Ordinal);
+            }
+            else
+            {
+                Assert.True(result.Faces[1].IsDeepEvidenceComplete, result.Faces[1].ClassificationError);
+                Assert.Same(result.Faces[0].CharacterFingerprints, result.Faces[1].CharacterFingerprints);
+                Assert.Same(result.Faces[0].VariationFingerprints, result.Faces[1].VariationFingerprints);
+            }
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task LoadFiles_ShouldRejectIncompleteNativeVerificationFromTheRealVerifier()
     {
