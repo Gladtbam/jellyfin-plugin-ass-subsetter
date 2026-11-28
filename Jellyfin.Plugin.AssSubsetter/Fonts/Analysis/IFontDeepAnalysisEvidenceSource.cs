@@ -16,4 +16,16 @@ public interface IFontDeepAnalysisEvidenceSource
         long generationId,
         IReadOnlyList<long> fileIds,
         CancellationToken cancellationToken);
+
+    /// <summary>Loads selected files with per-character fingerprints for the Faces that need them.</summary>
+    /// <param name="generationId">The inventory generation being analyzed.</param>
+    /// <param name="fileIds">The distinct candidate physical-file identifiers.</param>
+    /// <param name="glyphFaceIds">The candidate Faces requiring full per-character evidence.</param>
+    /// <param name="cancellationToken">A token that cancels load and analysis.</param>
+    /// <returns>The validated Face and file-quality evidence.</returns>
+    internal Task<FontDeepAnalysisEvidence> LoadFilesAsync(
+        long generationId,
+        IReadOnlyList<long> fileIds,
+        IReadOnlySet<long> glyphFaceIds,
+        CancellationToken cancellationToken) => LoadFilesAsync(generationId, fileIds, cancellationToken);
 }

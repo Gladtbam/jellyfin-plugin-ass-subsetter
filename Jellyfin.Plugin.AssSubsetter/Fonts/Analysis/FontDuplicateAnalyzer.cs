@@ -60,9 +60,22 @@ public sealed class FontDuplicateAnalyzer
             foreach ((long[] fileIds, int[] pairIndexes) in BuildCandidateBatches(candidates.Pairs, faces))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                var glyphFaceIds = new HashSet<long>();
+                foreach (int index in pairIndexes)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    FontCandidatePair pair = candidates.Pairs[index];
+                    if (FontRelationshipClassifier.ExactMatch(faces[pair.LeftFaceId], faces[pair.RightFaceId]) is null)
+                    {
+                        glyphFaceIds.Add(pair.LeftFaceId);
+                        glyphFaceIds.Add(pair.RightFaceId);
+                    }
+                }
+
                 FontDeepAnalysisEvidence deep = await deepSource.LoadFilesAsync(
                     generationId,
                     fileIds,
+                    glyphFaceIds,
                     cancellationToken).ConfigureAwait(false);
                 foreach (FontFaceEvidence face in deep.Faces)
                 {
@@ -290,14 +303,19 @@ public sealed class FontDuplicateAnalyzer
             .ToDictionary(group => group.Key, group => group.Max(face => scores[face.FaceId].Total), StringComparer.Ordinal);
         return
         [
-            .. policy.Files.SelectMany(file => file.Faces.Select(face => new FontFaceAnalysisRecord
+            .. policy.Files.SelectMany(file => file.Faces.Select(face =>
             {
-                FaceId = face.FaceId,
-                FileId = file.FileId,
-                RetentionScore = scores[face.FaceId].Total,
-                IsRuntimePreferred = faces[face.FaceId].IsDeepEvidenceComplete && scores[face.FaceId].Total == best[RuntimeIdentity(faces[face.FaceId])],
-                ScoreJson = JsonSerializer.Serialize(scores[face.FaceId], _jsonOptions),
-                VerificationJson = JsonSerializer.Serialize(face.Quality.Verification, _jsonOptions)
+                FontFaceEvidence evidence = faces[face.FaceId];
+                return new FontFaceAnalysisRecord
+                {
+                    FaceId = face.FaceId,
+                    FileId = file.FileId,
+                    RetentionScore = scores[face.FaceId].Total,
+                    IsRuntimePreferred = (evidence.IsDeepEvidenceComplete || evidence.IsMappingOnlyEvidence)
+                        && scores[face.FaceId].Total == best[RuntimeIdentity(evidence)],
+                    ScoreJson = JsonSerializer.Serialize(scores[face.FaceId], _jsonOptions),
+                    VerificationJson = JsonSerializer.Serialize(face.Quality.Verification, _jsonOptions)
+                };
             })).OrderBy(face => face.FaceId)
         ];
     }

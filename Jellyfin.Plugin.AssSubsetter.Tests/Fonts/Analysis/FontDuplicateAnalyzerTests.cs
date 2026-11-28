@@ -143,27 +143,35 @@ public sealed class FontDuplicateAnalyzerTests
         Assert.Null(await repository.GetLatestCompleteAnalysisAsync(CancellationToken.None));
     }
 
-    [Fact]
-    public async Task AnalyzeAsync_ShouldLoadDeepEvidenceOnlyForCandidateFiles()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnalyzeAsync_ShouldRequireGlyphsOnlyForNonExactComparisons(bool includeNonExact)
     {
-        var repository = new InMemoryFontRepository();
-        FontFaceEvidence deepLeft = Evidence(1, 10, "left.ttf", 100) with
-        {
-            FileHash = Bytes("left-file"),
-            StrictFingerprint = Bytes("left-face")
-        };
+        FontFaceEvidence deepLeft = Evidence(1, 10, "left.ttf", 100);
         FontFaceEvidence deepRight = Evidence(2, 20, "right.ttf", 200) with
         {
-            FileHash = Bytes("right-file"),
-            StrictFingerprint = Bytes("right-face")
+            FileHash = Bytes("right-file")
         };
+        var deepFaces = new List<FontFaceEvidence> { deepLeft, deepRight };
+        var retentionFiles = new List<FontRetentionFile>
+        {
+            RetentionFile(10, "left.ttf", 100, 1),
+            RetentionFile(20, "right.ttf", 200, 2)
+        };
+        if (includeNonExact)
+        {
+            deepFaces.Add(Evidence(3, 30, "third.ttf", 300) with
+            {
+                FileHash = Bytes("third-file"),
+                StrictFingerprint = Bytes("third-face")
+            });
+            retentionFiles.Add(RetentionFile(30, "third.ttf", 300, 3));
+        }
+
         FontAnalysisSnapshot deepSnapshot = new(
-            [deepLeft, deepRight],
-            new DirectoryPolicySnapshot(
-            [
-                RetentionFile(10, "left.ttf", 100, 1),
-                RetentionFile(20, "right.ttf", 200, 2)
-            ]));
+            deepFaces,
+            new DirectoryPolicySnapshot(retentionFiles));
         FontAnalysisSnapshot lightweight = deepSnapshot with
         {
             Faces =
@@ -180,8 +188,11 @@ public sealed class FontDuplicateAnalyzerTests
 
         AnalysisBatch result = await analyzer.AnalyzeAsync(42, null, CancellationToken.None);
 
-        Assert.Equal([10L, 20L], source.LoadedFileIds);
-        Assert.Equal(FontRelationshipKind.RenderingAndLayoutEquivalent, Assert.Single(result.Relations).RelationshipKind);
+        Assert.Equal(includeNonExact ? [10L, 20L, 30L] : new long[] { 10, 20 }, source.LoadedFileIds);
+        Assert.Equal(includeNonExact ? [1L, 2L, 3L] : Array.Empty<long>(), source.RequiredGlyphFaceIds.Order());
+        Assert.Equal(includeNonExact ? 3 : 1, result.Relations.Count);
+        Assert.Equal(FontRelationshipKind.StrictFaceDuplicate, result.Relations[0].RelationshipKind);
+        Assert.Contains(result.FaceScores, face => face.IsRuntimePreferred);
     }
 
     [Fact]
@@ -387,6 +398,8 @@ public sealed class FontDuplicateAnalyzerTests
 
         public List<IReadOnlyList<long>> LoadCalls { get; } = [];
 
+        public IReadOnlySet<long> RequiredGlyphFaceIds { get; private set; } = new HashSet<long>();
+
         public Task<FontAnalysisSnapshot> LoadAsync(long generationId, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -405,6 +418,30 @@ public sealed class FontDuplicateAnalyzerTests
             return Task.FromResult(new FontDeepAnalysisEvidence(
                 [.. deep.Faces.Where(face => requested.Contains(face.FileId))],
                 [.. deep.Policy.Files.Where(file => requested.Contains(file.FileId))]));
+        }
+
+        async Task<FontDeepAnalysisEvidence> IFontDeepAnalysisEvidenceSource.LoadFilesAsync(
+            long generationId,
+            IReadOnlyList<long> fileIds,
+            IReadOnlySet<long> glyphFaceIds,
+            CancellationToken cancellationToken)
+        {
+            RequiredGlyphFaceIds = glyphFaceIds;
+            FontDeepAnalysisEvidence evidence = await LoadFilesAsync(generationId, fileIds, cancellationToken);
+            return evidence with
+            {
+                Faces =
+                [
+                    .. evidence.Faces.Select(face => glyphFaceIds.Contains(face.FaceId)
+                        ? face
+                        : face with
+                        {
+                            IsDeepEvidenceComplete = false,
+                            IsMappingOnlyEvidence = true,
+                            CharacterFingerprints = new Dictionary<uint, ReadOnlyMemory<byte>>()
+                        })
+                ]
+            };
         }
     }
 

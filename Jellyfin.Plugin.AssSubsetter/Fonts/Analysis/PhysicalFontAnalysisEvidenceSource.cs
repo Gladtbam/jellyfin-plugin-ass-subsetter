@@ -98,9 +98,21 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
     /// <param name="fileIds">The distinct candidate physical-file identifiers.</param>
     /// <param name="cancellationToken">A token that cancels file reading or glyph evidence construction.</param>
     /// <returns>The replacement deep Face and file-quality evidence.</returns>
-    public async Task<FontDeepAnalysisEvidence> LoadFilesAsync(
+    public Task<FontDeepAnalysisEvidence> LoadFilesAsync(
         long generationId,
         IReadOnlyList<long> fileIds,
+        CancellationToken cancellationToken) => LoadFilesAsync(generationId, fileIds, null, cancellationToken);
+
+    Task<FontDeepAnalysisEvidence> IFontDeepAnalysisEvidenceSource.LoadFilesAsync(
+        long generationId,
+        IReadOnlyList<long> fileIds,
+        IReadOnlySet<long> glyphFaceIds,
+        CancellationToken cancellationToken) => LoadFilesAsync(generationId, fileIds, glyphFaceIds, cancellationToken);
+
+    internal async Task<FontDeepAnalysisEvidence> LoadFilesAsync(
+        long generationId,
+        IReadOnlyList<long> fileIds,
+        IReadOnlySet<long>? glyphFaceIds,
         CancellationToken cancellationToken)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(generationId);
@@ -136,12 +148,15 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             throw new InvalidOperationException("One or more candidate physical files are absent from the requested inventory.");
         }
 
+        HashSet<int>[]? glyphIndexesByFile = glyphFaceIds is null
+            ? null
+            : Array.ConvertAll(selected, file => file.Faces.Where(face => glyphFaceIds.Contains(face.Id)).Select(face => face.FaceIndex).ToHashSet());
         var evidenceByIndex = new (FileEvidence? Evidence, bool Save)[selected.Length];
         var uncached = new List<int>();
         for (int index = 0; index < selected.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            FileEvidence? cached = await LoadCachedEvidenceAsync(selected[index], cancellationToken).ConfigureAwait(false);
+            FileEvidence? cached = await LoadCachedEvidenceAsync(selected[index], glyphIndexesByFile?[index], cancellationToken).ConfigureAwait(false);
             evidenceByIndex[index] = (cached, false);
             if (cached is null)
             {
@@ -184,23 +199,28 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
 
         async ValueTask InspectGroupAsync(IEnumerable<int> group, CancellationToken token)
         {
+            // Identical copies can share the union of requested Face indexes.
+            HashSet<int>? glyphIndexes = glyphIndexesByFile is null
+                ? null
+                : group.SelectMany(index => glyphIndexesByFile[index]).ToHashSet();
             FileEvidence? shared = null;
             foreach (int index in group)
             {
                 token.ThrowIfCancellationRequested();
-                FileEvidence evidence = await InspectFileAsync(selected[index], shared, token).ConfigureAwait(false);
-                bool complete = evidence.Faces.Count > 0 && evidence.Faces.All(face => face.IsDeepEvidenceComplete);
-                if (complete)
+                FileEvidence evidence = await InspectFileAsync(selected[index], shared, glyphIndexes, token).ConfigureAwait(false);
+                bool reusable = evidence.Faces.Count > 0 && evidence.Faces.All(face => face.IsClassifiable);
+                if (reusable)
                 {
                     shared ??= evidence;
                 }
 
-                evidenceByIndex[index] = (evidence, complete);
+                evidenceByIndex[index] = (evidence, reusable);
             }
         }
     }
 
-    private async Task<FileEvidence?> LoadCachedEvidenceAsync(FontFileRecord file, CancellationToken cancellationToken)
+    private async Task<FileEvidence?> LoadCachedEvidenceAsync(
+        FontFileRecord file, IReadOnlySet<int>? glyphIndexes, CancellationToken cancellationToken)
     {
         var info = new FileInfo(file.Path);
         if (info.Exists && info.Length == file.Size && new DateTimeOffset(info.LastWriteTimeUtc) == file.ModifiedUtc)
@@ -210,7 +230,10 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             {
                 try
                 {
-                    FileEvidence? rebound = RebindCachedEvidence(file, FontDeepEvidenceJson.Deserialize(payload));
+                    FontDeepAnalysisEvidence cached = FontDeepEvidenceJson.Deserialize(payload);
+                    FileEvidence? rebound = cached.Files.Count == 1
+                        ? RebindEvidence(file, new FileEvidence(cached.Faces, cached.Files[0]), requireSamePhysicalFile: true, glyphIndexes)
+                        : null;
                     if (rebound is not null)
                     {
                         return rebound;
@@ -226,10 +249,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         return null;
     }
 
-    private static FileEvidence? RebindCachedEvidence(FontFileRecord file, FontDeepAnalysisEvidence cached)
-        => cached.Files.Count == 1 ? RebindEvidence(file, new FileEvidence(cached.Faces, cached.Files[0]), requireSamePhysicalFile: true) : null;
-
-    private static FileEvidence? RebindEvidence(FontFileRecord file, FileEvidence evidence, bool requireSamePhysicalFile)
+    private static FileEvidence? RebindEvidence(
+        FontFileRecord file, FileEvidence evidence, bool requireSamePhysicalFile, IReadOnlySet<int>? glyphIndexes)
     {
         if (evidence.Faces.Count != file.Faces.Count || evidence.RetentionFile.Faces.Count != file.Faces.Count)
         {
@@ -251,7 +272,9 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             FontFaceRecord current = currentFaces[index];
             FontFaceEvidence previous = cachedFaces[index];
             FontRetentionFace? quality = cachedRetention.FirstOrDefault(face => face.FaceId == previous.FaceId);
-            if (quality is null || !previous.IsDeepEvidenceComplete || !previous.IsClassifiable
+            bool hasRequiredEvidence = previous.IsDeepEvidenceComplete
+                || (previous.IsMappingOnlyEvidence && glyphIndexes?.Contains(current.FaceIndex) == false);
+            if (quality is null || !hasRequiredEvidence || !previous.IsClassifiable
                 || previous.FaceIndex != current.FaceIndex
                 || (requireSamePhysicalFile && previous.PhysicalFileId != file.PhysicalIdentity)
                 || !previous.FileHash.Span.SequenceEqual(file.Sha256.Span)
@@ -266,7 +289,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             {
                 FaceId = current.Id,
                 IsClassifiable = classifiable,
-                IsDeepEvidenceComplete = classifiable,
+                IsDeepEvidenceComplete = classifiable && previous.IsDeepEvidenceComplete,
+                IsMappingOnlyEvidence = classifiable && previous.IsMappingOnlyEvidence,
                 ClassificationError = verificationError,
                 FileId = file.Id,
                 PhysicalFileId = file.PhysicalIdentity,
@@ -278,7 +302,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
         return new FileEvidence(reboundFaces, RetentionFile(file, reboundRetention));
     }
 
-    private async Task<FileEvidence> InspectFileAsync(FontFileRecord file, FileEvidence? shared, CancellationToken cancellationToken)
+    private async Task<FileEvidence> InspectFileAsync(
+        FontFileRecord file, FileEvidence? shared, IReadOnlySet<int>? glyphIndexes, CancellationToken cancellationToken)
     {
         try
         {
@@ -292,7 +317,7 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             {
                 bool samePhysicalFile = shared.Faces[0].PhysicalFileId == file.PhysicalIdentity
                     && shared.RetentionFile.ModifiedUtc == file.ModifiedUtc;
-                if (RebindEvidence(file, shared, requireSamePhysicalFile: samePhysicalFile) is { } rebound)
+                if (RebindEvidence(file, shared, requireSamePhysicalFile: samePhysicalFile, glyphIndexes) is { } rebound)
                 {
                     return rebound;
                 }
@@ -324,10 +349,12 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                     continue;
                 }
 
-                Dictionary<uint, ReadOnlyMemory<byte>>? characters = BuildCharacterFingerprints(
+                bool includeFingerprints = glyphIndexes?.Contains(record.FaceIndex) != false;
+                Dictionary<uint, ReadOnlyMemory<byte>>? characters = ValidateMappings(
                     data,
                     record.FaceIndex,
                     inspected,
+                    includeFingerprints,
                     cancellationToken,
                     out Dictionary<ulong, ReadOnlyMemory<byte>> variations,
                     out string? mappingError);
@@ -341,7 +368,8 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                     FileId = file.Id,
                     IsClassifiable = classifiable,
                     ClassificationError = classifiable ? null : string.Join(" ", new[] { mappingError, verificationError }.Where(error => error is not null)),
-                    IsDeepEvidenceComplete = classifiable,
+                    IsDeepEvidenceComplete = classifiable && includeFingerprints,
+                    IsMappingOnlyEvidence = classifiable && !includeFingerprints,
                     PhysicalFileId = file.PhysicalIdentity,
                     FaceIndex = record.FaceIndex,
                     FileHash = file.Sha256,
@@ -410,10 +438,11 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
             : "OpenType cmap mappings are incomplete or unsupported.";
     }
 
-    private static Dictionary<uint, ReadOnlyMemory<byte>>? BuildCharacterFingerprints(
+    private static Dictionary<uint, ReadOnlyMemory<byte>>? ValidateMappings(
         byte[] data,
         int faceIndex,
         InspectedFontFace inspected,
+        bool includeFingerprints,
         CancellationToken cancellationToken,
         out Dictionary<ulong, ReadOnlyMemory<byte>> variations,
         out string? error)
@@ -452,13 +481,11 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                     return null;
                 }
 
-                if (!glyphCache.TryGetValue(glyph, out ReadOnlyMemory<byte> fingerprint))
+                if (includeFingerprints)
                 {
-                    fingerprint = FingerprintGlyph(font, paint, glyph, glyphHash);
-                    glyphCache.Add(glyph, fingerprint);
+                    characters.Add(codePoint, GetFingerprint(glyph));
                 }
 
-                characters.Add(codePoint, fingerprint);
                 if (codePoint == uint.MaxValue)
                 {
                     break;
@@ -476,16 +503,24 @@ public sealed class PhysicalFontAnalysisEvidenceSource : IFontAnalysisEvidenceSo
                 return null;
             }
 
+            if (includeFingerprints)
+            {
+                variations.Add(((ulong)mapping.Selector << 21) | mapping.CodePoint, GetFingerprint(glyph));
+            }
+        }
+
+        return characters;
+
+        ReadOnlyMemory<byte> GetFingerprint(ushort glyph)
+        {
             if (!glyphCache.TryGetValue(glyph, out ReadOnlyMemory<byte> fingerprint))
             {
                 fingerprint = FingerprintGlyph(font, paint, glyph, glyphHash);
                 glyphCache.Add(glyph, fingerprint);
             }
 
-            variations.Add(((ulong)mapping.Selector << 21) | mapping.CodePoint, fingerprint);
+            return fingerprint;
         }
-
-        return characters;
     }
 
     private static ReadOnlyMemory<byte> FingerprintGlyph(SKFont font, SKPaint paint, ushort glyph, IncrementalHash hash)

@@ -37,15 +37,13 @@ public sealed class FontRelationshipClassifier
             return Result(FontRelationshipKind.Unclassifiable, false, false, "classification.incomplete");
         }
 
-        if (!string.Equals(left.PhysicalFileId, right.PhysicalFileId, StringComparison.Ordinal)
-            && left.FaceIndex == right.FaceIndex
-            && left.FileHash.Length > 0
-            && Equal(left.FileHash, right.FileHash))
+        FontRelationshipKind? exactMatch = ExactMatch(left, right);
+        if (exactMatch == FontRelationshipKind.IdenticalFileHash)
         {
             return Result(FontRelationshipKind.IdenticalFileHash, true, true, "container.sha256", "face.index");
         }
 
-        if (left.StrictFingerprint.Length > 0 && Equal(left.StrictFingerprint, right.StrictFingerprint))
+        if (exactMatch == FontRelationshipKind.StrictFaceDuplicate)
         {
             return Result(FontRelationshipKind.StrictFaceDuplicate, true, true, "face.strict-fingerprint");
         }
@@ -125,6 +123,25 @@ public sealed class FontRelationshipClassifier
         }
 
         return Result(FontRelationshipKind.Independent, false, false, "identity.independent");
+    }
+
+    /// <summary>Matches the file hashes or strict Face fingerprints.</summary>
+    /// <param name="left">The first Face.</param>
+    /// <param name="right">The second Face.</param>
+    /// <returns>The matching relationship, if any.</returns>
+    internal static FontRelationshipKind? ExactMatch(FontFaceEvidence left, FontFaceEvidence right)
+    {
+        if (!string.Equals(left.PhysicalFileId, right.PhysicalFileId, StringComparison.Ordinal)
+            && left.FaceIndex == right.FaceIndex
+            && left.FileHash.Length > 0
+            && Equal(left.FileHash, right.FileHash))
+        {
+            return FontRelationshipKind.IdenticalFileHash;
+        }
+
+        return left.StrictFingerprint.Length > 0 && Equal(left.StrictFingerprint, right.StrictFingerprint)
+            ? FontRelationshipKind.StrictFaceDuplicate
+            : null;
     }
 
     private static bool RenderingAndLayoutEquivalent(FontFaceEvidence left, FontFaceEvidence right)

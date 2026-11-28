@@ -383,39 +383,67 @@ public sealed class PhysicalFontAnalysisEvidenceSourceTests
         }
     }
 
-    [Fact]
-    public async Task LoadFiles_ShouldReuseDurableSqliteEvidenceAfterSourceRecreation()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadFiles_ShouldReuseDurableSqliteEvidenceAfterSourceRecreation(bool mappingsOnly)
     {
+        CancellationToken token = TestContext.Current.CancellationToken;
         string root = Path.Combine(Path.GetTempPath(), "ass-deep-sqlite-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
             var paths = new FontStoragePaths(root, Path.Combine(root, "catalog.db"), Path.Combine(root, "quarantine"), Path.Combine(root, "manifests"));
-            await using var database = new FontDatabase(paths);
-            var repository = new SqliteFontRepository(database);
-            await repository.InitializeAsync(TestContext.Current.CancellationToken);
-            FontFileRecord file = await WriteDataAsync(root, "left.ttf", GeneratedAnalysisFont.Create());
-            long firstGeneration = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], TestContext.Current.CancellationToken);
-            await repository.WriteInventoryAsync(firstGeneration, [file with { Id = 0, GenerationId = firstGeneration, Faces = [file.Faces[0] with { Id = 0 }] }], TestContext.Current.CancellationToken);
-            FontFileRecord firstRecord = Assert.Single(await repository.LoadInventoryAsync(firstGeneration, TestContext.Current.CancellationToken));
-            FontDeepAnalysisEvidence first = await SourceWithPassingExternalNativeChecks(repository).LoadFilesAsync(firstGeneration, [firstRecord.Id], TestContext.Current.CancellationToken);
-            Assert.True(Assert.Single(first.Faces).IsDeepEvidenceComplete);
+            IReadOnlySet<long>? requiredGlyphFaces = mappingsOnly ? new HashSet<long>() : null;
+            FontFileRecord firstRecord;
+            await using (var database = new FontDatabase(paths))
+            {
+                var repository = new SqliteFontRepository(database);
+                await repository.InitializeAsync(token);
+                FontFileRecord file = await WriteDataAsync(root, "left.ttf", GeneratedAnalysisFont.Create());
+                long firstGeneration = await repository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+                await repository.WriteInventoryAsync(firstGeneration, [file with { Id = 0, GenerationId = firstGeneration, Faces = [file.Faces[0] with { Id = 0 }] }], token);
+                firstRecord = Assert.Single(await repository.LoadInventoryAsync(firstGeneration, token));
+                FontDeepAnalysisEvidence first = await SourceWithPassingExternalNativeChecks(repository)
+                    .LoadFilesAsync(firstGeneration, [firstRecord.Id], requiredGlyphFaces, token);
+                Assert.True(Assert.Single(first.Faces).IsClassifiable);
+                Assert.Equal(!mappingsOnly, first.Faces[0].IsDeepEvidenceComplete);
+            }
 
-            long secondGeneration = await repository.BeginGenerationAsync(Jellyfin.Plugin.AssSubsetter.Fonts.Inventory.FontAnalysisInputSnapshot.Empty, [], TestContext.Current.CancellationToken);
-            await repository.WriteInventoryAsync(secondGeneration, [firstRecord with { Id = 0, GenerationId = secondGeneration, Faces = [firstRecord.Faces[0] with { Id = 0 }] }], TestContext.Current.CancellationToken);
-            FontFileRecord secondRecord = Assert.Single(await repository.LoadInventoryAsync(secondGeneration, TestContext.Current.CancellationToken));
+            await using var reopenedDatabase = new FontDatabase(paths);
+            var reopenedRepository = new SqliteFontRepository(reopenedDatabase);
+            await reopenedRepository.InitializeAsync(token);
+            long secondGeneration = await reopenedRepository.BeginGenerationAsync(FontAnalysisInputSnapshot.Empty, [], token);
+            await reopenedRepository.WriteInventoryAsync(secondGeneration, [firstRecord with { Id = 0, GenerationId = secondGeneration, Faces = [firstRecord.Faces[0] with { Id = 0 }] }], token);
+            FontFileRecord secondRecord = Assert.Single(await reopenedRepository.LoadInventoryAsync(secondGeneration, token));
             int reads = 0;
-            var recreated = SourceWithPassingExternalNativeChecks(repository, async (path, token) =>
+            var recreated = SourceWithPassingExternalNativeChecks(reopenedRepository, async (path, cancellation) =>
             {
                 reads++;
-                return await File.ReadAllBytesAsync(path, token);
+                return await File.ReadAllBytesAsync(path, cancellation);
             });
 
-            FontDeepAnalysisEvidence second = await recreated.LoadFilesAsync(secondGeneration, [secondRecord.Id], TestContext.Current.CancellationToken);
+            FontDeepAnalysisEvidence second = await recreated
+                .LoadFilesAsync(secondGeneration, [secondRecord.Id], requiredGlyphFaces, token);
 
             Assert.Equal(0, reads);
             Assert.Equal(secondRecord.Faces[0].Id, Assert.Single(second.Faces).FaceId);
-            Assert.True(second.Faces[0].IsDeepEvidenceComplete);
+            Assert.True(second.Faces[0].IsClassifiable);
+            Assert.Equal(!mappingsOnly, second.Faces[0].IsDeepEvidenceComplete);
+
+            if (mappingsOnly)
+            {
+                Assert.Empty(second.Faces[0].CharacterFingerprints);
+                FontDeepAnalysisEvidence upgraded = await recreated
+                    .LoadFilesAsync(secondGeneration, [secondRecord.Id], token);
+                Assert.Equal(1, reads);
+                Assert.True(Assert.Single(upgraded.Faces).IsDeepEvidenceComplete);
+                Assert.NotEmpty(upgraded.Faces[0].CharacterFingerprints);
+                FontDeepAnalysisEvidence reused = await recreated
+                    .LoadFilesAsync(secondGeneration, [secondRecord.Id], token);
+                Assert.Equal(1, reads);
+                Assert.True(Assert.Single(reused.Faces).IsDeepEvidenceComplete);
+            }
         }
         finally
         {

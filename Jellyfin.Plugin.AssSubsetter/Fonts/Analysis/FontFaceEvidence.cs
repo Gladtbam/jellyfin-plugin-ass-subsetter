@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 using Jellyfin.Plugin.AssSubsetter.Fonts.Inventory;
 
 namespace Jellyfin.Plugin.AssSubsetter.Fonts.Analysis;
@@ -63,4 +64,9 @@ public sealed record FontFaceEvidence
     /// <summary>Gets normalized rendering fingerprints for every comparable encoded character.</summary>
     public IReadOnlyDictionary<uint, ReadOnlyMemory<byte>> CharacterFingerprints { get; init; }
         = new Dictionary<uint, ReadOnlyMemory<byte>>();
+
+    /// <summary>Gets a value indicating whether mapping validation succeeded with per-character fingerprinting deferred.</summary>
+    [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    internal bool IsMappingOnlyEvidence { get; init; }
 }
